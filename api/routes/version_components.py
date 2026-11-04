@@ -60,8 +60,10 @@ def _run_view(db, version_id: str) -> tuple:
         "command", "pid", "host", "outcome", "log_path", "started_at", "finished_at",
         "stage", "done", "total", "stage_started_at", "progress_at")}
     out["alive"] = alive
-    # A run recorded as running whose process holds nothing any more was cut short.
+    # A run recorded as running whose process holds nothing any more was cut short. One that
+    # paused (NW-1) stopped on purpose; Resume carries on either.
     out["stopped"] = bool(row.get("outcome") == "running" and alive is False)
+    out["paused"] = bool(row.get("outcome") == "paused" and not alive)
     return out, alive
 
 
@@ -69,11 +71,12 @@ def _run_view(db, version_id: str) -> tuple:
 def project_runs(project_id: str,
                  current_user: User = Depends(get_current_user),
                  db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
-    """The runs of the project's versions that are at work now, or were cut short (`stopped`) --
+    """The runs of the project's versions that are at work now, were cut short (`stopped`) or
+    paused (`paused`) --
     whichever front door started them: a web job, or `analyzer.py generate | export | reexport |
     resume` on the server (`--detach`). The Overview showed the web jobs only, so a run started
     from the command line was invisible there. `{"runs": [{version_id, version_tag, command,
-    alive, stopped, stage, done, total, started_at, progress_at, …}]}`, newest first; `[]` on a
+    alive, stopped, paused, stage, done, total, started_at, progress_at, …}]}`, newest first; `[]` on a
     database that keeps no run records."""
     require_project_member(project_id, current_user, db)
     if not db.projects.get(project_id):
@@ -81,7 +84,7 @@ def project_runs(project_id: str,
     out = []
     for v in db.versions.list_for_project(project_id):
         run, alive = _run_view(db, v.id)
-        if run is None or not (alive or run.get("stopped")):
+        if run is None or not (alive or run.get("stopped") or run.get("paused")):
             continue
         out.append({"version_id": v.id, "version_tag": v.tag, **run})
     out.sort(key=lambda r: r.get("started_at") or "", reverse=True)
@@ -154,7 +157,7 @@ def version_run_settings(project_id: str, version_id: str,
     version = _version(db, project_id, version_id)
     from ..services.run_facts import run_settings
     _, alive = _run_view(db, version.id)
-    busy = any(j.status in ("queued", "running", "paused") for j in db.jobs.list_for_version(version.id))
+    busy = any(j.status in ("queued", "running") for j in db.jobs.list_for_version(version.id))
     return {"version_id": version.id, "running": bool(alive) or busy,
             "runs": run_settings(db, version.id)}
 

@@ -17,7 +17,7 @@ run.py. A daemon thread per job handles the full lifecycle:
 Public surface used by routes/jobs.py:
   start(db, job_id)            — kick off on a daemon thread
   cancel_subprocess(job_id)    — kill the running subprocess
-  signal_resume(job_id)        — unblock a paused thread
+  request_pause(db, job)       — ask a background run to pause (start_resume carries it on)
   reexport(db, job_id)         — run Phase 4 only on a daemon thread
   get_log_lines(job_id, after) — (lines, new_cursor) for SSE streaming
 """
@@ -59,7 +59,6 @@ _LOCK = threading.Lock()
 _job_logs: dict[str, deque] = {}        # recent log lines (ring buffer)
 _job_log_totals: dict[str, int] = {}    # monotonic line count (for SSE cursor)
 _job_procs: dict[str, subprocess.Popen] = {}
-_job_resume_events: dict[str, threading.Event] = {}
 _job_threads: dict[str, threading.Thread] = {}   # see job_alive
 _LOG_MAX = 500
 
@@ -221,14 +220,6 @@ def _stop_tree(proc: subprocess.Popen) -> None:
         proc.terminate()
     except OSError:
         pass
-
-
-def signal_resume(job_id: str) -> None:
-    """Unblock a thread that is holding at the pause point."""
-    with _LOCK:
-        ev = _job_resume_events.get(job_id)
-    if ev is not None:
-        ev.set()
 
 
 class ReexportRefused(Exception):
@@ -450,13 +441,11 @@ def _init_state(job_id: str) -> None:
     with _LOCK:
         _job_logs[job_id] = deque(maxlen=_LOG_MAX)
         _job_log_totals[job_id] = 0
-        _job_resume_events[job_id] = threading.Event()
 
 
 def _cleanup_state(job_id: str) -> None:
     with _LOCK:
         _job_procs.pop(job_id, None)
-        _job_resume_events.pop(job_id, None)
         _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
         _step_clocks.pop(job_id, None)
         # Only this thread's own entry: a job reopened by `start_resume` has a new thread, which
@@ -837,7 +826,8 @@ PROCESS_STARTED = datetime.now(UTC)
 
 def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
                           reattach_only: bool = False) -> int:
-    """At start-up: fail every job a stopped server left queued, running or paused.
+    """At start-up: fail every job a stopped server left queued or running. A paused job is left
+    paused: its run stopped on purpose, and Resume carries it on.
 
     A job runs on a thread of the API process that started it (`job_alive`), and a process that
     has just started runs none -- so, when no other server runs on the database
@@ -857,6 +847,8 @@ def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
     """
     failed = 0
     for job in db.jobs.list_active():
+        if job.status == "paused":
+            continue                # stopped on purpose (`request_pause`): no run to follow
         if job_alive(job.id) or _reexport_alive(job.id):
             continue
         started = job.started_at
@@ -2322,6 +2314,9 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
                                     "panel.")
             tracker.finish()
             return True
+        if code == fr.EXIT_PAUSED:
+            _mark_paused(db, job_id, tracker.recent_lines)
+            return False
         if code is None:
             _append_log(job_id, "The run's process ended before it finished.")
             _fail_keeping_work(db, job_id, STOPPED_MESSAGE)
@@ -2359,6 +2354,84 @@ def stop_background_run(job: Any) -> bool:
         return False
     fr.stop(run.get("pid"), run.get("create_time"))
     return True
+
+
+class PauseRefused(ReexportRefused):
+    """Why a job cannot be paused now (HTTP status, code, message)."""
+
+
+def _job_run(job: Any) -> Optional[dict]:
+    """The background run `job` follows (run.json's fields, with `run_dir`), or None."""
+    with _LOCK:
+        run = _job_runs.get(job.id)
+    if run is not None:
+        return {**run, "run_dir": run.get("run_dir") or os.path.dirname(run["log_path"])}
+    fr = _frozen_run_module()
+    vid = getattr(job, "version_id", None)
+    return fr.find_job_run(_data_root(), vid, job.id) if fr is not None and vid else None
+
+
+def pause_asked(job: Any) -> bool:
+    """Whether someone asked `job`'s run to pause and it has not stopped yet."""
+    if getattr(job, "status", None) != "running":
+        return False
+    fr = _frozen_run_module()
+    run = _job_run(job) if fr is not None else None
+    return bool(run and fr.pause_asked(run["run_dir"]))
+
+
+def request_pause(db: Any, job: Any, *, by: str = "") -> None:
+    """Ask `job`'s run to pause (NW-1): it stops before the next phase that starts new work --
+    the model, or a component's views -- with what it made kept, and the job ends `paused`
+    (`_mark_paused`). Resume is `start_resume`, from the phase it stopped before.
+
+    A generation, an export or a resume; never a re-export or an update (short, and their
+    documents stand as they were). Raises PauseRefused: NOT_RUNNING, NOT_PAUSABLE,
+    NO_BACKGROUND_RUN (a run that is a child of this process, or not started yet)."""
+    if job.status != "running":
+        raise PauseRefused(409, "NOT_RUNNING", f"Job {job.id} is {job.status}: only a running "
+                                               f"job can be paused.")
+    if getattr(job, "mode", None) == REEXPORT_MODE:
+        raise PauseRefused(409, "NOT_PAUSABLE", "An update or re-export cannot be paused. Stop it "
+                                                "instead: its documents stay as they were.")
+    fr = _frozen_run_module()
+    run = _job_run(job) if fr is not None else None
+    if run is None or not _detach_enabled(db):
+        raise PauseRefused(409, "NO_BACKGROUND_RUN", f"Job {job.id} cannot be paused: its run is "
+                                                     f"not in the background yet. Try again in a "
+                                                     f"moment, or stop it.")
+    if fr.pause_asked(run["run_dir"]):
+        return
+    fr.request_pause(run["run_dir"], reason=f"asked by {by}" if by else "")
+    _append_log(job.id, "Pause asked: the run stops before its next step (the model, or the "
+                        "next component), and keeps what it made.")
+
+
+_PAUSED_BEFORE = re.compile(r"Paused before Phase (\d)")
+
+
+def _mark_paused(db: Any, job_id: str, lines: list) -> None:
+    """The run paused (exit `frozen_run.EXIT_PAUSED`): the job says so and keeps its version for Resume.
+    The phases before the one it stopped before are done; that one and the rest wait."""
+    job = db.jobs.get(job_id)
+    if job is None or job.status in ("cancelled", "complete", "failed"):
+        return
+    m = next((m for m in map(_PAUSED_BEFORE.search, reversed(lines)) if m), None)
+    nxt = int(m.group(1)) if m else job.phase
+    for p in job.phases:
+        if p.number < nxt and p.status in ("pending", "running"):
+            p.status = "done"
+        elif p.number >= nxt and p.status == "running":
+            p.status = "pending"
+    job.status = "paused"
+    job.phase = nxt
+    job.current_activity = f"Paused before Phase {nxt}"
+    job.activity_detail = "Resume carries the run on from here."
+    job.eta_seconds = None
+    job.elapsed_seconds = _elapsed_since(job.started_at)
+    db.jobs.update(job)
+    _append_log(job_id, f"Paused before Phase {nxt}. What the run made is kept; Resume carries "
+                        f"it on.")
 
 
 def _version_has_work(db: Any, version_id: Optional[str]) -> bool:
@@ -3646,8 +3719,13 @@ def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> 
                                 f"Components it has not generated are added with Generate.")
         generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
         first = {"regenerate": 1, "derive": 2}.get(action, 3)
-        if generation is not None and generation.status != "complete":
-            job, render = generation, False
+        # A paused job (NW-1) is the one carried on, a generation's or an export's: left paused
+        # it would hold the project ("a run is at work") for good.
+        paused = next((j for j in jobs if j.status == "paused"), None)
+        reopen = paused or (generation if generation is not None
+                            and generation.status != "complete" else None)
+        if reopen is not None:
+            job, render = reopen, getattr(reopen, "mode", None) in RENDER_MODES
             job.status = "queued"
             job.error_message = None
             job.completed_at = None
@@ -3655,6 +3733,7 @@ def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> 
             # minutes, and they read this (and "the project's run" is the newest).
             job.started_at = _now()
             job.current_activity = "Resuming…"
+            job.activity_detail = ""
             for p in job.phases:
                 if p.number >= first and p.status != "done":
                     p.status = "pending"

@@ -308,6 +308,19 @@ class TestResolve:
 
 
 class TestFrozenRun:
+    def test_a_pause_is_asked_of_one_run_and_read_by_its_processes(self, tmp_path, monkeypatch):
+        run = tmp_path / "r1"
+        run.mkdir()
+        monkeypatch.setenv(frozen_run.EXIT_ENV, str(run / frozen_run.EXIT_FILE))
+        assert frozen_run.pause_requested() is None and not frozen_run.pause_asked(str(run))
+        frozen_run.request_pause(str(run), reason="asked by admin@company.com")
+        assert frozen_run.pause_asked(str(run))
+        assert frozen_run.pause_requested()["reason"] == "asked by admin@company.com"
+        monkeypatch.setenv(frozen_run.EXIT_ENV, str(tmp_path / "r2" / frozen_run.EXIT_FILE))
+        assert frozen_run.pause_requested() is None        # a resume runs in a folder of its own
+        monkeypatch.delenv(frozen_run.EXIT_ENV)
+        assert frozen_run.pause_requested() is None        # not a background run
+
     def test_the_background_command_is_the_same_without_detach(self):
         assert frozen_run.strip_detach(["generate", "--detach", "--project-id", "P"]) == \
             ["generate", "--project-id", "P"]

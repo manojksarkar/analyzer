@@ -134,8 +134,16 @@ class _Run:
         self.outcome: Optional[str] = None
 
     def ok(self, rc: int = 0) -> int:
-        self.outcome = "complete" if not rc else "failed"
+        self.outcome = _outcome(rc)
         return rc
+
+
+def _outcome(rc) -> str:
+    """complete | paused (someone asked: core/frozen_run.py) | failed."""
+    from .frozen_run import EXIT_PAUSED
+    if rc in (None, 0):
+        return "complete"
+    return "paused" if rc == EXIT_PAUSED else "failed"
 
 
 @contextmanager
@@ -162,7 +170,7 @@ def writing(version_id: str, *, command: str, argv: Optional[list] = None,
         if run.outcome is None:
             run.outcome = "complete"
     except SystemExit as exc:
-        run.outcome = "complete" if exc.code in (None, 0) else "failed"
+        run.outcome = _outcome(exc.code)
         raise
     except BaseException:
         run.outcome = "failed"

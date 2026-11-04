@@ -100,6 +100,8 @@ export interface VersionRun {
   alive: boolean | null
   /** Recorded as running, but its process is gone: cut short — `analyzer.py resume` continues it. */
   stopped: boolean
+  /** Paused on purpose (NW-1): Resume continues it from the step it stopped before. */
+  paused: boolean
   outcome: string
   host: string | null
   startedAt: string | null
@@ -790,6 +792,8 @@ export interface AnalysisJob {
   startedAt: string | null
   completedAt: string | null
   errorMessage: string | null
+  /** Pause asked and the run not stopped yet: it stops before its next step, then `paused`. */
+  pausing: boolean
 }
 
 /** A function discovered after Phase 1, for the visibility editor. */

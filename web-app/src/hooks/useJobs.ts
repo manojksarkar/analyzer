@@ -37,7 +37,9 @@ export function useCurrentJob(projectId: string) {
     enabled: !!projectId,
     refetchInterval: (query) => {
       const job = query.state.data
-      return job && ['queued', 'running', 'paused'].includes(job.status) ? 5000 : false
+      // Paused (NW-1): nothing moves until someone resumes it, perhaps from another tab.
+      if (job?.status === 'paused') return 30_000
+      return job && ['queued', 'running'].includes(job.status) ? 5000 : false
     },
   })
 }
@@ -156,12 +158,24 @@ export function useCancelJob(projectId: string) {
   })
 }
 
+/** Pause a run (NW-1): it stops before its next step — the model, or the next component — and
+ *  keeps what it made. The job says `pausing` until then, `paused` after. */
+export function usePauseJob(projectId: string) {
+  const invalidate = useJobInvalidate(projectId)
+  return useMutation({
+    mutationFn: (jobId: string) => jobsApi.pause(projectId, jobId),
+    onSuccess: () => { invalidate(); toast.info('Pausing', 'The run stops before its next step and keeps what it made.') },
+    onError: (e: Error) => toast.error('Could not pause', e.message),
+  })
+}
+
+/** Carry a paused job on from the step it stopped before. */
 export function useResumeJob(projectId: string) {
   const invalidate = useJobInvalidate(projectId)
   return useMutation({
     mutationFn: (jobId: string) => jobsApi.resume(projectId, jobId),
-    onSuccess: () => { invalidate(); toast.success('Job resumed') },
-    onError: (e: Error) => toast.error('Resume failed', e.message),
+    onSuccess: () => { invalidate(); toast.success('Resuming', 'The run carries on from where it stopped.') },
+    onError: (e: Error) => toast.error('Could not resume', e.message),
   })
 }
 

@@ -309,6 +309,14 @@ def cmd_generate(a) -> int:
         return 2
 
 
+def _paused(project_id: str, name: str) -> int:
+    """A run that someone paused (core/frozen_run.py) ends here: what it made is kept."""
+    from core.frozen_run import EXIT_PAUSED
+    print(f"\nPaused. What the run made is kept. To carry it on:\n    python analyzer.py resume "
+          f"--project-id {project_id} --version-id {name} --detach", file=sys.stderr)
+    return EXIT_PAUSED
+
+
 def _generate(a, name, branch, commit, scope, common, generate_full, generate_incremental,
               AnalyzerRunFailed, DatabaseRequired, GitError) -> int:
     try:
@@ -332,6 +340,9 @@ def _generate(a, name, branch, commit, scope, common, generate_full, generate_in
                   f"fixed:\n    python analyzer.py resume --project-id {a.project_id} "
                   f"--version-id {name}", file=sys.stderr)
             return 3
+        from core.frozen_run import EXIT_PAUSED
+        if getattr(exc, "returncode", 1) == EXIT_PAUSED:
+            return _paused(a.project_id, name)
         raise
     except DatabaseRequired as exc:
         print(f"\n{exc}", file=sys.stderr)
@@ -1186,7 +1197,8 @@ def cmd_export(a) -> int:
     if closed:
         # A web run's version, stopped and finished here: its web job ends too (draft no more).
         _finish_web_job(a.project_id, a.version_id)
-    return rc
+    from core.frozen_run import EXIT_PAUSED
+    return _paused(a.project_id, a._name) if rc == EXIT_PAUSED else rc
 
 
 def cmd_resume(a) -> int:
@@ -1338,7 +1350,8 @@ def _resume(a) -> int:
         print(f"the model is complete: the documents of {', '.join(comps)}", flush=True)
     scope = {"type": "component", "names": comps} if comps else None
     rc, _ = _render_version(a, scope=scope, command="resume", after=_close)
-    return rc
+    from core.frozen_run import EXIT_PAUSED
+    return _paused(a.project_id, a._name) if rc == EXIT_PAUSED else rc
 
 
 def cmd_clean_runs(a) -> int:

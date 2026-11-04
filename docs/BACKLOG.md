@@ -12,11 +12,11 @@
 
 ## Next work (listed 2026-10-29, priorities 2026-10-30)
 
-Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5; 2026-11-03: NW-3.
+Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5; 2026-11-03: NW-3; 2026-11-04: NW-1 at step boundaries.
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
-| NW-1 | Pause and resume a run within a phase; then pause by itself after N LLM failures in a row | enhance | P2 | L | — | open | `pipeline_runner.py`, `core/progress.py`, `llm_core/client.py` |
+| NW-1 | Pause and resume a run: at step boundaries done 2026-11-04; left: stop inside Phase 2 right away, then pause by itself after N LLM failures in a row, a CLI `pause` | enhance | P2 | M | — | part done | `core/orchestration.py`, `llm_enrichment.py`, `llm_core/client.py` |
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | NW-3 | Fresh run (no baseline) for any commit, from the web; says when it is for and which corrections stay behind; Pause after Phase 1 removed | enhance | P3 | S | — | done | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
@@ -191,12 +191,13 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 
 ## Details
 
-**NW-1** Today: Cancel only; the job's `paused` status serves only `pause_after_phase1` (the run
-dialog's "Pause after Phase 1" is disabled: the runner ignores it); `analyzer.py resume` carries on
-Phases 3–4; Phase 2's LLM answers are cached. Doubts: survive an API restart? who may pause? release the
-writer lock? auto-pause after N failures — what N? Approach: a flag checked at each item and LLM call →
-a clean stop that records where; resume = the same command, the cache answers the finished items; not an
-OS-level suspend.
+**NW-1** Done 2026-11-04: Pause (admins) stops the run before the parse, the model or the next component's
+views (`pause.json` in the run folder, exit 4); the job waits `paused`, through an API restart, and Resume runs
+`resume` as the same job -- the phase starts again and the LLM cache answers what was written. Left: (1) stop
+inside Phase 2 right away -- a check in the LLM loop that flushes the cache and exits 4 (Phase 2 runs to its
+end today, hours on a big project); (2) then pause by itself after N LLM failures in a row (proposed N = 5,
+"the LLM stopped answering") -- it needs (1), or the run writes stand-in texts until Phase 2 ends; (3) a CLI
+`pause --version-id`. Open with the user: a paused run blocks a new one (as built), N.
 
 **NW-2** Today `approve()` checks the state and the Word file only; bulk approval goes through it.
 Doubts: base = the previous version's document, SWE.3 before its SWE.4, or both? "reviewed" = approved?

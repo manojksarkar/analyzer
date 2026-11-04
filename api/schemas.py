@@ -243,6 +243,8 @@ class JobView(BaseModel):
     # (docs/design/WORD_FILE_UPDATES.md §4.1).
     started_by: Optional[JobStarterView] = None
     reason: Optional[str] = None
+    # Pause asked (POST .../pause) and the run not stopped yet; then status "paused" (NW-1).
+    pausing: bool = False
 
 
 class StartJobResponse(BaseModel):

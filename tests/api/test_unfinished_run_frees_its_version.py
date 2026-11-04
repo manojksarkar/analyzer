@@ -121,9 +121,10 @@ class TestAnUnfinishedRunFreesItsVersion:
 
 
 class TestAJobAStoppedServerLeftRunning:
-    """At start-up every job still marked queued, running or paused belongs to a server that
-    stopped mid-run: no thread of the new process runs it (`fail_interrupted_jobs`). It used to say
-    "running" for ever, and every new run of its project was refused as JOB_ALREADY_RUNNING."""
+    """At start-up every job still marked queued or running belongs to a server that stopped
+    mid-run: no thread of the new process runs it (`fail_interrupted_jobs`). It used to say
+    "running" for ever, and every new run of its project was refused as JOB_ALREADY_RUNNING. A
+    paused job is left paused (test_staged_generation_db.py TestPause)."""
 
     def test_it_is_failed_with_the_reason_and_frees_its_draft(self, db, monkeypatch):
         project = _project(db)

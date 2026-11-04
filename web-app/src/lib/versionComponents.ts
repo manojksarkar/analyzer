@@ -86,8 +86,9 @@ export function runActivity(run: Pick<VersionRun, 'stage' | 'done' | 'total'> | 
 export type GenerationRow =
   /** A run, or a web job, is at work on the version. */
   | { kind: 'running'; verb: string; activity: string; startedAt: string | null }
-  /** Its run stopped before it finished (`stopped`), or finished with components cut short. */
-  | { kind: 'stopped'; at: string | null; cutShort: number; cut: VersionComponent[] }
+  /** Its run stopped before it finished (`stopped`) or was paused (`paused`, NW-1), or finished
+   *  with components cut short. */
+  | { kind: 'stopped'; at: string | null; cutShort: number; cut: VersionComponent[]; paused: boolean }
   /** Nothing at work, and `missing` components have no documents yet. */
   | { kind: 'missing'; missing: number }
 
@@ -113,8 +114,10 @@ export function generationSummary(data: VersionComponents | undefined): Generati
   const cutShort = cut.length
   const missing = comps.filter((c) => !hasDocuments(c) && !unmakeable(c)).length
   const { run, job } = data
+  // A paused job holds the version for Resume, and nothing is at work.
+  const paused = !run?.alive && (job?.status === 'paused' || !!run?.paused)
   let row: GenerationRow | null = null
-  if (run?.alive || job) {
+  if (run?.alive || (job && !paused)) {
     const live = run?.alive ? run : null
     row = {
       kind: 'running',
@@ -122,8 +125,9 @@ export function generationSummary(data: VersionComponents | undefined): Generati
       activity: runActivity(live),
       startedAt: live?.startedAt ?? null,
     }
-  } else if (run?.stopped || cutShort > 0) {
-    row = { kind: 'stopped', at: run?.stopped ? run.progressAt ?? run.startedAt : null, cutShort, cut }
+  } else if (paused || run?.stopped || cutShort > 0) {
+    const at = paused ? run?.finishedAt ?? null : run?.stopped ? run.progressAt ?? run.startedAt : null
+    row = { kind: 'stopped', at, cutShort, cut, paused }
   } else if (missing > 0) {
     row = { kind: 'missing', missing }
   }

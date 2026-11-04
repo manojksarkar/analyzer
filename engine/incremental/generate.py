@@ -40,6 +40,7 @@ if _SRC not in sys.path:
 
 from core.paths import paths as _paths, set_output_dir, set_model_dir
 from core.config import load_config, layer_sources
+from core.frozen_run import EXIT_PAUSED
 from core.run_context import effective_model_store, DatabaseRequired as _DatabaseRequired
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, _rmtree_force
@@ -401,6 +402,9 @@ def generate_full(
     model_dir = _paths().model_dir
 
     def _fail_full(rc):
+        if rc == EXIT_PAUSED:
+            # Paused, not failed: the version stays mid-pipeline, where `resume` carries it on.
+            raise AnalyzerRunFailed("paused", rc)
         m = _manifest(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",

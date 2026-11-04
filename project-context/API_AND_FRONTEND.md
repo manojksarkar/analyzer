@@ -298,6 +298,14 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   (`pipeline_runner._version_writer`, on the API's own engine) take the lock; a second is refused
   (`VersionBusy`; web re-export 409 `VERSION_BUSY`). Storing output replaces the version's stored files
   (`persist_output_files`), so two writers lost documents before.
+- **Pause** (2026-11-04, NW-1) — `POST /jobs/{id}/pause` writes `pause.json` in the background run's
+  folder (`frozen_run.request_pause`); `PhaseRunner` checks it before `parser.py`, `model_deriver.py`
+  and `run_views.py` (never between a component's views and its export) and exits `EXIT_PAUSED` (4):
+  the component next in line goes back to `waiting`, the run record says `paused`, the generate engines
+  write no failed manifest. The job ends `paused` (`_mark_paused`), survives an API restart
+  (`fail_interrupted_jobs` skips it), counts as the project's run; `POST /jobs/{id}/resume` =
+  `start_resume`, which reopens the paused job itself. Web: Pause / Pausing… / Resume beside Cancel Job,
+  the banner's "Generation paused" row.
 - **The view** — `api/services/version_components.py` `components_view`: the model's components
   (`model_components`) ∪ rows ∪ documents; no row + documents = generated, neither = `not_requested`,
   waiting/generating with no live writer = `stopped`. The rules for which components each command

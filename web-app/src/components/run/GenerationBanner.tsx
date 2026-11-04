@@ -102,7 +102,9 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
     ? summary.row : null
   const done = `${withDocs} of ${total}`
   // A run (or a web job) holds the version: Resume would be refused (409 VERSION_BUSY / RUN_ACTIVE).
-  const resumeBusy = data.resumeAction === 'busy' || !!data.job
+  // A paused job does not: Resume carries that job on.
+  const resumeBusy = data.resumeAction === 'busy' || (!!data.job && data.job.status !== 'paused')
+  const icon = row?.kind === 'stopped' && row.paused ? { name: 'pause_circle', tone: 'text-caution' } : row ? ICON[row.kind] : null
 
   let text: ReactNode = null
   let extra: ReactNode = null
@@ -117,12 +119,14 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
     const which = names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2} more` : names.join(', ')
     const failed = row.cut.find((c) => c.state === 'failed' && c.error)
     const reason = failed?.error?.split('\n')[0] ?? null
-    const headline = row.at
+    const headline = row.paused
+      ? <><b className="font-semibold text-on-surface">Generation paused</b>{row.at && <> {relativeTime(row.at)}</>}</>
+      : row.at
       ? <><b className="font-semibold text-on-surface">Generation stopped</b> {relativeTime(row.at)} before it finished</>
       : row.cut.length === 1
         ? <b className="font-semibold text-on-surface">{names[0]} {row.cut[0].state === 'failed' ? 'failed' : 'stopped'}</b>
         : <b className="font-semibold text-on-surface">{plural(row.cutShort, 'component')} stopped or failed</b>
-    text = (
+    text = row.paused ? <>{headline} · {done} done</> : (
       <>
         {headline}
         {row.at && which && <> · not made: {which}</>}
@@ -144,9 +148,9 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
     <>
       {(row || wordRowEl) && (
         <div role="status" aria-label="Generation" className={cn('bg-surface-container-lowest border border-outline-variant rounded-xl divide-y divide-hairline', className)}>
-          {row && (
+          {row && icon && (
             <div className="flex items-center flex-wrap gap-x-3.5 gap-y-2 px-4 py-2.5">
-              <Icon name={ICON[row.kind].name} size={18} className={cn('flex-shrink-0', ICON[row.kind].tone)} />
+              <Icon name={icon.name} size={18} className={cn('flex-shrink-0', icon.tone)} />
               <div className={cn('min-w-0 text-body text-on-surface-variant', compact ? 'flex-[1_1_220px]' : 'flex-[1_1_300px]')}>
                 <p>{text}</p>
                 {extra}
@@ -182,7 +186,7 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
                   <Icon name="terminal" size={15} />Logs
                 </button>
               )}
-              {!compact && isAdmin && data.job && row.kind === 'running' && (
+              {!compact && isAdmin && data.job && (row.kind === 'running' || (row.kind === 'stopped' && row.paused)) && (
                 <button
                   type="button"
                   onClick={() => setStopping(true)}

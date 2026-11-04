@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../../hooks/useProjects'
-import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../../hooks/useJobs'
+import { useCurrentJob, useStartJob, useCancelJob, useJobEvents, usePauseJob, useResumeJob } from '../../hooks/useJobs'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { DashboardSkeleton, Icon, Text } from '../../components/ui'
 import { SubbarCta } from '../../components/shell/SubbarCta'
@@ -21,19 +21,23 @@ import { RunCards } from './components/RunCards'
 import { PHASE_UI, fmtClock, fmtEta, fmtStart, phaseTime } from './helpers'
 
 /* ─── Phase step (running panel) ─── */
-type PhaseStatus = 'done' | 'active' | 'pending'
+type PhaseStatus = 'done' | 'active' | 'pending' | 'paused'
 function PhaseStep({ n, label, status, time }: { n: number; label: string; status: PhaseStatus; time: string }) {
-  const timeColor = status === 'done' ? 'text-success' : status === 'active' ? 'text-secondary' : 'text-outline'
+  const timeColor = status === 'done' ? 'text-success' : status === 'active' ? 'text-secondary'
+    : status === 'paused' ? 'text-caution' : 'text-outline'
   return (
     <div className="flex flex-col items-center text-center min-w-[105px]">
       <div
         className={cn(
           'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0',
-          status === 'done' ? 'bg-on-tertiary-container' : status === 'active' ? 'bg-action' : 'bg-surface-container',
+          status === 'done' ? 'bg-on-tertiary-container' : status === 'active' ? 'bg-action'
+            : status === 'paused' ? 'bg-caution' : 'bg-surface-container',
         )}
       >
         {status === 'done' ? (
           <Icon name="check" size={14} fill className="text-on-status" />
+        ) : status === 'paused' ? (
+          <Icon name="pause" size={14} fill className="text-on-status" />
         ) : status === 'active' ? (
           <div className="animate-spin w-3.5 h-3.5 rounded-full border-2 border-white/35 border-t-white" />
         ) : (
@@ -75,6 +79,8 @@ export function ProjectDetailPage() {
   const { data: job } = useCurrentJob(projectId ?? '')
   const startJob = useStartJob(projectId ?? '')
   const cancelJob = useCancelJob(projectId ?? '')
+  const pauseJob = usePauseJob(projectId ?? '')
+  const resumeJob = useResumeJob(projectId ?? '')
   // The Run dialog: opened here, or by a failed run's Re-run in Needs attention (the Subbar).
   // Closed when the page leaves, so it never opens by itself on a later visit.
   const runOpen = useRunModal((s) => s.open)
@@ -180,18 +186,25 @@ export function ProjectDetailPage() {
             <div className="px-5 py-4 flex items-center justify-between bg-inverse">
               <div className="flex items-center gap-3">
                 {/* A queued job waits for a free worker: it must not look like it is running. */}
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border-2 border-secondary border-t-transparent">
-                  {job.status === 'queued'
-                    ? <Icon name="hourglass_empty" size={16} className="text-on-primary-container" />
-                    : <div className="animate-spin w-full h-full rounded-full border-2 border-secondary border-t-transparent" />}
-                </div>
+                {job.status === 'paused' ? (
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-caution">
+                    <Icon name="pause" size={18} fill className="text-on-status" />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border-2 border-secondary border-t-transparent">
+                    {job.status === 'queued'
+                      ? <Icon name="hourglass_empty" size={16} className="text-on-primary-container" />
+                      : <div className="animate-spin w-full h-full rounded-full border-2 border-secondary border-t-transparent" />}
+                  </div>
+                )}
                 <div>
                   <div className="flex items-center gap-2.5">
                     <p className="text-white font-semibold font-sans text-sm">
                       Analysis {job.status === 'paused' ? 'Paused' : job.status === 'queued' ? 'Queued' : 'Running'}
                     </p>
-                    <span className={cn('font-mono text-micro font-bold px-[7px] py-px rounded-[3px] uppercase tracking-[0.05em]', job.status === 'queued' ? 'bg-outline text-on-status' : 'bg-action text-white')}>
-                      {job.status === 'queued' ? 'Queued' : 'Live'}
+                    <span className={cn('font-mono text-micro font-bold px-[7px] py-px rounded-[3px] uppercase tracking-[0.05em]',
+                      job.status === 'queued' ? 'bg-outline text-on-status' : job.status === 'paused' ? 'bg-caution text-on-status' : 'bg-action text-white')}>
+                      {job.status === 'queued' ? 'Queued' : job.status === 'paused' ? 'Paused' : 'Live'}
                     </span>
                   </div>
                   {(() => {
@@ -236,6 +249,23 @@ export function ProjectDetailPage() {
                     Logs
                   </button>
                 )}
+                {/* Pause (NW-1): the run stops before its next step and keeps what it made;
+                    paused, the same button is Resume (docs/ui-mockups/project-detail.html#paused). */}
+                {isAdmin && (job.status === 'running' || job.status === 'paused') && job.mode !== 'reexport' && (
+                  <button
+                    type="button"
+                    onClick={() => (job.status === 'paused' ? resumeJob : pauseJob).mutate(job.id)}
+                    disabled={job.pausing || pauseJob.isPending || resumeJob.isPending}
+                    title={job.status === 'paused' ? 'Carry the run on from where it stopped.'
+                      : job.pausing ? 'The run stops before its next step.'
+                      : 'Stop before the next step: the model, or the next component. What the run made is kept.'}
+                    className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 border border-outline hover:text-white font-mono text-caption font-medium',
+                      job.status === 'paused' ? 'text-[#4d9fff]' : 'text-on-primary-container')}
+                  >
+                    <Icon name={job.status === 'paused' ? 'play_circle' : 'pause_circle'} size={14} />
+                    {job.status === 'paused' ? 'Resume' : job.pausing ? 'Pausing…' : 'Pause'}
+                  </button>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => setStopJobId(job.id)}
@@ -257,7 +287,9 @@ export function ProjectDetailPage() {
                     {i > 0 && (
                       <div className={cn('flex-1 h-0.5 rounded-full mt-3.5 mx-1.5', p.status !== 'pending' ? 'bg-success' : 'bg-surface-container')} />
                     )}
-                    <PhaseStep n={p.number} label={p.name} status={PHASE_UI[p.status]} time={phaseTime(p)} />
+                    {job.status === 'paused' && p.number === job.phase && p.status !== 'done'
+                      ? <PhaseStep n={p.number} label={p.name} status="paused" time="Paused" />
+                      : <PhaseStep n={p.number} label={p.name} status={PHASE_UI[p.status]} time={phaseTime(p)} />}
                   </Fragment>
                 ))}
               </div>
@@ -268,23 +300,26 @@ export function ProjectDetailPage() {
               <div className="bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <Icon name={job.status === 'queued' ? 'hourglass_empty' : 'psychology'} size={14} className="text-secondary" />
+                    {job.status === 'paused'
+                      ? <Icon name="pause_circle" size={14} className="text-caution" />
+                      : <Icon name={job.status === 'queued' ? 'hourglass_empty' : 'psychology'} size={14} className="text-secondary" />}
                     <p className="text-on-surface font-mono text-caption">{job.currentActivity}</p>
                   </div>
-                  <span className="text-secondary font-mono text-xs font-medium">{job.phasePct}%</span>
+                  {job.status !== 'paused' && <span className="text-secondary font-mono text-xs font-medium">{job.phasePct}%</span>}
                 </div>
                 {/* No detail and no estimate: no row (it showed a lone "—"). */}
                 {(() => {
-                  const hasRow = !!job.activityDetail || job.etaSeconds != null
+                  const detail = job.pausing ? 'Pausing: the run stops before its next step and keeps what it made.' : job.activityDetail
+                  const hasRow = !!detail || job.etaSeconds != null
                   return (
                     <>
                       <div className={cn('progress-track', hasRow && 'mb-2')}>
                         {/* eslint-disable-next-line no-restricted-syntax -- progress width is data-driven */}
-                        <div className="progress-fill bg-secondary" style={{ width: `${job.phasePct}%` }} />
+                        <div className={cn('progress-fill', job.status === 'paused' ? 'bg-caution' : 'bg-secondary')} style={{ width: `${job.phasePct}%` }} />
                       </div>
                       {hasRow && (
                         <div className="flex items-center justify-between gap-4">
-                          <p className="text-on-surface-variant font-mono text-caption truncate">{job.activityDetail}</p>
+                          <p className="text-on-surface-variant font-mono text-caption truncate">{detail}</p>
                           {job.etaSeconds != null && (
                             <p className="text-outline font-mono text-caption flex-shrink-0">Est. ~{fmtEta(job.etaSeconds)} left in this step</p>
                           )}
@@ -296,7 +331,10 @@ export function ProjectDetailPage() {
               </div>
               <div className="flex items-center gap-2 mt-2 px-1">
                 <Icon name="info" size={13} className="text-on-surface-variant" />
-                <p className="text-on-surface-variant font-mono text-caption">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
+                <p className="text-on-surface-variant font-mono text-caption">
+                  {job.status === 'paused' ? 'Nothing runs while the job is paused.'
+                    : 'Job runs on the server — switch branches or close this tab safely. Return any time to check progress.'}
+                </p>
               </div>
             </div>
           </div>

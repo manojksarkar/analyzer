@@ -97,6 +97,17 @@ class TestRunRecord:
             run.ok(2)
         assert run_row(version.id)["outcome"] == "failed"
 
+    def test_a_pause_is_recorded_as_paused(self, sql_db, version):
+        from core.frozen_run import EXIT_PAUSED
+        from core.version_run import run_row, writing
+        with writing(version.id, command="generate") as run:
+            run.ok(EXIT_PAUSED)
+        assert run_row(version.id)["outcome"] == "paused"
+        with pytest.raises(SystemExit):
+            with writing(version.id, command="resume"):
+                raise SystemExit(EXIT_PAUSED)
+        assert run_row(version.id)["outcome"] == "paused"
+
     def test_progress_lands_on_the_run_row(self, sql_db, version, monkeypatch):
         import core.version_run as vr
         from core.run_context import set_run_context
@@ -885,6 +896,124 @@ class TestResume:
         assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_TO_RESUME"
 
 
+class TestPause:
+    """Pause (NW-1): the run stops before its next step that starts new work, keeps what it made,
+    and its job waits `paused` -- through an API restart -- for Resume, which carries the same job
+    on from there (`analyzer.py resume`)."""
+
+    def _followed(self, pr, job, run):
+        with pr._LOCK:
+            pr._job_runs[job.id] = run
+
+    def test_a_paused_run_pauses_its_job_and_keeps_its_version(self, sql_db, version, tmp_path,
+                                                               fast_follow):
+        from api.models.domain import AnalysisPhase
+        pr = fast_follow
+        job = _bg_job(sql_db, version, phase=2, completed_at=None, phases=[
+            AnalysisPhase(n, f"p{n}", st, None)
+            for n, st in ((1, "done"), (2, "running"), (3, "pending"), (4, "pending"))])
+        pr._init_state(job.id)
+        _, run = _fake_run(tmp_path, "4", "[10:00:00] INFO orchestration: [3/4] Paused before "
+                                          "Phase 3: Run views; `resume` carries the run on from here.")
+        assert not pr._follow_detached(sql_db, job.id, run, phase_start=2)
+        got = sql_db.jobs.get(job.id)
+        assert got.status == "paused" and got.error_message is None and got.completed_at is None
+        assert got.phase == 3 and got.current_activity == "Paused before Phase 3"
+        assert [p.status for p in got.phases] == ["done", "done", "pending", "pending"]
+        assert sql_db.versions.get(version.id) is not None
+
+    def test_pause_is_asked_through_the_run_s_folder_once(self, sql_db, version, tmp_path,
+                                                          monkeypatch):
+        from api.services import pipeline_runner as pr
+        from core import frozen_run
+        monkeypatch.setattr(pr, "_detach_enabled", lambda db: True)
+        job = _bg_job(sql_db, version)
+        pr._init_state(job.id)
+        self._followed(pr, job, {"pid": 1, "log_path": str(tmp_path / "run.log"),
+                                 "run_dir": str(tmp_path)})
+        try:
+            assert not pr.pause_asked(job)
+            pr.request_pause(sql_db, job, by="admin@company.com")
+            assert frozen_run.pause_asked(str(tmp_path)) and pr.pause_asked(job)
+            pr.request_pause(sql_db, job)                            # asking twice: once
+            asked = [x for x in pr.get_log_lines(job.id, 0)[0] if x.startswith("Pause asked")]
+            assert len(asked) == 1
+        finally:
+            with pr._LOCK:
+                pr._job_runs.pop(job.id, None)
+
+    def test_what_cannot_be_paused(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+        monkeypatch.setattr(pr, "_detach_enabled", lambda db: True)
+        for over, code in (({"status": "queued"}, "NOT_RUNNING"),
+                           ({"status": "paused"}, "NOT_RUNNING"),
+                           ({"mode": "reexport"}, "NOT_PAUSABLE"),
+                           ({}, "NO_BACKGROUND_RUN")):              # not in the background yet
+            job = _bg_job(sql_db, version, **over)
+            with pytest.raises(pr.PauseRefused) as exc:
+                pr.request_pause(sql_db, job)
+            assert exc.value.code == code
+
+    def test_a_restart_leaves_a_paused_job_paused(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+        job = _bg_job(sql_db, version, status="paused")
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id != job.id)
+        pr.fail_interrupted_jobs(sql_db)
+        assert sql_db.jobs.get(job.id).status == "paused"
+        assert sql_db.versions.get(version.id) is not None
+
+    def test_resume_carries_the_paused_job_on_not_the_generation(self, sql_db, version,
+                                                                 monkeypatch):
+        """An export paused: that job is reopened. The generation's own job stays as it was."""
+        from api.services import pipeline_runner as pr
+        from core.version_run import mark_components
+        mark_components(version.id, ["Layer2.Gpio"], "waiting")
+        gen = _bg_job(sql_db, version, status="failed", error_message="Stopped: ...")
+        paused = _bg_job(sql_db, version, status="paused", mode="export", phase=3,
+                         activity_detail="Resume carries the run on from here.")
+        seen = []
+        monkeypatch.setattr(pr, "_execute_detached",
+                            lambda db, job_id, cmd, **kw: seen.append(job_id) or True)
+        job = pr.start_resume(sql_db, version)
+        assert job.id == paused.id and job.activity_detail == ""
+        t = pr._reexport_threads.get(job.id)
+        if t is not None:
+            t.join(timeout=30)
+        assert seen == [paused.id]
+        assert sql_db.jobs.get(paused.id).status == "complete"
+        assert sql_db.jobs.get(gen.id).status == "failed"
+
+    def test_the_routes(self, client, sql_db, version, tmp_path, monkeypatch):
+        from api.services import pipeline_runner as pr
+        monkeypatch.setattr(pr, "_detach_enabled", lambda db: True)
+        job = _bg_job(sql_db, version)
+        pr._init_state(job.id)
+        self._followed(pr, job, {"pid": 1, "log_path": str(tmp_path / "run.log"),
+                                 "run_dir": str(tmp_path)})
+        try:
+            url = f"/api/v1/projects/p1/jobs/{job.id}"
+            assert client.post(url + "/pause", headers=_hdr(client, "bob")).status_code == 403
+            r = client.post(url + "/pause", headers=_hdr(client, "alice"))
+            assert r.status_code == 200, r.text
+            assert r.json()["job"]["pausing"] is True and r.json()["job"]["status"] == "running"
+            r = client.post(url + "/resume", headers=_hdr(client, "alice"))
+            assert r.status_code == 400                              # not paused yet
+
+            j = sql_db.jobs.get(job.id)
+            j.status = "paused"
+            sql_db.jobs.update(j)
+            called = []
+            monkeypatch.setattr(pr, "start_resume",
+                                lambda db, v, started_by=None: called.append(v.id)
+                                or db.jobs.get(job.id))
+            r = client.post(url + "/resume", headers=_hdr(client, "alice"))
+            assert r.status_code == 200, r.text
+            assert called == [version.id] and r.json()["job"]["pausing"] is False
+        finally:
+            with pr._LOCK:
+                pr._job_runs.pop(job.id, None)
+
+
 class TestAfterTheReview:
     """A review of the background runs (2026-10-04) found ways a long run could lose its work or
     be left unfollowed. One test per fix."""
@@ -1123,3 +1252,8 @@ class TestTheProjectsRuns:
                              "stopped": False}, False)
         r = client.get("/api/v1/projects/p1/runs", headers=auth_header)
         assert not [x for x in r.json()["runs"] if x["version_id"] == version.id]
+        runs[version.id] = ({"command": "generate", "outcome": "paused", "alive": False,
+                             "stopped": False, "paused": True}, False)
+        r = client.get("/api/v1/projects/p1/runs", headers=auth_header)
+        listed = [x for x in r.json()["runs"] if x["version_id"] == version.id]
+        assert listed and listed[0]["paused"] is True                # a paused one is (NW-1)

@@ -14,7 +14,7 @@ const one = (id: string, over: Partial<VersionComponent> = {}): VersionComponent
 })
 const DOC = { id: 'd1', process: 'SWE.3', status: 'in_review' as const }
 const run = (over: Partial<VersionRun> = {}): VersionRun => ({
-  command: 'export', alive: true, stopped: false, outcome: 'running', host: null, startedAt: '2026-10-05T09:00:00Z',
+  command: 'export', alive: true, stopped: false, paused: false, outcome: 'running', host: null, startedAt: '2026-10-05T09:00:00Z',
   finishedAt: null, stage: 'flowcharts', done: 38, total: 112, stageStartedAt: null, progressAt: '2026-10-05T10:00:00Z',
   ...over,
 })
@@ -80,10 +80,21 @@ describe('the Generation banner', () => {
 
   it('a run stopped before it finished, or components cut short', () => {
     expect(generationSummary(view(comps, { run: run({ alive: false, stopped: true }) }))?.row)
-      .toEqual({ kind: 'stopped', at: '2026-10-05T10:00:00Z', cutShort: 0, cut: [] })
+      .toEqual({ kind: 'stopped', at: '2026-10-05T10:00:00Z', cutShort: 0, cut: [], paused: false })
     const failed = generationSummary(view([...comps, one('Layer2.Uart', { state: 'failed' })]))?.row
     expect(failed).toMatchObject({ kind: 'stopped', at: null, cutShort: 1 })
     expect(failed?.kind === 'stopped' && failed.cut.map((c) => c.id)).toEqual(['Layer2.Uart'])   // the banner names them
+  })
+
+  it('a paused run (NW-1): the stopped row, said as paused, from its job or its run record', () => {
+    const paused = { id: 'j', mode: 'auto', status: 'paused' }
+    const ended = run({ alive: false, outcome: 'paused', paused: true, finishedAt: '2026-10-05T11:00:00Z' })
+    expect(generationSummary(view(comps, { run: ended, job: paused }))?.row)
+      .toEqual({ kind: 'stopped', at: '2026-10-05T11:00:00Z', cutShort: 0, cut: [], paused: true })
+    // A command-line run paused: no job, the run record says so.
+    expect(generationSummary(view(comps, { run: ended }))?.row).toMatchObject({ kind: 'stopped', paused: true })
+    // Resumed: at work again.
+    expect(generationSummary(view(comps, { run: run(), job: { ...paused, status: 'running' } }))?.row?.kind).toBe('running')
   })
 
   it('nothing at work: the components without documents; one no run can make does not count', () => {
