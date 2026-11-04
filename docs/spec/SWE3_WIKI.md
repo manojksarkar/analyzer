@@ -24,7 +24,8 @@ One rule table per section of the document, in document order:
 Each rule has its **ID**, the **Rule**, an **Example**, and **Looks wrong, but is expected**: what a
 reader may take for a defect although the rule asks for it. ⚠ marks a rule, or a case, not agreed yet;
 all of them are listed again in [Open questions](#open-questions). The short notes under some tables say
-why a rule is the way it is.
+why a rule is the way it is. **An id never changes:** a new rule takes the next number of its section,
+and a rule that goes stays in its table, struck through, so its number is never used again.
 
 A review comment is one of five things:
 

@@ -210,8 +210,9 @@ The list the user should not have to retype. A rule change is not done until all
    until `plan_runs` matched the layer's groups by their qualified ids). Reading a `.docx` back:
    `tools/dump_docx.py`, but it flattens cell line breaks to ` // `, so check a real cell with
    `python-docx` before believing a cell is ugly.
-5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md` (client-facing; tables, prose only where
-   rationale needs it; an undecided rule goes in as a `⚠ To confirm`, never as a rule). Mechanism, gaps
+5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md`: a numbered row in its section's rule table
+   (`ID | Rule | Example | Looks wrong, but is expected`), the next free id, never a renumbering —
+   reviews count comments by id; an undecided rule gets `⚠` and a row in Open questions. Mechanism, gaps
    and the matrix → the `project-context/` topic file + a dated entry in the newest `project-context/history/`
    file.
 6. **Every consumer** — an output rule has more than one implementation:

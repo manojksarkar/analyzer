@@ -77,6 +77,10 @@ Rules that fall out of this:
   keep their shape. The review & update set is REQUIREMENTS (`docs/`) → SPEC + API_SPEC (`docs/spec/`) →
   DESIGN + HANDOVER (`docs/design/`); the HANDOVER is what a merger reads first. The project context's file
   sizes, the index's links and CLAUDE.md's import of it: `tests/unit/test_project_context_fits.py`.
+- **SWE3_WIKI's rule ids are stable** — a review's comments are counted by them (BACKLOG S3-12). A new rule
+  takes the next free number of its section, at the end of the table it belongs to; a rule that goes is
+  struck through in place (`~~UH-07~~ removed YYYY-MM-DD: why`), never renumbered or reused. A ⚠ rule is
+  listed in Open questions. `tests/unit/test_swe3_wiki_rules.py` checks ids, order and open questions.
 - **One list of open work.** Every open item — defect, enhancement, a subsystem's forward work — is a row
   in `docs/BACKLOG.md`. There are no subsystem `PLAN.md` files (the ones in `engine/`, `api/` and `web-app/`
   were folded into BACKLOG on 2026-10-30): a second list drifts. `docs/planning/*_PLAN.md` stay: they are
