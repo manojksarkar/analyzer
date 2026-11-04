@@ -157,8 +157,8 @@ Section N.1.3: one diagram per unit. **Boxes are units, arrows are interfaces.**
 | UD-06 | Interfaces between the same two units in the same direction share one arrow; its label lists all their ids, spaced so labels never run together | — | — |
 | UD-07 | A function published only through a table of function pointers draws its arrow to the unit that registers it | — | — |
 | UD-08 | A unit never draws an arrow to itself | — | — |
-| UD-09 | Layout: the unit's component is a yellow box in the middle; this unit sits inside it with a thick border; the other units of the document's components sit beside it in a lighter style; every other unit is external | — | — |
-| UD-10 | A unit whose arrow points **into** this unit is on the left; one whose arrow points **out of** it is on the right. A unit with arrows both ways is drawn twice, once on each side, each box with the ids of its own arrow | — | "a unit is drawn twice" |
+| UD-09 | Layout: a yellow component box in the middle holds this unit (thick border) and the units of the document's components that share an arrow with it (lighter style). Units of other components are drawn outside the box. A unit with no arrow to this one is not drawn | — | "unit `FtlLog` of the same component is missing" — it shares no interface |
+| UD-10 | Inside the box and outside it alike, a unit whose arrow points **into** this unit comes before it (left); one whose arrow points **out of** it comes after it (right). A unit with arrows both ways is drawn twice, each box with the ids of its own arrow | — | "a unit is drawn twice" |
 | UD-11 | The unit's own **published** globals (those with an interface row) are boxes with **no arrows** — a global is always `In/Out` — stacked above the unit in interface-id order, labelled with the name (`Owner::s_count` for a class static member) | — | "the global has no arrow" |
 | UD-12 | Other units' globals, private globals and `extern` declarations are not drawn | — | "the global this unit reads is missing" |
 | UD-13 | Box labels are `Component/Unit`, the layer dropped. A character that would break the picture is replaced | — | — |
