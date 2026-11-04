@@ -745,6 +745,16 @@
               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">terminal</span>
               Logs
             </a>
+            <!-- Admins: Pause (NW-1) -- the run stops before its next step (the model, or the next
+                 component) and keeps what it made; paused, the same button is Resume. -->
+            <button id="gen-pause-btn" onclick="pauseGeneration()"
+                    title="Stop before the next step: the model, or the next component. What the run made is kept."
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
+                    style="border:1px solid #2c2f37;color:#a3a7b1;"
+                    onmouseenter="this.style.color='#f2f3f5'" onmouseleave="this.style.color='#a3a7b1'">
+              <span id="gen-pause-icon" class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">pause_circle</span>
+              <span id="gen-pause-label">Pause</span>
+            </button>
             <button onclick="cancelGeneration()"
                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
                     style="border:1px solid #4d2020;color:#ff7070;"
@@ -812,7 +822,7 @@
           </div>
           <div class="flex items-center gap-2 mt-2 px-1">
             <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">info</span>
-            <p class="font-label-sm text-label-sm text-on-surface-variant">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
+            <p id="gen-info" class="font-label-sm text-label-sm text-on-surface-variant">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
           </div>
         </div>
 
@@ -884,8 +894,9 @@
            Staged generation, in one row: shown only while a component of this version has no
            documents or a run is making them; gone once every one has its documents. Variants: no
            run going -> a neutral icon, "43 components have no documents yet", no Stop; a run that
-           stopped -> amber, "Generation stopped 3 hours ago", with the resume command. "View
-           components" opens the drawer below. -->
+           stopped -> amber, "Generation stopped 3 hours ago", with the resume command; a run that
+           paused -> amber, "Generation paused", with Resume (admins). "View components" opens the
+           drawer below. -->
       <div id="gen-banner" class="mb-6" style="display:none;">
         <div role="status" class="bg-surface-container-lowest border border-outline-variant rounded-xl" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
           <span class="material-symbols-outlined animate-spin flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#6aa9ff;">autorenew</span>
@@ -3374,10 +3385,19 @@ function rerunVersion(tag) {
 }
 
 // ── Run modal ──
+// The newest numbered version (v3, v1.1, v1.2.0), its second number up, in the same shape; never a taken name.
 function suggestNextVersion() {
   if (!VERSIONS.length) return 'v1.0.0';
-  const m = VERSIONS[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
-  return m ? `v${m[1]}.${parseInt(m[2]) + 1}.0` : '';
+  const m = VERSIONS.map(v => v.tag.match(/^(v?)(\d+)(?:\.(\d+))?(?:\.(\d+))?$/i)).find(x => x);
+  if (!m) return '';
+  const nums = m.slice(2).filter(x => x !== undefined).map(Number);
+  const taken = new Set(VERSIONS.map(v => v.tag));
+  for (let i = 0; i < 100; i++) {
+    if (nums.length === 1) nums[0] += 1; else { nums[1] += 1; nums.fill(0, 2); }
+    const name = m[1] + nums.join('.');
+    if (!taken.has(name)) return name;
+  }
+  return '';
 }
 
 function openRunConfig() {
@@ -3437,6 +3457,9 @@ function startGeneration() {
     String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
 
   _elapsed = 0; _phase = 1;
+  setPauseButton('pause');
+  document.getElementById('gen-live-badge').style.color = '#fff';
+  document.getElementById('gen-info').textContent = RUNNING_INFO;
 
   document.getElementById('gen-header').style.background = '#0b0c0f';
   document.getElementById('gen-header-title').textContent = 'Analysis Running';
@@ -3579,6 +3602,105 @@ function cancelGeneration() {
   setState(prevState, c);
   showToast('cancel', 'Analysis job cancelled.', '#f5a524');
 }
+
+// ── Pause (NW-1) ──
+// Pause asks the run to stop before its next step -- the model, or the next component -- and it
+// keeps what it made; until it gets there the button says Pausing. Paused, nothing runs: no
+// process, no LLM call. Resume carries it on from the step it stopped before (`analyzer.py
+// resume`); Cancel Job still deletes the draft. Demo: #paused.
+const PAUSE_COLORS = { base: '#a3a7b1', resume: '#6aa9ff', amber: '#f5a524', amberText: '#ffc966', onAmber: '#1a1205', live: '#1a6ce6', spin: '#1d7bff' };
+const RUNNING_INFO = 'Job runs on the server — switch branches or close this tab safely. Return any time to check progress.';
+let _pausedBefore = 0;
+function setPauseButton(mode) {          // 'pause' | 'pausing' | 'resume'
+  const b = document.getElementById('gen-pause-btn');
+  document.getElementById('gen-pause-label').textContent = { pause: 'Pause', pausing: 'Pausing…', resume: 'Resume' }[mode];
+  document.getElementById('gen-pause-icon').textContent = mode === 'resume' ? 'play_circle' : 'pause_circle';
+  b.disabled = mode === 'pausing';
+  b.style.opacity = mode === 'pausing' ? '.6' : '';
+  b.style.cursor = mode === 'pausing' ? 'default' : '';
+  const c = mode === 'resume' ? PAUSE_COLORS.resume : PAUSE_COLORS.base;
+  b.style.color = c;
+  b.onmouseleave = () => { b.style.color = c; };
+  b.onclick = mode === 'resume' ? resumeGeneration : pauseGeneration;
+  b.title = mode === 'resume' ? 'Carry the run on from where it stopped.'
+    : mode === 'pausing' ? 'The run stops before its next step.'
+    : 'Stop before the next step: the model, or the next component. What the run made is kept.';
+}
+function pauseGeneration() {
+  setPauseButton('pausing');
+  document.getElementById('act-sub').textContent = 'Pausing: the run stops before its next step and keeps what it made.';
+  // Demo: the run reaches its next step a few seconds later -- in Phases 3-4 the next
+  // component's views (a component's export always follows its views).
+  setTimeout(() => showPaused(Math.min(_phase + 1, 3)), 3000);
+}
+function setPhPaused(n) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = PAUSE_COLORS.amber;
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0';
+  ic.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:' + PAUSE_COLORS.onAmber + ';font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">pause</span>';
+  const tm = document.getElementById('ph'+n+'-time'); tm.textContent = 'Paused'; tm.style.color = PAUSE_COLORS.amberText;
+  document.getElementById('ph'+n+'-name').style.color = '#f2f3f5';
+}
+function showPaused(next) {
+  clearInterval(_elapsedTick);
+  _phaseTimers.forEach(clearTimeout); _phaseTimers = [];
+  _pausedBefore = next;
+  const m = Math.floor(_elapsed/60), sec = _elapsed%60;
+  for (let n = 1; n < next; n++) {
+    if (!document.getElementById('ph'+n+'-time').textContent.startsWith('Done')) setPhDone(n, 'Done · '+m+'m '+sec+'s');
+    if (n > 1) setLine('line'+(n-1)+n, 'ph-done');
+  }
+  setPhPaused(next);
+  for (let n = next + 1; n <= 4; n++) setPhPending(n);
+
+  document.getElementById('gen-header-title').textContent = 'Analysis Paused';
+  const badge = document.getElementById('gen-live-badge');
+  badge.textContent = 'Paused'; badge.style.background = PAUSE_COLORS.amber; badge.style.color = PAUSE_COLORS.onAmber;
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0';
+  sw.style.cssText = 'background:' + PAUSE_COLORS.amber + ';';
+  sw.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:' + PAUSE_COLORS.onAmber + ';font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">pause</span>';
+
+  document.getElementById('act-icon').textContent = 'pause_circle';
+  document.getElementById('act-icon').style.color = PAUSE_COLORS.amberText;
+  document.getElementById('act-text').textContent = 'Paused before Phase ' + next + ' · ' + document.getElementById('ph'+next+'-name').textContent;
+  document.getElementById('act-sub').textContent = 'What the run made is kept. Resume carries it on from here.';
+  document.getElementById('act-eta').textContent = '';
+  document.getElementById('act-pct').textContent = '';
+  document.getElementById('act-bar').style.background = PAUSE_COLORS.amber;
+  document.getElementById('gen-info').textContent = 'Nothing runs while the job is paused.';
+  setPauseButton('resume');
+  showToast('pause_circle', 'Analysis paused.', PAUSE_COLORS.amberText);
+}
+function resumeGeneration() {
+  const from = _pausedBefore || _phase;
+  _pausedBefore = 0;
+  document.getElementById('gen-header-title').textContent = 'Analysis Running';
+  const badge = document.getElementById('gen-live-badge');
+  badge.textContent = 'Live'; badge.style.background = PAUSE_COLORS.live; badge.style.color = '#fff';
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring';
+  sw.style.cssText = 'border:2px solid ' + PAUSE_COLORS.spin + ';border-top-color:transparent;';
+  sw.innerHTML = '<div class="w-full h-full rounded-full spin" style="border:2px solid ' + PAUSE_COLORS.spin + ';border-top-color:transparent;border-radius:9999px;"></div>';
+  setPhActive(from);
+  setActivity(from);
+  _phase = from;
+  document.getElementById('gen-info').textContent = RUNNING_INFO;
+  setPauseButton('pause');
+  clearInterval(_elapsedTick);
+  _elapsedTick = setInterval(() => { _elapsed++; document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed); }, 1000);
+  _phaseTimers = [];
+  for (let n = from + 1, t = 9000; n <= 4; n++, t += 9000) _phaseTimers.push(setTimeout(() => advanceToPhase(n), t));
+  _phaseTimers.push(setTimeout(() => finishGeneration(), (5 - from) * 9000));
+  showToast('play_circle', 'Resuming from Phase ' + from + '.', PAUSE_COLORS.resume);
+}
+if (location.hash === '#paused') window.addEventListener('load', () => {
+  startGeneration();
+  _elapsed = 2052;
+  advanceToPhase(2);
+  showPaused(3);
+  document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed);
+});
 
 // ── Toast ──
 let _toastTimer = null;
