@@ -745,10 +745,10 @@
               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">terminal</span>
               Logs
             </a>
-            <!-- Admins: Pause (NW-1) -- the run stops before its next step (the model, or the next
-                 component) and keeps what it made; paused, the same button is Resume. -->
+            <!-- Admins: Pause (NW-1) -- the run stops at once, in whatever phase it is in, and keeps
+                 what it made; paused, the same button is Resume, which starts that phase again. -->
             <button id="gen-pause-btn" onclick="pauseGeneration()"
-                    title="Stop before the next step: the model, or the next component. What the run made is kept."
+                    title="Stop the run now. What it made is kept; Resume starts this phase again."
                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
                     style="border:1px solid #2c2f37;color:#a3a7b1;"
                     onmouseenter="this.style.color='#f2f3f5'" onmouseleave="this.style.color='#a3a7b1'">
@@ -3628,13 +3628,14 @@ function genBannerResume() {
 }
 
 // ── Pause (NW-1) ──
-// Pause asks the run to stop before its next step -- the model, or the next component -- and it
-// keeps what it made; until it gets there the button says Pausing. Paused, nothing runs: no
-// process, no LLM call. Resume carries it on from the step it stopped before (`analyzer.py
-// resume`); Cancel Job still deletes the draft. Demo: #paused.
+// Pause stops the run at once, in whatever phase it is in, and keeps what it made; the button
+// says Pausing for the moment its processes take to go. Paused, nothing runs: no process, no LLM
+// call. Resume starts the phase it stopped in again (`analyzer.py resume`): the parse from its
+// start, the model with the LLM's answers from the cache, the component at work from its views.
+// Cancel Job still deletes the draft. Demo: #paused.
 const PAUSE_COLORS = { base: '#a3a7b1', resume: '#6aa9ff', amber: '#f5a524', amberText: '#ffc966', onAmber: '#1a1205', live: '#1a6ce6', spin: '#1d7bff' };
 const RUNNING_INFO = 'Job runs on the server — switch branches or close this tab safely. Return any time to check progress.';
-let _pausedBefore = 0;
+let _pausedAt = 0;
 function setPauseButton(mode) {          // 'pause' | 'pausing' | 'resume'
   const b = document.getElementById('gen-pause-btn');
   document.getElementById('gen-pause-label').textContent = { pause: 'Pause', pausing: 'Pausing…', resume: 'Resume' }[mode];
@@ -3646,16 +3647,16 @@ function setPauseButton(mode) {          // 'pause' | 'pausing' | 'resume'
   b.style.color = c;
   b.onmouseleave = () => { b.style.color = c; };
   b.onclick = mode === 'resume' ? resumeGeneration : pauseGeneration;
-  b.title = mode === 'resume' ? 'Carry the run on from where it stopped.'
-    : mode === 'pausing' ? 'The run stops before its next step.'
-    : 'Stop before the next step: the model, or the next component. What the run made is kept.';
+  b.title = mode === 'resume' ? 'Start the phase it stopped in again.'
+    : mode === 'pausing' ? 'The run is stopping.'
+    : 'Stop the run now. What it made is kept; Resume starts this phase again.';
 }
 function pauseGeneration() {
   setPauseButton('pausing');
-  document.getElementById('act-sub').textContent = 'Pausing: the run stops before its next step and keeps what it made.';
-  // Demo: the run reaches its next step a few seconds later -- in Phases 3-4 the next
-  // component's views (a component's export always follows its views).
-  setTimeout(() => showPaused(Math.min(_phase + 1, 3)), 3000);
+  document.getElementById('act-sub').textContent = 'Pausing: the run stops now and keeps what it made.';
+  // Demo: its processes are gone a moment later. In Phases 3-4 the component at work starts
+  // again from its views (a component's export always follows its views).
+  setTimeout(() => showPaused(Math.min(_phase, 3)), 1000);
 }
 function setPhPaused(n) {
   const ic = document.getElementById('ph'+n+'-icon');
@@ -3668,7 +3669,7 @@ function setPhPaused(n) {
 function showPaused(next) {
   clearInterval(_elapsedTick);
   _phaseTimers.forEach(clearTimeout); _phaseTimers = [];
-  _pausedBefore = next;
+  _pausedAt = next;
   const m = Math.floor(_elapsed/60), sec = _elapsed%60;
   for (let n = 1; n < next; n++) {
     if (!document.getElementById('ph'+n+'-time').textContent.startsWith('Done')) setPhDone(n, 'Done · '+m+'m '+sec+'s');
@@ -3687,8 +3688,8 @@ function showPaused(next) {
 
   document.getElementById('act-icon').textContent = 'pause_circle';
   document.getElementById('act-icon').style.color = PAUSE_COLORS.amberText;
-  document.getElementById('act-text').textContent = 'Paused before Phase ' + next + ' · ' + document.getElementById('ph'+next+'-name').textContent;
-  document.getElementById('act-sub').textContent = 'What the run made is kept. Resume carries it on from here.';
+  document.getElementById('act-text').textContent = 'Paused at Phase ' + next + ' · ' + document.getElementById('ph'+next+'-name').textContent;
+  document.getElementById('act-sub').textContent = 'What the run made is kept. Resume starts Phase ' + next + ' from its beginning.';
   document.getElementById('act-eta').textContent = '';
   document.getElementById('act-pct').textContent = '';
   document.getElementById('act-bar').style.background = PAUSE_COLORS.amber;
@@ -3697,8 +3698,8 @@ function showPaused(next) {
   showToast('pause_circle', 'Analysis paused.', PAUSE_COLORS.amberText);
 }
 function resumeGeneration() {
-  const from = _pausedBefore || _phase;
-  _pausedBefore = 0;
+  const from = _pausedAt || _phase;
+  _pausedAt = 0;
   document.getElementById('gen-header-title').textContent = 'Analysis Running';
   const badge = document.getElementById('gen-live-badge');
   badge.textContent = 'Live'; badge.style.background = PAUSE_COLORS.live; badge.style.color = '#fff';
@@ -3716,13 +3717,13 @@ function resumeGeneration() {
   _phaseTimers = [];
   for (let n = from + 1, t = 9000; n <= 4; n++, t += 9000) _phaseTimers.push(setTimeout(() => advanceToPhase(n), t));
   _phaseTimers.push(setTimeout(() => finishGeneration(), (5 - from) * 9000));
-  showToast('play_circle', 'Resuming from Phase ' + from + '.', PAUSE_COLORS.resume);
+  showToast('play_circle', 'Resuming: Phase ' + from + ' starts again.', PAUSE_COLORS.resume);
 }
 if (location.hash === '#paused') window.addEventListener('load', () => {
   startGeneration();
   _elapsed = 2052;
   advanceToPhase(2);
-  showPaused(3);
+  showPaused(2);
   document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed);
 });
 
