@@ -98,7 +98,7 @@ newer entry and the code win.
 - **Next work** (2026-10-31 … 2026-11-04c, branch `feat/next-work`, in develop 2026-11-04): delete a project
   whole (migration **0019** -- each database runs `analyzer.py setup` once), movable workspaces and one API per
   database, edit on the compare page, a function's code beside its flowchart, Cancel in edit mode, Fresh run,
-  Pause and Resume. Left: [BACKLOG](docs/BACKLOG.md) "Next work".
+  Pause and Resume. Left: [BACKLOG](docs/BACKLOG.md) RA-5, LG-3, SG-8 (once NW-2, NW-8, NW-1).
 - **UT export** (2026-10-15, branch `feat/ut-export`, develop merged in 2026-11-04): the target format (a test-case
   file per unit, `hierarchy.json`) and solved values — [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md) "View 5".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
