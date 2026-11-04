@@ -10,15 +10,9 @@
 > estimated — **Status** `open` · `blocked` · `decide` (waits on an answer) · `deferred` · `parked` ·
 > `to verify` (done; waits on the review's check — only the review marks an item fixed).
 
-## Next work (listed 2026-10-29, priorities 2026-10-30)
+## Next work (closed 2026-11-05)
 
-Order: NW-2 → NW-8 → NW-1 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5; 2026-11-03: NW-3; 2026-11-04: NW-1 instant, checked on the dev server (history 2026-11-04c).
-
-| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
-|---|---|---|---|---|---|---|---|
-| NW-1 | Pause and resume a run: instant, any phase, done 2026-11-04; left: pause by itself after N LLM failures in a row, a CLI `pause`, sub-phases, a Pause in the run's first ~30 s | enhance | P2 | M | — | part done | `pipeline_runner.py`, `llm_core/client.py` |
-| NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
-| NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
+The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the project-context history (2026-10-31 … 2026-11-04d); the open ones moved to their areas, in their order then — NW-2 → [RA-5](#review-and-approval-word-files), NW-8 → [LG-3](#logs-and-llm), NW-1 → [SG-8](#staged-generation).
 
 ## Logs and LLM
 
@@ -26,6 +20,7 @@ Order: NW-2 → NW-8 → NW-1 (priority, then dependency, then the smaller one).
 |---|---|---|---|---|---|---|---|
 | LG-1 | Full logs: every request, parsed file, LLM call and command in the log files, with thread, time and outcome; one run's log as text (`analyzer.py logs`); UI unchanged | enhance | — | S–M | — | open | `logging_setup.py`, `request_log.py`, `tu_prefetch.py`, `client.py` |
 | LG-2 | The struct-description prompt has no cap (name + whole field list) | issue | — | S | — | open | `llm_enrichment.py` `get_struct_description` |
+| LG-3 | Parse workers and several LLM calls at once as the default (was NW-8) | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
 
 ## Shared
 
@@ -131,6 +126,7 @@ Order: NW-2 → NW-8 → NW-1 (priority, then dependency, then the smaller one).
 | RA-2 | Design open questions 1–4 | input | — | — | answers | decide | REVIEW_APPROVE_DESIGN |
 | RA-3 | "My reviews" shows only the version on screen (`GET /reviews/mine` unused) | issue | — | S | — | open | web app |
 | RA-4 | In-process re-export quirks; `/runs` answers 403 where its neighbours answer 404 | debt | — | — | — | open | `pipeline_runner.py` |
+| RA-5 | Approve a document only when its base document is reviewed (was NW-2) | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | WF-1 | `GET /jobs/{id}` has no `componentsFailed` | issue | — | S | — | open | `routes/jobs.py` |
 | WF-2 | Some Word-file messages are not in the mockup | input | — | — | wording | decide | `web-app/` |
 | WF-3 | A generation, resume's close or an unscoped re-export still store the whole version | issue | — | — | — | open | `engine/review/word_files.py` |
@@ -148,6 +144,7 @@ Order: NW-2 → NW-8 → NW-1 (priority, then dependency, then the smaller one).
 | SG-5 | `--detach` not proved on Linux (systemd, containers) | risk | — | — | — | open | CLI_COMMANDS "A run that lasts days" |
 | SG-6 | Adding a layer re-parses every layer; `--llm-summarize` re-summarises the old ones | perf | — | — | — | open | `parser.py`, `tu_includes` |
 | SG-7 | Adding a layer marks components of the other layers out of date (`stale`), though in the reviewed code no layer calls another directly | issue | — | — | — | open | `incremental/extend.py` `fingerprints`, `changed_components` |
+| SG-8 | Pause and resume a run: instant, any phase, done 2026-11-04; left: pause by itself after N LLM failures in a row, a CLI `pause`, sub-phases, a Pause in the run's first ~30 s (was NW-1) | enhance | P2 | M | — | part done | `pipeline_runner.py`, `llm_core/client.py` |
 
 ## Repositories
 
@@ -200,7 +197,7 @@ header owner pick), so a new layer's unit including a common header moves every 
 the owner does not change; and any structural field the all-layer re-parse changes (macros per layer, `unknown`).
 First step: on a review-site add, print which fingerprint part moved for one stale component.
 
-**NW-1** Done 2026-11-04: Pause (admins) stops the run at once, in any phase (`pause.json` in the run folder,
+**SG-8** (was NW-1) Done 2026-11-04: Pause (admins) stops the run at once, in any phase (`pause.json` in the run folder,
 then the run's processes stopped); the job waits `paused` at the phase it was in, through an API restart, and
 Resume runs `resume` as the same job -- that phase starts again, the LLM cache answering what was written (lost:
 the parse so far in Phase 1; the last minute's LLM answers in Phase 2; the component at work in Phases 3-4).
@@ -208,16 +205,6 @@ Left: (1) pause by itself after N LLM failures in a row (proposed N = 5, "the LL
 can count the run's LLM failure lines and pause as an admin would; (2) a CLI `pause --version-id`; (3) sub-phases,
 so a pause in a long phase keeps more; (4) Pause in a run's first ~30 s (its code copy) answers 409 "not in the
 background yet, try again in a moment" -- the API could keep the ask and pause the run once it has started. Open with the user: a paused run blocks a new one (as built), N.
-
-**NW-2** Today `approve()` checks the state and the Word file only; bulk approval goes through it.
-Doubts: base = the previous version's document, SWE.3 before its SWE.4, or both? "reviewed" = approved?
-admin override? bulk: skip or refuse? a run with no baseline? Approach: one check in `approve()`, 409
-`BASE_NOT_REVIEWED` naming the base; the web disables Approve with the reason.
-
-**NW-8** Each speed-up is proved to give the same output (PIPELINE_SPEED_PLAN). Doubts: lanes stable at
-the review site now the prompts are capped? `parseWorkers` against memory? several calls on one lane
-against `rateLimitSeconds`? an off switch once they are the defaults (today an empty block is the old
-path). Approach: after one review-site run with them on and the same output, make them the defaults.
 
 **LG-1** Today the files take DEBUG already (`logs/run_<date>.log`, the live log), but a web run's text
 copy sits inside its frozen code copy, a successful GET leaves no line, the parse has no line per file and
@@ -230,6 +217,11 @@ prompt text, source code. Doubts: log polling GETs? keep a run's log past `logs.
 `llmServer.maxContextTokens`; the struct prompt is not. Approach: the fields up to the limit, then "… and
 N more". Note: at 127,488 tokens (≈ 500k characters) no cap cuts anything; if the 502 lines show big
 prompts, lower it to about the smallest failing size ÷ 4 × 0.8.
+
+**LG-3** (was NW-8) Each speed-up is proved to give the same output (PIPELINE_SPEED_PLAN). Doubts: lanes stable at
+the review site now the prompts are capped? `parseWorkers` against memory? several calls on one lane
+against `rateLimitSeconds`? an off switch once they are the defaults (today an empty block is the old
+path). Approach: after one review-site run with them on and the same output, make them the defaults.
 
 **SH-5** `entity_hashes` / `_type_keys` stay bare qualified names while the dictionary is layer-keyed: two
 layers defining one type share a hash (the last wins), so a narrowed parse can miss a change in the
@@ -292,6 +284,11 @@ with a download of them), the name typed; the project is marked deleted and kept
 superuser's Purge now): what Delete does today. An audit record of who archived, deleted, restored,
 purged survives the purge. A running job blocks each step; the server checks each one. Must-have
 before deployment: (1); (2)-(3) can follow.
+
+**RA-5** (was NW-2) Today `approve()` checks the state and the Word file only; bulk approval goes through it.
+Doubts: base = the previous version's document, SWE.3 before its SWE.4, or both? "reviewed" = approved?
+admin override? bulk: skip or refuse? a run with no baseline? Approach: one check in `approve()`, 409
+`BASE_NOT_REVIEWED` naming the base; the web disables Approve with the reason.
 
 **WF-2** "Open <doc> to try again.", "Open X to update it.", "Can't tell if this Word file is up to
 date.", "Checking its Word file…", "2 pictures being drawn", "Update after the run on v1.2.0 ends.", the

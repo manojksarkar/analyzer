@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-05 | The open next-work items move to their areas: NW-2 → RA-5, NW-8 → LG-3, NW-1 → SG-8 | [16](16-2026-10-30.md) |
 | 2026-11-04d | `fix/review-issues` and `feat/next-work` are in develop (fast-forward); each database runs `analyzer.py setup` once (0019) | [16](16-2026-10-30.md) |
 | 2026-11-04c | Resume after a pause in a run's first seconds starts it again (NW-1 check pass) | [16](16-2026-10-30.md) |
 | 2026-11-04b | Pause is instant (NW-1): the run stops now, in any phase; Resume starts that phase again | [16](16-2026-10-30.md) |

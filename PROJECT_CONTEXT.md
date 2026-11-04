@@ -98,7 +98,8 @@ newer entry and the code win.
 - **Next work** (2026-10-31 … 2026-11-04c, branch `feat/next-work`, in develop 2026-11-04): delete a project
   whole (migration **0019** -- each database runs `analyzer.py setup` once), movable workspaces and one API per
   database, edit on the compare page, a function's code beside its flowchart, Cancel in edit mode, Fresh run,
-  Pause and Resume. Left: [BACKLOG](docs/BACKLOG.md) "Next work".
+  Pause and Resume. Left, in [BACKLOG](docs/BACKLOG.md): RA-5 approve after the base document, LG-3 the
+  speed-ups as the default, SG-8 the rest of Pause (once NW-2, NW-8, NW-1).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
