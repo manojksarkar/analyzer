@@ -662,14 +662,24 @@
            paused -> amber, "Generation paused", with Resume (admins). "View components" opens the
            drawer below. -->
       <div id="gen-banner" class="mb-6" style="display:none;">
-        <div role="status" class="bg-white border border-outline-variant rounded-xl" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
+        <div id="gen-row-running" role="status" class="bg-white border border-outline-variant rounded-xl" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
           <span class="material-symbols-outlined animate-spin flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#0058be;">autorenew</span>
           <p style="flex:1 1 300px;min-width:0;font-family:Inter,sans-serif;font-size:13px;color:#44474c;"><span style="font-weight:600;color:#0b1c30;">Generating documents</span> · 11 of 54 components done · drawing flowcharts, 38 of 112 · started 2 hours ago</p>
           <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#0058be;"></span></span>
           <button type="button" onclick="openComponents()" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #c4c6cd;background:#fff;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0b1c30;white-space:nowrap;cursor:pointer;text-decoration:none;">View components</button>
           <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0058be;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">terminal</span>Logs</a>
           <!-- Admin: stop the web job at work on this version (asks first: what is finished stays) -->
-          <button type="button" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped." style="border:none;background:none;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#ba1a1a;cursor:pointer;">Stop</button>
+          <button type="button" onclick="genBannerStop()" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped." style="border:none;background:none;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#ba1a1a;cursor:pointer;">Stop</button>
+        </div>
+        <!-- After Stop: the finished components keep their documents, the rest show as Stopped, and
+             an admin's Resume carries them on (POST .../versions/{vid}/resume). -->
+        <div id="gen-row-stopped" role="status" class="bg-white border border-outline-variant rounded-xl" style="display:none;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
+          <span class="material-symbols-outlined flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#a8500a;">warning</span>
+          <p style="flex:1 1 300px;min-width:0;font-family:Inter,sans-serif;font-size:13px;color:#44474c;"><span style="font-weight:600;color:#0b1c30;">Generation stopped</span> just now before it finished · not made: Layer2.Gpio, Layer2.Uart +41 more · 11 of 54 done</p>
+          <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#f59e0b;"></span></span>
+          <button type="button" onclick="genBannerResume()" title="Carry the run on from where it stopped" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:6px;border:none;background:#0058be;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">play_arrow</span>Resume</button>
+          <button type="button" onclick="openComponents()" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #c4c6cd;background:#fff;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0b1c30;white-space:nowrap;cursor:pointer;">View components</button>
+          <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0058be;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">terminal</span>Logs</a>
         </div>
       </div>
 
@@ -3333,6 +3343,20 @@ function cancelGeneration() {
   const prevState = (c && c.pageState !== 'running') ? c.pageState : 'never';
   setState(prevState, c);
   showToast('cancel', 'Analysis job cancelled.', '#d97706');
+}
+
+// ── The banner's Stop and Resume ──
+// Stop ends the job that is adding documents to this version (the app asks first: StopRunDialog).
+// Finished components keep their documents; the rest show as Stopped; Resume carries them on.
+function genBannerStop() {
+  document.getElementById('gen-row-running').style.display = 'none';
+  document.getElementById('gen-row-stopped').style.display = 'flex';
+  showToast('cancel', 'Stopped. Finished components keep their documents.', '#a8500a');
+}
+function genBannerResume() {
+  document.getElementById('gen-row-stopped').style.display = 'none';
+  document.getElementById('gen-row-running').style.display = 'flex';
+  showToast('play_circle', 'Resuming: the run carries on from where it stopped.', '#0058be');
 }
 
 // ── Pause (NW-1) ──
