@@ -982,6 +982,31 @@ class TestPause:
         assert got.status == "paused" and got.phase == 3
         assert [p.status for p in got.phases] == ["done", "done", "pending", "pending"]
 
+    def test_paused_before_the_run_recorded_itself_resume_runs_it_again(self, sql_db, version,
+                                                                        tmp_path, fast_follow):
+        """Paused in its first seconds, loading its code: the run never wrote its record. The
+        command in run.json is recorded for it, so `resume` starts the generate again -- not
+        "the command that started it is not recorded" (seen on the dev server, 2026-11-04)."""
+        from core import frozen_run
+        from core import version_run as vr
+        from incremental.staged import resume_plan
+        pr = fast_follow
+        eng = sql_db._engine
+        job = _bg_job(sql_db, version, completed_at=None)
+        pr._init_state(job.id)
+        frozen_run.request_pause(str(tmp_path))
+        _, run = _fake_run(tmp_path, "die")
+        argv = ["generate", "--project-id", "p1", "--version-id", version.id, "--full"]
+        run["argv"] = argv
+        assert vr.run_row(version.id, engine=eng) is None
+        assert not pr._follow_detached(sql_db, job.id, run, phase_start=1)
+        assert sql_db.jobs.get(job.id).status == "paused"
+        row = vr.run_row(version.id, engine=eng)
+        assert row["command"] == "generate" and list(row["argv"]) == argv
+        assert row["outcome"] == "paused"
+        plan = resume_plan(alive=False, pipeline_status=None, view=[], run=row)
+        assert plan == {"action": "regenerate", "argv": argv}
+
     def test_pause_is_asked_through_the_run_s_folder_once(self, sql_db, version, tmp_path,
                                                           monkeypatch):
         from api.services import pipeline_runner as pr

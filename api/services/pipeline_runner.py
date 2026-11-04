@@ -2162,9 +2162,11 @@ def _launch_detached(cmd: list, env: dict) -> dict:
         raise _LaunchFailed(text.strip() or f"the launcher exited with code {proc.returncode}")
     log_path = log.group(1)
     run = {"pid": int(pid.group(1)), "log_path": log_path, "run_dir": os.path.dirname(log_path)}
-    try:                                    # run.json has the process's start time (identity)
+    try:            # run.json has the process's start time (identity) and its command line
         with open(os.path.join(run["run_dir"], "run.json"), encoding="utf-8") as fh:
-            run["create_time"] = json.load(fh).get("create_time")
+            info = json.load(fh)
+        run["create_time"] = info.get("create_time")
+        run["argv"], run["code_dir"] = info.get("argv"), info.get("code_dir")
     except (OSError, ValueError):
         pass
     return run
@@ -2319,7 +2321,7 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
         if code == fr.EXIT_PAUSED or fr.pause_asked(run_dir):
             # Paused (NW-1): `request_pause` stopped it -- no exit code, or the failure a phase
             # recorded as it was stopped -- or it stopped itself before a step (exit 4).
-            _mark_paused(db, job_id, tracker.recent_lines)
+            _mark_paused(db, job_id, tracker.recent_lines, run)
             return False
         if code is None:
             _append_log(job_id, "The run's process ended before it finished.")
@@ -2416,7 +2418,7 @@ def request_pause(db: Any, job: Any, *, by: str = "") -> None:
 _PAUSED_BEFORE = re.compile(r"Paused before Phase (\d)")
 
 
-def _mark_paused(db: Any, job_id: str, lines: list) -> None:
+def _mark_paused(db: Any, job_id: str, lines: list, run: Optional[dict] = None) -> None:
     """The run paused: `request_pause` stopped it, or it stopped itself before a step (exit
     `frozen_run.EXIT_PAUSED`). The job says so and keeps its version; Resume starts the phase it
     paused at from its beginning -- Phases 3-4 from 3, as the component at work makes its views
@@ -2438,14 +2440,16 @@ def _mark_paused(db: Any, job_id: str, lines: list) -> None:
     job.eta_seconds = None
     job.elapsed_seconds = _elapsed_since(job.started_at)
     db.jobs.update(job)
-    _settle_paused_run(db, getattr(job, "version_id", None))
+    _settle_paused_run(db, getattr(job, "version_id", None), run)
     _append_log(job_id, f"Paused at Phase {at}. What the run made is kept; Resume starts Phase "
                         f"{at} from its beginning.")
 
 
-def _settle_paused_run(db: Any, version_id: Optional[str]) -> None:
+def _settle_paused_run(db: Any, version_id: Optional[str], run: Optional[dict] = None) -> None:
     """What a run stopped at once cannot record itself, recorded as a run that pauses before a
-    step records it: the components it was making wait again, and its record says `paused`."""
+    step records it: the components it was making wait again, and its record says `paused`.
+    Stopped before it recorded itself -- in its first seconds, loading its code -- it is recorded
+    here from `run.json`'s command line: `resume` runs that again, as it does a killed parse."""
     vr = _version_run_module()
     eng = getattr(db, "_engine", None)
     if vr is None or eng is None or not version_id:
@@ -2455,6 +2459,12 @@ def _settle_paused_run(db: Any, version_id: Optional[str]) -> None:
                   if r.get("state") == "generating"]
         vr.mark_components(version_id, making, "waiting", engine=eng)
         row = vr.run_row(version_id, engine=eng)
+        argv = list((run or {}).get("argv") or [])
+        if row is None and argv:
+            vr.record_start(version_id, command=argv[0], argv=argv,
+                            log_path=run.get("log_path"), code_dir=run.get("code_dir"),
+                            engine=eng)
+            row = {}
         if row is not None and row.get("outcome") != "paused":
             vr.record_end(version_id, "paused", engine=eng)
     except Exception as exc:                             # noqa: BLE001 - the job is paused anyway
