@@ -298,14 +298,19 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   (`pipeline_runner._version_writer`, on the API's own engine) take the lock; a second is refused
   (`VersionBusy`; web re-export 409 `VERSION_BUSY`). Storing output replaces the version's stored files
   (`persist_output_files`), so two writers lost documents before.
-- **Pause** (2026-11-04, NW-1) — `POST /jobs/{id}/pause` writes `pause.json` in the background run's
-  folder (`frozen_run.request_pause`); `PhaseRunner` checks it before `parser.py`, `model_deriver.py`
-  and `run_views.py` (never between a component's views and its export) and exits `EXIT_PAUSED` (4):
-  the component next in line goes back to `waiting`, the run record says `paused`, the generate engines
-  write no failed manifest. The job ends `paused` (`_mark_paused`), survives an API restart
-  (`fail_interrupted_jobs` skips it), counts as the project's run; `POST /jobs/{id}/resume` =
-  `start_resume`, which reopens the paused job itself. Web: Pause / Pausing… / Resume beside Cancel Job,
-  the banner's "Generation paused" row.
+- **Pause** (2026-11-04, NW-1; instant 2026-11-04b) — `POST /jobs/{id}/pause` (`request_pause`) writes
+  `pause.json` in the background run's folder (`frozen_run.request_pause`), then stops the run's
+  processes at once (`frozen_run.stop`), in any phase. The follower finds it gone, sees the file and
+  pauses the job instead of failing it (`_follow_detached.conclude`, also for a failure a phase recorded
+  as it was stopped): `_mark_paused` -- "Paused at Phase N", N the phase it was in, 4 -> 3 (a component's
+  export follows its views) -- and `_settle_paused_run`: `generating` components back to `waiting`, the
+  run record `paused`. Resume = `resume`, whose plan already starts what was cut short again
+  (regenerate / derive / export): the phase from its beginning, LLM answers from the cache (lost: the
+  last unflushed minute). Fallback: `PhaseRunner` checks the file before `parser.py`,
+  `model_deriver.py`, `run_views.py` and exits `EXIT_PAUSED` (4). A paused job survives an API restart
+  (`fail_interrupted_jobs` skips it) and counts as the project's run; `POST /jobs/{id}/resume` =
+  `start_resume`, which reopens the paused job. Web: Pause / Pausing… / Resume beside Cancel Job, the
+  banner's "Generation paused" row.
 - **The view** — `api/services/version_components.py` `components_view`: the model's components
   (`model_components`) ∪ rows ∪ documents; no row + documents = generated, neither = `not_requested`,
   waiting/generating with no live writer = `stopped`. The rules for which components each command

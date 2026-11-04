@@ -897,9 +897,9 @@ class TestResume:
 
 
 class TestPause:
-    """Pause (NW-1): the run stops before its next step that starts new work, keeps what it made,
-    and its job waits `paused` -- through an API restart -- for Resume, which carries the same job
-    on from there (`analyzer.py resume`)."""
+    """Pause (NW-1): the run stops at once, in whatever phase it is in, keeps what it made, and its
+    job waits `paused` -- through an API restart -- for Resume, which carries the same job on: the
+    phase it paused at starts again (`analyzer.py resume`)."""
 
     def _followed(self, pr, job, run):
         with pr._LOCK:
@@ -918,9 +918,69 @@ class TestPause:
         assert not pr._follow_detached(sql_db, job.id, run, phase_start=2)
         got = sql_db.jobs.get(job.id)
         assert got.status == "paused" and got.error_message is None and got.completed_at is None
-        assert got.phase == 3 and got.current_activity == "Paused before Phase 3"
+        assert got.phase == 3 and got.current_activity == "Paused at Phase 3"
+        assert got.activity_detail == "Resume starts Phase 3 from its beginning."
         assert [p.status for p in got.phases] == ["done", "done", "pending", "pending"]
         assert sql_db.versions.get(version.id) is not None
+
+    def test_pause_stops_the_run_at_once_in_the_phase_it_is_in(self, sql_db, version, tmp_path,
+                                                                fast_follow, monkeypatch):
+        """Mid-Phase 2 -- the LLM's hours -- not at its end: the process is stopped now, the job
+        pauses at Phase 2, the component it was making waits again, the run record says paused."""
+        import threading
+        import time
+        from api.models.domain import AnalysisPhase
+        from core import version_run as vr
+        pr = fast_follow
+        monkeypatch.setattr(pr, "_detach_enabled", lambda db: True)
+        eng = sql_db._engine
+        vr.record_start(version.id, command="generate", argv=["generate"], engine=eng)
+        vr.mark_components(version.id, ["Layer2.Gpio"], "generating", engine=eng)
+        job = _bg_job(sql_db, version, completed_at=None)
+        pr._init_state(job.id)
+        proc, run = _fake_run(tmp_path, "hang", "[10:00:00] INFO orchestration: === Phase 2: "
+                                                "Derive model ===")
+        out = []
+        t = threading.Thread(target=lambda: out.append(
+            pr._follow_detached(sql_db, job.id, run, phase_start=1)), daemon=True)
+        t.start()
+        try:
+            for _ in range(200):                                      # in Phase 2: followed
+                if sql_db.jobs.get(job.id).phase == 2:
+                    break
+                time.sleep(0.05)
+            pr.request_pause(sql_db, sql_db.jobs.get(job.id), by="admin@company.com")
+            assert proc.wait(timeout=30) is not None                  # stopped now
+            t.join(timeout=30)
+            assert out == [False]
+            got = sql_db.jobs.get(job.id)
+            assert got.status == "paused" and got.error_message is None
+            assert got.phase == 2 and got.current_activity == "Paused at Phase 2"
+            assert [p.status for p in got.phases] == ["done", "pending", "pending", "pending"]
+            assert vr.component_rows(version.id, engine=eng)["Layer2.Gpio"]["state"] == "waiting"
+            assert vr.run_row(version.id, engine=eng)["outcome"] == "paused"
+            assert sql_db.versions.get(version.id) is not None
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+
+    def test_paused_in_phase_4_resume_starts_phase_3(self, sql_db, version, tmp_path,
+                                                     fast_follow):
+        """A component's export follows its views: the component at work makes both again. And a
+        phase that recorded a failure as it was stopped is still a pause."""
+        from api.models.domain import AnalysisPhase
+        from core import frozen_run
+        pr = fast_follow
+        job = _bg_job(sql_db, version, phase=4, completed_at=None, phases=[
+            AnalysisPhase(n, f"p{n}", st, None)
+            for n, st in ((1, "done"), (2, "done"), (3, "done"), (4, "running"))])
+        pr._init_state(job.id)
+        frozen_run.request_pause(str(tmp_path))
+        _, run = _fake_run(tmp_path, "1")
+        assert not pr._follow_detached(sql_db, job.id, run, phase_start=3)
+        got = sql_db.jobs.get(job.id)
+        assert got.status == "paused" and got.phase == 3
+        assert [p.status for p in got.phases] == ["done", "done", "pending", "pending"]
 
     def test_pause_is_asked_through_the_run_s_folder_once(self, sql_db, version, tmp_path,
                                                           monkeypatch):

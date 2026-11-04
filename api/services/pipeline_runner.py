@@ -17,7 +17,8 @@ run.py. A daemon thread per job handles the full lifecycle:
 Public surface used by routes/jobs.py:
   start(db, job_id)            — kick off on a daemon thread
   cancel_subprocess(job_id)    — kill the running subprocess
-  request_pause(db, job)       — ask a background run to pause (start_resume carries it on)
+  request_pause(db, job)       — stop a background run at once, keeping its work (start_resume
+                                 starts the phase it stopped in again)
   reexport(db, job_id)         — run Phase 4 only on a daemon thread
   get_log_lines(job_id, after) — (lines, new_cursor) for SSE streaming
 """
@@ -2243,8 +2244,9 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
     It has ended when it recorded its exit code (`frozen_run.record_exit`). Its process gone with
     no exit code, and the version's lock free, means it died -- the machine restarted, someone
     killed it. Either way the job fails, and what the run made is kept for `resume` once Phase 1
-    stored anything (`_fail_keeping_work`). `replay`: catch up on the whole log first (an API that
-    restarted while the run went on)."""
+    stored anything (`_fail_keeping_work`) -- unless it was paused (`request_pause`): then the job
+    waits `paused`. `replay`: catch up on the whole log first (an API that restarted while the run
+    went on)."""
     fr = _frozen_run_module()
     vr = _version_run_module()
     eng = getattr(db, "_engine", None)
@@ -2314,7 +2316,9 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
                                     "panel.")
             tracker.finish()
             return True
-        if code == fr.EXIT_PAUSED:
+        if code == fr.EXIT_PAUSED or fr.pause_asked(run_dir):
+            # Paused (NW-1): `request_pause` stopped it -- no exit code, or the failure a phase
+            # recorded as it was stopped -- or it stopped itself before a step (exit 4).
             _mark_paused(db, job_id, tracker.recent_lines)
             return False
         if code is None:
@@ -2381,9 +2385,12 @@ def pause_asked(job: Any) -> bool:
 
 
 def request_pause(db: Any, job: Any, *, by: str = "") -> None:
-    """Ask `job`'s run to pause (NW-1): it stops before the next phase that starts new work --
-    the model, or a component's views -- with what it made kept, and the job ends `paused`
-    (`_mark_paused`). Resume is `start_resume`, from the phase it stopped before.
+    """Pause `job`'s run (NW-1): its processes are stopped at once, in whatever phase it is in,
+    with what it made kept, and the job ends `paused` (`_mark_paused`, once the thread that follows
+    the run finds it gone). Resume is `start_resume`: the phase it stopped in starts again.
+
+    `pause.json` in the run's folder says the stop was a pause, not a crash. A phase that sees it
+    before it starts stops too (exit 4): the way the run still pauses if it could not be stopped.
 
     A generation, an export or a resume; never a re-export or an update (short, and their
     documents stand as they were). Raises PauseRefused: NOT_RUNNING, NOT_PAUSABLE,
@@ -2400,38 +2407,59 @@ def request_pause(db: Any, job: Any, *, by: str = "") -> None:
         raise PauseRefused(409, "NO_BACKGROUND_RUN", f"Job {job.id} cannot be paused: its run is "
                                                      f"not in the background yet. Try again in a "
                                                      f"moment, or stop it.")
-    if fr.pause_asked(run["run_dir"]):
-        return
-    fr.request_pause(run["run_dir"], reason=f"asked by {by}" if by else "")
-    _append_log(job.id, "Pause asked: the run stops before its next step (the model, or the "
-                        "next component), and keeps what it made.")
+    if not fr.pause_asked(run["run_dir"]):
+        fr.request_pause(run["run_dir"], reason=f"asked by {by}" if by else "")
+        _append_log(job.id, "Pause asked: the run stops now and keeps what it made.")
+    fr.stop(run.get("pid"), run.get("create_time"))
 
 
 _PAUSED_BEFORE = re.compile(r"Paused before Phase (\d)")
 
 
 def _mark_paused(db: Any, job_id: str, lines: list) -> None:
-    """The run paused (exit `frozen_run.EXIT_PAUSED`): the job says so and keeps its version for Resume.
-    The phases before the one it stopped before are done; that one and the rest wait."""
+    """The run paused: `request_pause` stopped it, or it stopped itself before a step (exit
+    `frozen_run.EXIT_PAUSED`). The job says so and keeps its version; Resume starts the phase it
+    paused at from its beginning -- Phases 3-4 from 3, as the component at work makes its views
+    again. The phases before it are done; it and the rest wait."""
     job = db.jobs.get(job_id)
     if job is None or job.status in ("cancelled", "complete", "failed"):
         return
     m = next((m for m in map(_PAUSED_BEFORE.search, reversed(lines)) if m), None)
-    nxt = int(m.group(1)) if m else job.phase
+    at = min(int(m.group(1)) if m else (job.phase or 1), 3)
     for p in job.phases:
-        if p.number < nxt and p.status in ("pending", "running"):
+        if p.number < at and p.status in ("pending", "running"):
             p.status = "done"
-        elif p.number >= nxt and p.status == "running":
+        elif p.number >= at:
             p.status = "pending"
     job.status = "paused"
-    job.phase = nxt
-    job.current_activity = f"Paused before Phase {nxt}"
-    job.activity_detail = "Resume carries the run on from here."
+    job.phase = at
+    job.current_activity = f"Paused at Phase {at}"
+    job.activity_detail = f"Resume starts Phase {at} from its beginning."
     job.eta_seconds = None
     job.elapsed_seconds = _elapsed_since(job.started_at)
     db.jobs.update(job)
-    _append_log(job_id, f"Paused before Phase {nxt}. What the run made is kept; Resume carries "
-                        f"it on.")
+    _settle_paused_run(db, getattr(job, "version_id", None))
+    _append_log(job_id, f"Paused at Phase {at}. What the run made is kept; Resume starts Phase "
+                        f"{at} from its beginning.")
+
+
+def _settle_paused_run(db: Any, version_id: Optional[str]) -> None:
+    """What a run stopped at once cannot record itself, recorded as a run that pauses before a
+    step records it: the components it was making wait again, and its record says `paused`."""
+    vr = _version_run_module()
+    eng = getattr(db, "_engine", None)
+    if vr is None or eng is None or not version_id:
+        return
+    try:
+        making = [c for c, r in vr.component_rows(version_id, engine=eng).items()
+                  if r.get("state") == "generating"]
+        vr.mark_components(version_id, making, "waiting", engine=eng)
+        row = vr.run_row(version_id, engine=eng)
+        if row is not None and row.get("outcome") != "paused":
+            vr.record_end(version_id, "paused", engine=eng)
+    except Exception as exc:                             # noqa: BLE001 - the job is paused anyway
+        _log.warning("version %s: the paused run's components and record were not updated: %s",
+                     version_id, exc)
 
 
 def _version_has_work(db: Any, version_id: Optional[str]) -> bool:

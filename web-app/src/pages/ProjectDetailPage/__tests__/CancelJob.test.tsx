@@ -12,7 +12,7 @@ import members from '../../../test/fixtures/captured/members.json'
 import { ProjectDetailPage } from '..'
 
 /* The Overview's Cancel Job asks first: one click used to stop the run and delete its version.
-   Beside it, Pause (NW-1): the run stops before its next step; paused, the same button resumes it. */
+   Beside it, Pause (NW-1): the run stops at once; paused, the same button resumes it. */
 
 const RUNNING_JOB = {
   id: 'job9', status: 'running', phase: 2, phase_pct: 40, current_activity: 'Deriving', activity_detail: '',
@@ -75,8 +75,8 @@ function setup(job: Record<string, unknown> = RUNNING_JOB) {
 }
 
 const PAUSED_JOB = {
-  ...RUNNING_JOB, status: 'paused', phase: 3, current_activity: 'Paused before Phase 3',
-  activity_detail: 'Resume carries the run on from here.',
+  ...RUNNING_JOB, status: 'paused', phase: 3, current_activity: 'Paused at Phase 3',
+  activity_detail: 'Resume starts Phase 3 from its beginning.',
   phases: [
     { number: 1, name: 'Parse C++', status: 'done', duration_seconds: 10 },
     { number: 2, name: 'Derive Model', status: 'done', duration_seconds: 20 },
@@ -115,21 +115,21 @@ describe('Overview: Pause and Resume', { timeout: 30_000 }, () => {
   beforeEach(() => vi.stubGlobal('EventSource', FakeEventSource))
   afterEach(() => vi.unstubAllGlobals())
 
-  it('Pause asks the run to stop before its next step, and says Pausing until it has', async () => {
+  it('Pause stops the run, and says Pausing until it has', async () => {
     const { posted, user } = setup()
     await user.click(await screen.findByRole('button', { name: /^Pause$/ }))
     await waitFor(() => expect(posted).toEqual(['pause']))
     const pausing = await screen.findByRole('button', { name: /Pausing…/ })
     expect(pausing).toBeDisabled()
-    expect(screen.getByText('Pausing: the run stops before its next step and keeps what it made.')).toBeInTheDocument()
+    expect(screen.getByText('Pausing: the run stops now and keeps what it made.')).toBeInTheDocument()
   })
 
   it('paused: says so, nothing runs, and Resume carries the same job on', async () => {
     const { posted, user } = setup(PAUSED_JOB)
     expect(await screen.findByText('Analysis Paused')).toBeInTheDocument()
-    expect(screen.getAllByText('Paused before Phase 3').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Paused at Phase 3').length).toBeGreaterThan(0)
     expect(screen.getByText('Nothing runs while the job is paused.')).toBeInTheDocument()
-    expect(screen.getByText('Paused', { selector: 'p' })).toBeInTheDocument()      // the phase it stopped before
+    expect(screen.getByText('Paused', { selector: 'p' })).toBeInTheDocument()      // the phase it stopped in
     expect(screen.getByRole('button', { name: /Cancel Job/ })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Resume/ }))
     await waitFor(() => expect(posted).toEqual(['resume']))

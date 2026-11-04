@@ -158,18 +158,18 @@ export function useCancelJob(projectId: string) {
   })
 }
 
-/** Pause a run (NW-1): it stops before its next step — the model, or the next component — and
- *  keeps what it made. The job says `pausing` until then, `paused` after. */
+/** Pause a run (NW-1): it stops at once, in whatever phase it is in, and keeps what it made. The
+ *  job says `pausing` for the moment its processes take to go, `paused` after. */
 export function usePauseJob(projectId: string) {
   const invalidate = useJobInvalidate(projectId)
   return useMutation({
     mutationFn: (jobId: string) => jobsApi.pause(projectId, jobId),
-    onSuccess: () => { invalidate(); toast.info('Pausing', 'The run stops before its next step and keeps what it made.') },
+    onSuccess: () => { invalidate(); toast.info('Pausing', 'The run stops now and keeps what it made.') },
     onError: (e: Error) => toast.error('Could not pause', e.message),
   })
 }
 
-/** Carry a paused job on from the step it stopped before. */
+/** Carry a paused job on: the phase it stopped in starts again. */
 export function useResumeJob(projectId: string) {
   const invalidate = useJobInvalidate(projectId)
   return useMutation({

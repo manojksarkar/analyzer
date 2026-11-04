@@ -231,8 +231,8 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | GET | `/projects/:id/jobs/:jobId` | Job detail |
 | GET | `/projects/:id/jobs/:jobId/events` | **SSE** live progress stream |
 | POST | `/projects/:id/jobs/:jobId/cancel` | Cancel running job (admin) |
-| POST | `/projects/:id/jobs/:jobId/pause` | Pause before the run's next step: the model, or the next component (admin) |
-| POST | `/projects/:id/jobs/:jobId/resume` | Carry a paused job on from the step it stopped before (admin) |
+| POST | `/projects/:id/jobs/:jobId/pause` | Stop the run now and keep what it made; the job waits `paused` (admin) |
+| POST | `/projects/:id/jobs/:jobId/resume` | Carry a paused job on: the phase it stopped at starts again (admin) |
 | GET | `/projects/:id/jobs/:jobId/functions` | Discovered functions after Phase 1 |
 | POST | `/projects/:id/jobs/:jobId/reexport` | Re-export DOCX (admin) |
 

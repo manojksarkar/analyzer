@@ -38,8 +38,8 @@ export const jobsApi = {
     const r = await http.post<{ job: ApiJob }>(`/projects/${projectId}/jobs/${jobId}/cancel`)
     return mapJob(r.job)
   },
-  /** Pause (NW-1): the run stops before its next step and keeps what it made; `resume` carries
-   *  the same job on. */
+  /** Pause (NW-1): the run stops at once and keeps what it made; `resume` carries the same job
+   *  on, starting the phase it stopped in again. */
   pause: async (projectId: string, jobId: string): Promise<AnalysisJob> => {
     const r = await http.post<{ job: ApiJob }>(`/projects/${projectId}/jobs/${jobId}/pause`)
     return mapJob(r.job)

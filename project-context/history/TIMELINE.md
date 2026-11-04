@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-04b | Pause is instant (NW-1): the run stops now, in any phase; Resume starts that phase again | [16](16-2026-10-30.md) |
 | 2026-11-04 | Pause and resume at step boundaries (NW-1): a paused run keeps what it made, Resume carries the same job on | [16](16-2026-10-30.md) |
 | 2026-11-03c | Fresh run (NW-3): for an analyzer update or a check; names the corrections it leaves behind; Pause after Phase 1 removed | [16](16-2026-10-30.md) |
 | 2026-11-03b | Cancel beside Done in edit mode: the texts corrected since Edit go back, after asking | [16](16-2026-10-30.md) |

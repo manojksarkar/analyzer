@@ -249,16 +249,17 @@ export function ProjectDetailPage() {
                     Logs
                   </button>
                 )}
-                {/* Pause (NW-1): the run stops before its next step and keeps what it made;
-                    paused, the same button is Resume (docs/ui-mockups/project-detail.html#paused). */}
+                {/* Pause (NW-1): the run stops at once, in whatever phase it is in, and keeps what it
+                    made; paused, the same button is Resume, which starts that phase again
+                    (docs/ui-mockups/project-detail.html#paused). */}
                 {isAdmin && (job.status === 'running' || job.status === 'paused') && job.mode !== 'reexport' && (
                   <button
                     type="button"
                     onClick={() => (job.status === 'paused' ? resumeJob : pauseJob).mutate(job.id)}
                     disabled={job.pausing || pauseJob.isPending || resumeJob.isPending}
-                    title={job.status === 'paused' ? 'Carry the run on from where it stopped.'
-                      : job.pausing ? 'The run stops before its next step.'
-                      : 'Stop before the next step: the model, or the next component. What the run made is kept.'}
+                    title={job.status === 'paused' ? 'Start the phase it stopped in again.'
+                      : job.pausing ? 'The run is stopping.'
+                      : 'Stop the run now. What it made is kept; Resume starts this phase again.'}
                     className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 border border-outline hover:text-white font-mono text-caption font-medium',
                       job.status === 'paused' ? 'text-[#4d9fff]' : 'text-on-primary-container')}
                   >
@@ -309,7 +310,7 @@ export function ProjectDetailPage() {
                 </div>
                 {/* No detail and no estimate: no row (it showed a lone "—"). */}
                 {(() => {
-                  const detail = job.pausing ? 'Pausing: the run stops before its next step and keeps what it made.' : job.activityDetail
+                  const detail = job.pausing ? 'Pausing: the run stops now and keeps what it made.' : job.activityDetail
                   const hasRow = !!detail || job.etaSeconds != null
                   return (
                     <>

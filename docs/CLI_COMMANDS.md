@@ -1171,12 +1171,14 @@ message prints it); that also finishes the web job, so the version leaves draft.
 removes the version. Not covered: an API run under systemd with the default `KillMode=control-group`, or
 in a container that is restarted, takes its background runs down with it -- use `KillMode=process`.
 
-**Pause** (web app, admins). The run stops before its next step that starts new work -- the model
-(after the parse), or the next component's views (after the one at work, its export included) -- and
-exits with code 4. Nothing is marked failed: the components it had not started stay waiting, and the
-run record says `paused`. The job says **Paused**; Resume in the web app runs `resume` from that step, as
-the same job. An API restart leaves a paused job paused. Cancel removes the version as always. The
-request is the file `pause.json` beside `run.log`; a resume runs in a run folder of its own.
+**Pause** (web app, admins). The run stops at once, in whatever phase it is in. Nothing is marked
+failed: the component it was making waits again, and the run record says `paused`. The job says
+**Paused at Phase N**; Resume in the web app runs `resume`, as the same job, and that phase starts again
+from its beginning -- the parse from its start, the model with the LLM's answers from the cache (all but
+the last minute's), the component at work from its views. An API restart leaves a paused job paused.
+Cancel removes the version as always. The pause is the file `pause.json` beside `run.log`; a phase that
+finds it before it starts exits with code 4 (the run pauses even if it could not be stopped). A resume
+runs in a run folder of its own.
 
 **One writer per version.** `generate`, `export`, `reexport`, `resume` and the web app's jobs hold a
 lock on the version while they run (Postgres only); a second one on the same version is refused,
@@ -1232,7 +1234,7 @@ database"). Stop the old one first. A second one on purpose: `ANALYZER_ALLOW_SEC
 | `version <id> is being written by analyzer <command> pid N on <host>` | Another run holds that version. `progress` shows how far it is; wait, or stop that process. |
 | `progress` says `STOPPED -- the process is gone` | The run was cut short: `python analyzer.py resume ... --detach` (the line under it). |
 | exit code 3, `N document plan(s) failed; the other components' documents were made` | Fix what the named component's log says, then `resume` — it makes only the failed ones. |
-| exit code 4, `Paused. What the run made is kept.` | Someone paused the run in the web app. `resume` carries it on from the step it stopped before. |
+| exit code 4, `Paused. What the run made is kept.` | Someone paused the run in the web app. `resume` carries it on: the phase it stopped at starts again. |
 | `has no model to re-export from` (from `reexport`) | Its Phase 2 did not finish: `resume` it first. |
 | `has no model yet: its Phase 2 did not finish` (from `export`) | `resume` the version first. |
 | `bad --scope '...'` | The message lists the four accepted forms. |

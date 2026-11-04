@@ -16,7 +16,7 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
-| NW-1 | Pause and resume a run: at step boundaries done 2026-11-04; left: stop inside Phase 2 right away, then pause by itself after N LLM failures in a row, a CLI `pause` | enhance | P2 | M | — | part done | `core/orchestration.py`, `llm_enrichment.py`, `llm_core/client.py` |
+| NW-1 | Pause and resume a run: instant, any phase, done 2026-11-04; left: pause by itself after N LLM failures in a row, a CLI `pause`, sub-phases | enhance | P2 | M | — | part done | `pipeline_runner.py`, `llm_core/client.py` |
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | NW-3 | Fresh run (no baseline) for any commit, from the web; says when it is for and which corrections stay behind; Pause after Phase 1 removed | enhance | P3 | S | — | done | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
@@ -147,6 +147,7 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 | SG-4 | A web re-export runs as the API's child and dies with it | issue | — | — | — | open | `pipeline_runner.py` `_run_reexport` |
 | SG-5 | `--detach` not proved on Linux (systemd, containers) | risk | — | — | — | open | CLI_COMMANDS "A run that lasts days" |
 | SG-6 | Adding a layer re-parses every layer; `--llm-summarize` re-summarises the old ones | perf | — | — | — | open | `parser.py`, `tu_includes` |
+| SG-7 | Adding a layer marks components of the other layers out of date (`stale`), though in the reviewed code no layer calls another directly | issue | — | — | — | open | `incremental/extend.py` `fingerprints`, `changed_components` |
 
 ## Repositories
 
@@ -191,13 +192,21 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 
 ## Details
 
-**NW-1** Done 2026-11-04: Pause (admins) stops the run before the parse, the model or the next component's
-views (`pause.json` in the run folder, exit 4); the job waits `paused`, through an API restart, and Resume runs
-`resume` as the same job -- the phase starts again and the LLM cache answers what was written. Left: (1) stop
-inside Phase 2 right away -- a check in the LLM loop that flushes the cache and exits 4 (Phase 2 runs to its
-end today, hours on a big project); (2) then pause by itself after N LLM failures in a row (proposed N = 5,
-"the LLM stopped answering") -- it needs (1), or the run writes stand-in texts until Phase 2 ends; (3) a CLI
-`pause --version-id`. Open with the user: a paused run blocks a new one (as built), N.
+**SG-7** (noted 2026-11-04, to look at later) The user: there are no direct calls between layers in the reviewed
+code, so adding or running a component of another layer should not make the old layers' components out of date.
+`analyzer.py export` (add a layer) marks `stale` every documented component whose `extend.fingerprints` hash moved.
+Suspects, unverified: the hash takes in the units of OTHER components that include the same header (the orphan-
+header owner pick), so a new layer's unit including a common header moves every old unit that includes it, even when
+the owner does not change; and any structural field the all-layer re-parse changes (macros per layer, `unknown`).
+First step: on a review-site add, print which fingerprint part moved for one stale component.
+
+**NW-1** Done 2026-11-04: Pause (admins) stops the run at once, in any phase (`pause.json` in the run folder,
+then the run's processes stopped); the job waits `paused` at the phase it was in, through an API restart, and
+Resume runs `resume` as the same job -- that phase starts again, the LLM cache answering what was written (lost:
+the parse so far in Phase 1; the last minute's LLM answers in Phase 2; the component at work in Phases 3-4).
+Left: (1) pause by itself after N LLM failures in a row (proposed N = 5, "the LLM stopped answering") -- the API
+can count the run's LLM failure lines and pause as an admin would; (2) a CLI `pause --version-id`; (3) sub-phases,
+so a pause in a long phase keeps more. Open with the user: a paused run blocks a new one (as built), N.
 
 **NW-2** Today `approve()` checks the state and the Word file only; bulk approval goes through it.
 Doubts: base = the previous version's document, SWE.3 before its SWE.4, or both? "reviewed" = approved?

@@ -397,7 +397,8 @@ def progress(stage: str, done: int, total: int, stage_started: Optional[float] =
 # ---------------------------------------------------------------------------
 
 def mark_components(version_id: Optional[str], components: Iterable[str], state: str, *,
-                    error: Optional[str] = None, layers: Optional[Iterable[str]] = None) -> None:
+                    error: Optional[str] = None, layers: Optional[Iterable[str]] = None,
+                    engine=None) -> None:
     """Move components to `state` (waiting | generating | generated | failed | stale).
 
     `stale` keeps when the documents were made (`finished_at`): they exist, only the model has
@@ -411,7 +412,7 @@ def mark_components(version_id: Optional[str], components: Iterable[str], state:
     comps = [c for c in dict.fromkeys(components or ()) if c]
     if not version_id or not comps or state not in STATES:
         return
-    eng = _engine()
+    eng = engine if engine is not None else _engine()
     if eng is None:
         return
     now = _now()
@@ -489,8 +490,8 @@ def generated_components(version_id: str) -> list:
     return sorted(n for n in names if n)
 
 
-def component_rows(version_id: str) -> Dict[str, Dict[str, Any]]:
-    eng = _engine()
+def component_rows(version_id: str, *, engine=None) -> Dict[str, Dict[str, Any]]:
+    eng = engine if engine is not None else _engine()
     if eng is None:
         return {}
     from sqlalchemy import select
