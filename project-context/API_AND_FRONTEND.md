@@ -252,6 +252,24 @@ chart's box labels together; a banner says when the Word files lack the latest c
   render again; the flowchart `<img>` URL carries `?v=<source_hash>` (added in the mapper, after
   `resolveAssetUrl`) so a redrawn SVG reloads.
 - **Rules** — the `ui-dev` skill §6; the contract's page section is REVIEW_UPDATE_API_SPEC §3a.
+- **A function's code beside its flowcharts** (2026-10-31, NW-7): `flowchart_table.function_id` in the
+  render payload (the model's function id, sent back as it is -- never taken out of a slot key);
+  `GET …/versions/{vid}/functions/source?function_id=` (`api/services/function_source.py`) reads its
+  `entity_versions` file and lines and returns them from the version's checkout
+  (`source_checkout.locate_or_restore(restore=False)`: no clone in a request; `409 SOURCE_NOT_HERE`),
+  at most 400 lines; a version that never stored a function's end line has it found from the code (braces counted
+  outside comments and strings). Web: `FunctionCode.tsx`, **View code** beside each chart opens a dialog with
+  that chart and its own function's code side by side (`flowcharts[].function_id`; 2026-11-03,
+  `docs/ui-mockups/documents.html#code`), read only then.
+- **Cancel beside Done** (2026-11-03b): puts back each text corrected since Edit, after asking
+  (`editSession.ts` `useEditSession`, `components/CancelEdit.tsx`; reader and compare page).
+- **The compare page too** (2026-10-31, NW-6): `compare_render` puts the render's slots back on the
+  Current side's diffed blocks (`_carry_edit_handles`: `slot`, `bullets`, `cell_slots`; a behaviour
+  row's bullets are one block now), never on the Reference side; **Edit** on the Current pane (SWE.3,
+  the Current version's document, not approved) gives `DiffBlocks` an `EditContext`, so a text with a
+  slot is the reader's `SlotText`. A save also reads every comparison again (`projectKeys.compareAll`).
+  Flowchart labels stay in the reader. Tests: `tests/unit/test_compare_edit_handles.py`,
+  `ComparePage/__tests__/DiffBlocks.test.tsx`. API spec §3a Flow 8.
 - **Mockup** — `docs/ui-mockups/documents.html` (open with `#edit`).
 - **Since 2026-10-05** (history 11 2026-10-05 … and 13): a save met by a run that replaced the model
   answers 409 `{code: VERSION_REGENERATING}` (the other refusals stay strings); a save's queued texts
@@ -280,6 +298,19 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   (`pipeline_runner._version_writer`, on the API's own engine) take the lock; a second is refused
   (`VersionBusy`; web re-export 409 `VERSION_BUSY`). Storing output replaces the version's stored files
   (`persist_output_files`), so two writers lost documents before.
+- **Pause** (2026-11-04, NW-1; instant 2026-11-04b) — `POST /jobs/{id}/pause` (`request_pause`) writes
+  `pause.json` in the background run's folder (`frozen_run.request_pause`), then stops the run's
+  processes at once (`frozen_run.stop`), in any phase. The follower finds it gone, sees the file and
+  pauses the job instead of failing it (`_follow_detached.conclude`, also for a failure a phase recorded
+  as it was stopped): `_mark_paused` -- "Paused at Phase N", N the phase it was in, 4 -> 3 (a component's
+  export follows its views) -- and `_settle_paused_run`: `generating` components back to `waiting`, the
+  run record `paused`. Resume = `resume`, whose plan already starts what was cut short again
+  (regenerate / derive / export): the phase from its beginning, LLM answers from the cache (lost: the
+  last unflushed minute). Fallback: `PhaseRunner` checks the file before `parser.py`,
+  `model_deriver.py`, `run_views.py` and exits `EXIT_PAUSED` (4). A paused job survives an API restart
+  (`fail_interrupted_jobs` skips it) and counts as the project's run; `POST /jobs/{id}/resume` =
+  `start_resume`, which reopens the paused job. Web: Pause / Pausing… / Resume beside Cancel Job, the
+  banner's "Generation paused" row.
 - **The view** — `api/services/version_components.py` `components_view`: the model's components
   (`model_components`) ∪ rows ∪ documents; no row + documents = generated, neither = `not_requested`,
   waiting/generating with no live writer = `stopped`. The rules for which components each command
@@ -609,7 +640,11 @@ its version is at work or complete (`failureSuperseded`). Re-run opens the Overv
 
 Under the running panel, `pages/ProjectDetailPage/components/RunCards.tsx`: **Documents** (the asked-for
 components, each opening its SWE.3 / SWE.4 once made), **This run** (version, commit, kind, scope, document
-types, started), **Found so far** (code counts, parse warnings, the step at work, the LLM's retries and
+types, started), the progress bar with **Est. ~X left in this step** (`pipeline_runner._count_progress`:
+the step's own counter lines, timed from its `start (N items)` line; blank until known -- the fixed
+"two minutes a phase" guess showed "~4m" through whole LLM phases; slow stages log their counter at
+least once a minute, `core.progress.LOG_EVERY_SECONDS`; 2026-10-29b), **Found so far** (code counts,
+parse warnings, the step at work, the LLM's retries and
 failed calls); a superuser also gets the version's three newest log lines and **Open logs**. Facts from
 `GET /projects/{pid}/versions/{vid}/run-facts` (`api/services/run_facts.py`): model counts from the
 database, LLM and parse counts from the live log buffer -- so they cover what the buffer holds and are

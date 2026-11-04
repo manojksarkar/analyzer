@@ -844,7 +844,11 @@ erDiagram
           tables a version owns; deleting the <code>versions</code> row removes them all.
           <code>entities</code> and <code>content_blobs</code> are <b>shared</b> and deliberately
           survive — which is why a function can sit in <code>entities</code> yet be absent from the
-          version you are querying.</p>
+          version you are querying. Every foreign key into a project's rows has a delete rule
+          (migration 0019): a comparison of a deleted version and a diff of a deleted document go
+          with it (<code>CASCADE</code>); a version whose baseline is deleted, and a job whose
+          version is, keep their row with the link emptied (<code>SET NULL</code>). So deleting the
+          <code>projects</code> row empties every table of the project, on PostgreSQL too.</p>
 
         <h3>JSONB access</h3>
         <p><code>-&gt;</code> returns jsonb, <code>-&gt;&gt;</code> returns text.

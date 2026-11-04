@@ -325,6 +325,51 @@ def check_llm_server():
 
 
 # ---------------------------------------------------------------------------
+# The workspaces, and the paths the database stored in them (BACKLOG NW-5). Report only:
+# `collect_checks` is also every run's preflight, which must not wait on a database.
+# ---------------------------------------------------------------------------
+
+def check_stored_paths():
+    """Where the workspaces are, and every approved copy and version checkout the database names
+    that this machine cannot find -- under the stored path or under today's workspaces root."""
+    engine_dir = os.path.join(ROOT, "engine")
+    if engine_dir not in sys.path:
+        sys.path.insert(0, engine_dir)
+    try:
+        from core.paths import rebase_stored_path, workspaces_root
+        root = workspaces_root()
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return Check("stored paths", OK, f"workspaces {root}; no database configured",
+                         required=False)
+        from sqlalchemy import text
+        with get_engine().connect() as cx:
+            docs = cx.execute(text("SELECT id, approved_docx_path FROM documents "
+                                   "WHERE approved_docx_path IS NOT NULL")).all()
+            vers = cx.execute(text("SELECT id, base_path FROM versions "
+                                   "WHERE base_path IS NOT NULL")).all()
+    except Exception as exc:                            # noqa: BLE001 - reported, not fatal
+        why = (str(exc).splitlines() or [""])[0][:160]
+        return Check("stored paths", WARN, f"not checked ({type(exc).__name__}: {why})",
+                     required=False)
+    gone_docs = [d for d, path in docs if not os.path.exists(rebase_stored_path(path, root))]
+    gone_code = [v for v, path in vers if not os.path.exists(rebase_stored_path(path, root))]
+    detail = (f"workspaces {root}; {len(docs) - len(gone_docs)}/{len(docs)} approved copies, "
+              f"{len(vers) - len(gone_code)}/{len(vers)} version checkouts found")
+    if not gone_docs and not gone_code:
+        return Check("stored paths", OK, detail, required=False)
+    missing = (f"; missing: {len(gone_docs)} approved copy(ies) (e.g. document {gone_docs[0]})"
+               if gone_docs else "")
+    missing += (f"; {len(gone_code)} checkout(s) (cloned again when a run needs one)"
+                if gone_code else "")
+    return Check("stored paths", WARN, detail + missing,
+                 f"Moved the workspaces? Set paths.workspaces in {_LOCAL} to the new folder "
+                 "(or ANALYZER_WORKSPACES_DIR). An approved copy that is gone cannot be downloaded "
+                 "unless the working Word file is still the approved one (same SHA-256).",
+                 required=False)
+
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
@@ -374,6 +419,7 @@ def main():
     args = ap.parse_args()
 
     checks = collect_checks()
+    checks.append(check_stored_paths())
 
     sym = {OK: "OK  ", WARN: "WARN", FAIL: "FAIL"}
     width = max(len(c.name) for c in checks)

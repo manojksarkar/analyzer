@@ -92,11 +92,15 @@ newer entry and the code win.
 - **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, on `refactor/config-separation`): LLM
   lanes, parse ahead, picture batches, each in ONE config.local.json block, `speedups` — empty = develop
   (2026-10-14d); a Claude API provider (2026-10-14f). [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md).
-- **Review issues** (2026-10-14g … i, branch `fix/review-issues-on-speed`, on `perf/pipeline-speed`): one
+- **Review issues** (2026-10-14g … 2026-10-30b, branch `fix/review-issues`, in develop 2026-11-04): one
   publication rule (use from another unit), overloads print and draw apart (`engine/core/function_names.py`),
   a `case` from a missing header keeps its branch. Interface ids after a newly published function move.
-- **UT export** (2026-10-15, branch `feat/ut-export-on-speed`, on `fix/review-issues-on-speed`): the target
-  format (a test-case file per unit, `hierarchy.json`) and solved values — [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md) "View 5".
+- **Next work** (2026-10-31 … 2026-11-04c, branch `feat/next-work`, in develop 2026-11-04): delete a project
+  whole (migration **0019** -- each database runs `analyzer.py setup` once), movable workspaces and one API per
+  database, edit on the compare page, a function's code beside its flowchart, Cancel in edit mode, Fresh run,
+  Pause and Resume. Left: [BACKLOG](docs/BACKLOG.md) "Next work".
+- **UT export** (2026-10-15, branch `feat/ut-export`, develop merged in 2026-11-04): the target format (a test-case
+  file per unit, `hierarchy.json`) and solved values — [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md) "View 5".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -236,8 +240,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [16-2026-10-14g.md](project-context/history/16-2026-10-14g.md) | from 2026-10-14g — **the newest: new entries go at the top** |
-| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | 2026-10-07h … 2026-10-14f |
+| [16-2026-10-30.md](project-context/history/16-2026-10-30.md) | from 2026-10-30 — **the newest: new entries go at the top**; at its end, `feat/ut-export`'s 2026-10-15 … 2026-10-15b |
+| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | 2026-10-07h … 2026-10-29b |
 | [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | 2026-10-05r … 2026-10-07g |
 | [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |
 | [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |
@@ -256,18 +260,16 @@ so neighbouring files can overlap by a few days — search the date tag.
 
 ## Other context and docs
 
-- **Subsystem context:** [api/PROJECT_CONTEXT.md](api/PROJECT_CONTEXT.md) — partly stale by its own
-  header, which points to [api/README.md](api/README.md) and [api/PLAN.md](api/PLAN.md);
-  [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md), with
+- **Subsystem context:** [api/README.md](api/README.md) (`api/PROJECT_CONTEXT.md` is only a pointer
+  since 2026-10-30); [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md), with
   [INTEGRATION_NOTES](web-app/INTEGRATION_NOTES.md) and [TESTING](web-app/TESTING.md).
 - **Role skills:** `.claude/skills/` — each role's coding rules and definition of done.
 - **Human docs**, all linked from [README.md](README.md): [DESIGN.md](docs/design/DESIGN.md);
   [DB_SCHEMA.md](docs/design/DB_SCHEMA.md) and its viewer [schema-atlas.html](docs/design/schema-atlas.html);
   the rules each document section follows, [SWE3_WIKI](docs/spec/SWE3_WIKI.md) and
   [SWE4_WIKI](docs/spec/SWE4_WIKI.md); the contracts in [docs/spec/](docs/spec/); the CLI in
-  [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md); open work in [docs/BACKLOG.md](docs/BACKLOG.md),
-  [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md) and the forward plans
-  [engine/PLAN.md](engine/PLAN.md), [api/PLAN.md](api/PLAN.md), [web-app/PLAN.md](web-app/PLAN.md); the
+  [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md); **every open item in [docs/BACKLOG.md](docs/BACKLOG.md)** (there are no
+  subsystem `PLAN.md` files), leadership's view in [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md); the
   studies in [docs/production-redesign/](docs/production-redesign/).
 
 ## Keeping the context readable

@@ -3,6 +3,8 @@ import { Icon, ScrollX } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { parseSectionBody } from '../../../lib/markdown'
 import type { CompareBlock, DiffMark, DiffSegment } from '../../../types'
+import { useEdit } from '../../DocumentInspectorPage/editContext'
+import { SlotText } from '../../DocumentInspectorPage/components/SlotText'
 import { MARK_MEANING, rowChange, signColumns } from '../helpers'
 
 /* ─── Inline highlight styling by change mark ───
@@ -88,9 +90,31 @@ function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'dia
   )
 }
 
+/** What the Current side prints: its segments' text (a removed word is only on the other side). */
+function printed(segments: DiffSegment[]): string {
+  return segments.map((s) => s.text).join('')
+}
+
 /* ─── One diff block (text | keyvalue | table | diagram) ───
-   `marked`: a table's sign column, decided with the other pane's (`signColumns`). */
+   `marked`: a table's sign column, decided with the other pane's (`signColumns`).
+   In edit mode (the Current side only: the Reference has no slots) a correctable text is the
+   reader's box, `SlotText` (NW-6). */
 function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?: boolean }) {
+  const editing = !!useEdit()?.editing
+  if (block.kind === 'text' && editing && block.slot) {
+    return (
+      <SlotText slot={block.slot} display={printed(block.segments)} bullets={block.bullets ?? undefined}
+                className="text-sm text-on-surface leading-relaxed" />
+    )
+  }
+  if (block.kind === 'keyvalue' && editing && block.slot) {
+    return (
+      <div className="flex items-baseline gap-2 text-sm">
+        <span className="font-mono text-caption text-on-surface-variant flex-shrink-0">{block.label}:</span>
+        <SlotText slot={block.slot} display={printed(block.segments)} className="flex-1 text-on-surface" />
+      </div>
+    )
+  }
   if (block.kind === 'text') {
     return (
       <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
@@ -129,12 +153,13 @@ function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?
                 {marked && <RowMarker mark={rowChange(rowMark, block.cellMarks[ri])} />}
                 {r.map((c, ci) => {
                   const cellMark = block.cellMarks[ri]?.[ci] ?? 'none'
+                  const slot = editing ? block.cellSlots?.[ri]?.[ci] : null
                   return (
                     <td key={ci} className={cn(
                       'px-3 py-2 align-top',
                       ci === 0 ? 'text-secondary font-mono text-caption' : 'text-on-surface-variant',
                       MARK_CELL[cellMark],
-                    )}>{c}</td>
+                    )}>{slot ? <SlotText slot={slot} display={c} /> : c}</td>
                   )
                 })}
               </tr>

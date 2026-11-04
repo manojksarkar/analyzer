@@ -100,6 +100,8 @@ export interface VersionRun {
   alive: boolean | null
   /** Recorded as running, but its process is gone: cut short — `analyzer.py resume` continues it. */
   stopped: boolean
+  /** Paused on purpose (NW-1): Resume starts the phase it stopped in again. */
+  paused: boolean
   outcome: string
   host: string | null
   startedAt: string | null
@@ -643,6 +645,9 @@ export interface FlowchartEntry {
   flowchartId: string | null
   /** It has a stored graph whose labels a reviewer can correct. */
   editable: boolean
+  /** The function the chart is of -- the section's own, or a private callee's drawn under it --
+   *  whose code View code shows beside it (NW-7); null for an older render. */
+  functionId?: string | null
 }
 
 export interface FlowchartTableData {
@@ -655,6 +660,19 @@ export interface FlowchartTableData {
   descriptionSlot: Slot | null
   inputNameSlot: Slot | null
   outputNameSlot: Slot | null
+  /** The function the charts are of: what its source is asked by (NW-7); null without one. */
+  functionId: string | null
+}
+
+/** A function's own lines of code in a version (NW-7), as its checkout has them. */
+export interface FunctionSource {
+  functionId: string
+  file: string
+  startLine: number
+  endLine: number
+  lines: string[]
+  /** The function is longer than the lines sent. */
+  truncated: boolean
 }
 
 export interface BehaviorTableData {
@@ -774,6 +792,8 @@ export interface AnalysisJob {
   startedAt: string | null
   completedAt: string | null
   errorMessage: string | null
+  /** Pause asked and the run not stopped yet (a moment): then `paused`. */
+  pausing: boolean
 }
 
 /** A function discovered after Phase 1, for the visibility editor. */
@@ -868,12 +888,18 @@ export interface DiffSegment {
 export interface CompareTextBlock {
   kind: 'text'
   segments: DiffSegment[]
+  /** Current side only: the text a reviewer can correct here (NW-6). */
+  slot?: Slot | null
+  /** A behaviour row's bullets (one correctable text, R6). */
+  bullets?: string[] | null
 }
 
 export interface CompareKeyValueBlock {
   kind: 'keyvalue'
   label: string
   segments: DiffSegment[]
+  /** Current side only: an input / output name a reviewer can correct here. */
+  slot?: Slot | null
 }
 
 export interface CompareTableBlock {
@@ -884,6 +910,8 @@ export interface CompareTableBlock {
   rowMarks: DiffMark[]
   /** Per-cell mark, parallel to `rows[i]`. */
   cellMarks: DiffMark[][]
+  /** Current side only: which cell is a correctable text, parallel to `rows`. */
+  cellSlots?: (Slot | null)[][] | null
 }
 
 export interface CompareDiagramBlock {

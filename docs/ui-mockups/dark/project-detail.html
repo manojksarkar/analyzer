@@ -745,6 +745,16 @@
               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">terminal</span>
               Logs
             </a>
+            <!-- Admins: Pause (NW-1) -- the run stops at once, in whatever phase it is in, and keeps
+                 what it made; paused, the same button is Resume, which starts that phase again. -->
+            <button id="gen-pause-btn" onclick="pauseGeneration()"
+                    title="Stop the run now. What it made is kept; Resume starts this phase again."
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
+                    style="border:1px solid #2c2f37;color:#a3a7b1;"
+                    onmouseenter="this.style.color='#f2f3f5'" onmouseleave="this.style.color='#a3a7b1'">
+              <span id="gen-pause-icon" class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">pause_circle</span>
+              <span id="gen-pause-label">Pause</span>
+            </button>
             <button onclick="cancelGeneration()"
                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
                     style="border:1px solid #4d2020;color:#ff7070;"
@@ -812,7 +822,7 @@
           </div>
           <div class="flex items-center gap-2 mt-2 px-1">
             <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">info</span>
-            <p class="font-label-sm text-label-sm text-on-surface-variant">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
+            <p id="gen-info" class="font-label-sm text-label-sm text-on-surface-variant">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
           </div>
         </div>
 
@@ -884,17 +894,28 @@
            Staged generation, in one row: shown only while a component of this version has no
            documents or a run is making them; gone once every one has its documents. Variants: no
            run going -> a neutral icon, "43 components have no documents yet", no Stop; a run that
-           stopped -> amber, "Generation stopped 3 hours ago", with the resume command. "View
-           components" opens the drawer below. -->
+           stopped -> amber, "Generation stopped 3 hours ago", with the resume command; a run that
+           paused -> amber, "Generation paused", with Resume (admins). "View components" opens the
+           drawer below. -->
       <div id="gen-banner" class="mb-6" style="display:none;">
-        <div role="status" class="bg-surface-container-lowest border border-outline-variant rounded-xl" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
+        <div id="gen-row-running" role="status" class="bg-surface-container-lowest border border-outline-variant rounded-xl" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
           <span class="material-symbols-outlined animate-spin flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#6aa9ff;">autorenew</span>
           <p style="flex:1 1 300px;min-width:0;font-family:Roboto,sans-serif;font-size:13px;color:#a3a7b1;"><span style="font-weight:600;color:#f2f3f5;">Generating documents</span> · 11 of 54 components done · drawing flowcharts, 38 of 112 · started 2 hours ago</p>
           <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#2e3139;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#1a6ce6;"></span></span>
           <button type="button" onclick="openComponents()" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #2c2f37;background:#1c1e23;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#f2f3f5;white-space:nowrap;cursor:pointer;text-decoration:none;">View components</button>
           <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#6aa9ff;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">terminal</span>Logs</a>
           <!-- Admin: stop the web job at work on this version (asks first: what is finished stays) -->
-          <button type="button" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped." style="border:none;background:none;padding:6px 4px;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#ff6b76;cursor:pointer;">Stop</button>
+          <button type="button" onclick="genBannerStop()" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped." style="border:none;background:none;padding:6px 4px;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#ff6b76;cursor:pointer;">Stop</button>
+        </div>
+        <!-- After Stop: the finished components keep their documents, the rest show as Stopped, and
+             an admin's Resume carries them on (POST .../versions/{vid}/resume). -->
+        <div id="gen-row-stopped" role="status" class="bg-surface-container-lowest border border-outline-variant rounded-xl" style="display:none;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
+          <span class="material-symbols-outlined flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#ffc966;">warning</span>
+          <p style="flex:1 1 300px;min-width:0;font-family:Roboto,sans-serif;font-size:13px;color:#a3a7b1;"><span style="font-weight:600;color:#f2f3f5;">Generation stopped</span> just now before it finished · not made: Layer2.Gpio, Layer2.Uart +41 more · 11 of 54 done</p>
+          <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#2e3139;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#f5a524;"></span></span>
+          <button type="button" onclick="genBannerResume()" title="Carry the run on from where it stopped" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:6px;border:none;background:#1a6ce6;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">play_arrow</span>Resume</button>
+          <button type="button" onclick="openComponents()" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #2c2f37;background:#1c1e23;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#f2f3f5;white-space:nowrap;cursor:pointer;">View components</button>
+          <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#6aa9ff;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">terminal</span>Logs</a>
         </div>
       </div>
 
@@ -1238,7 +1259,7 @@
 <!-- Opens small, with what every run needs: the commit, a version to compare against, the version
      name. "Advanced options" widens it to a second column: which components to analyze (a tree,
      every component ticked by default - a run makes one document per component whatever its
-     scope, so the scope only says WHICH), Skip LLM and Pause after Phase 1. Closed, the toggle
+     scope, so the scope only says WHICH), and two checks: Skip LLM and Fresh run. Closed, the toggle
      still names every option that is not its default, so a narrowed run is never hidden.
      Every open starts from the defaults. No taller than the window. -->
 <div id="run-modal" role="dialog" aria-modal="true" aria-label="Run analysis" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.85);">
@@ -1285,13 +1306,13 @@
             <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
             <span style="font-size:11px;color:#979ca7;font-family:'SamsungOne','Roboto',sans-serif;">OPTIONAL</span>
           </div>
-          <select id="run-modal-reference" onchange="refHint(this)"
+          <select id="run-modal-reference" onchange="refHint(this)" aria-label="Compare against"
             class="w-full border border-outline rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none"
             style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;"
             onfocus="this.style.borderColor='#1d7bff'" onblur="this.style.borderColor='#2c2f37'">
             <option value="">— None —</option>
           </select>
-          <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
+          <p id="run-ref-what" class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">The version this run builds on. None: the newest earlier one.</p>
           <p id="run-ref-hint" style="display:none;font-family:'JetBrains Mono';font-size:11px;color:#5aa2ff;margin-top:4px;"></p>
         </div>
 
@@ -1348,12 +1369,14 @@
               <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Faster: the LLM steps are skipped. Use it to check structure, not wording.</p>
             </div>
           </label>
-          <!-- Pause checkbox -->
+          <!-- Fresh run (NW-3): the job's mode "full" -- no baseline, nothing reused,
+               no corrections carried; Compare against has nothing to pick -->
           <label class="flex items-start gap-3 cursor-pointer group">
-            <input type="checkbox" id="pause-phase1" onchange="showAdvSummary()" class="mt-0.5 rounded border-outline text-secondary flex-shrink-0" style="width:15px;height:15px;">
+            <input type="checkbox" id="fresh-run" onchange="freshRun(this.checked)" class="mt-0.5 rounded border-outline text-secondary flex-shrink-0" style="width:15px;height:15px;">
             <div>
-              <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Pause after Phase 1 to review function visibility</span>
-              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Lets you hide functions before diagrams and DOCX are generated.</p>
+              <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Fresh run</span>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Rebuilds everything with this analyzer version. Use after an analyzer update, or to check a run.</p>
+              <p id="fresh-warn" style="display:none;margin-top:4px;font-size:11px;font-weight:600;color:#ffc966;"></p>
             </div>
           </label>
         </div>
@@ -3005,17 +3028,18 @@ function showAdvSummary() {
   const parts = [];
   if (n < total) parts.push(n + ' of ' + total + ' components');
   if (document.getElementById('skip-llm').checked) parts.push('Skip LLM');
-  if (document.getElementById('pause-phase1').checked) parts.push('Pause after Phase 1');
+  if (document.getElementById('fresh-run').checked) parts.push('Fresh run');
   const el = document.getElementById('adv-summary');
   el.textContent = parts.length ? parts.join(' · ') : 'Defaults';
   el.title = el.textContent;
   el.className = 'adv-summary' + (n === 0 ? ' err' : parts.length ? ' set' : '');
 }
-// Every open starts from the defaults: all components, LLM on, no pause, Advanced closed.
+// Every open starts from the defaults: all components, LLM on, not fresh, Advanced closed.
 function resetRunOptions() {
   allKeys().forEach((k) => scopeTicked.add(k));
   document.getElementById('skip-llm').checked = false;
-  document.getElementById('pause-phase1').checked = false;
+  document.getElementById('fresh-run').checked = false;
+  freshRun(false);
   toggleRunAdv(false);
   renderScope();
   showScope();
@@ -3023,6 +3047,33 @@ function resetRunOptions() {
 allKeys().forEach((k) => scopeTicked.add(k));
 renderScope();
 showScope();
+
+// NW-3: a fresh run builds on no version, so Compare against is off and says why.
+function freshRun(on) {
+  const sel = document.getElementById('run-modal-reference');
+  if (on) { sel.dataset.picked = sel.value; sel.value = ''; } else if (sel.dataset.picked) { sel.value = sel.dataset.picked; delete sel.dataset.picked; }
+  sel.disabled = on;
+  sel.style.opacity = on ? '.6' : '';
+  sel.style.cursor = on ? 'not-allowed' : 'pointer';
+  document.getElementById('run-ref-what').textContent = on
+    ? 'A fresh run builds on no earlier version.'
+    : 'The version this run builds on. None: the newest earlier one.';
+  // The version it would have built on: the one picked, else the newest earlier one.
+  const base = sel.dataset.picked || (VERSIONS[0] && VERSIONS[0].tag);
+  const n = FRESH_CORRECTIONS[base] || 0;
+  const w = document.getElementById('fresh-warn');
+  w.style.display = on && n ? '' : 'none';
+  w.textContent = `Not carried over: ${n} correction${n === 1 ? '' : 's'} in ${base}. They stay there.`;
+  refHint(sel);
+  showAdvSummary();
+}
+// Reviewer corrections per version (the mockup's numbers).
+const FRESH_CORRECTIONS = { 'v1.2.0': 37, 'v1.1.0': 12 };
+// project-detail.html#fresh opens the run dialog with Advanced open and Fresh run ticked.
+if (location.hash === '#fresh') window.addEventListener('load', () => {
+  openRunConfig(); toggleRunAdv(true);
+  document.getElementById('fresh-run').checked = true; freshRun(true);
+});
 
 // ── Function Visibility ──
 const FUNCTION_TREE = [
@@ -3194,6 +3245,8 @@ function startReexport() {
 // ── Post-Phase-1 review modal ──
 let _unitOpenReview = {};
 
+// Not opened since 2026-11-03: the run dialog's "Pause after Phase 1" went (never used). Kept for
+// function visibility, BACKLOG WA-1, still to decide.
 function showFnReviewModal() {
   _unitOpenReview = {};
   document.getElementById('review-search').value = '';
@@ -3342,10 +3395,19 @@ function rerunVersion(tag) {
 }
 
 // ── Run modal ──
+// The newest numbered version (v3, v1.1, v1.2.0), its second number up, in the same shape; never a taken name.
 function suggestNextVersion() {
   if (!VERSIONS.length) return 'v1.0.0';
-  const m = VERSIONS[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
-  return m ? `v${m[1]}.${parseInt(m[2]) + 1}.0` : '';
+  const m = VERSIONS.map(v => v.tag.match(/^(v?)(\d+)(?:\.(\d+))?(?:\.(\d+))?$/i)).find(x => x);
+  if (!m) return '';
+  const nums = m.slice(2).filter(x => x !== undefined).map(Number);
+  const taken = new Set(VERSIONS.map(v => v.tag));
+  for (let i = 0; i < 100; i++) {
+    if (nums.length === 1) nums[0] += 1; else { nums[1] += 1; nums.fill(0, 2); }
+    const name = m[1] + nums.join('.');
+    if (!taken.has(name)) return name;
+  }
+  return '';
 }
 
 function openRunConfig() {
@@ -3405,6 +3467,9 @@ function startGeneration() {
     String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
 
   _elapsed = 0; _phase = 1;
+  setPauseButton('pause');
+  document.getElementById('gen-live-badge').style.color = '#fff';
+  document.getElementById('gen-info').textContent = RUNNING_INFO;
 
   document.getElementById('gen-header').style.background = '#0b0c0f';
   document.getElementById('gen-header-title').textContent = 'Analysis Running';
@@ -3424,29 +3489,14 @@ function startGeneration() {
   _phaseTimers.forEach(clearTimeout);
   _phaseTimers = [];
 
-  const pauseAfterPhase1 = document.getElementById('pause-phase1') && document.getElementById('pause-phase1').checked;
-
-  if (pauseAfterPhase1) {
-    setPhActive(1);
-    setPhPending(2); setPhPending(3); setPhPending(4);
-    setLine('line12', 'ph-pending'); setLine('line23', 'ph-pending'); setLine('line34', 'ph-pending');
-    setActivity(1);
-    _phaseTimers.push(setTimeout(() => {
-      const m = Math.floor(_elapsed / 60), s = _elapsed % 60;
-      setPhDone(1, 'Done · ' + m + 'm ' + s + 's');
-      setLine('line12', 'ph-done');
-      showFnReviewModal();
-    }, 5000));
-  } else {
-    resetPhasesVisual();
-    setActivity(1);
-    _phaseTimers = [
-      setTimeout(() => advanceToPhase(2),  9000),
-      setTimeout(() => advanceToPhase(3), 18000),
-      setTimeout(() => advanceToPhase(4), 27000),
-      setTimeout(() => finishGeneration(), 36000),
-    ];
-  }
+  resetPhasesVisual();
+  setActivity(1);
+  _phaseTimers = [
+    setTimeout(() => advanceToPhase(2),  9000),
+    setTimeout(() => advanceToPhase(3), 18000),
+    setTimeout(() => advanceToPhase(4), 27000),
+    setTimeout(() => finishGeneration(), 36000),
+  ];
 
   setState('running');
 }
@@ -3562,6 +3612,120 @@ function cancelGeneration() {
   setState(prevState, c);
   showToast('cancel', 'Analysis job cancelled.', '#f5a524');
 }
+
+// ── The banner's Stop and Resume ──
+// Stop ends the job that is adding documents to this version (the app asks first: StopRunDialog).
+// Finished components keep their documents; the rest show as Stopped; Resume carries them on.
+function genBannerStop() {
+  document.getElementById('gen-row-running').style.display = 'none';
+  document.getElementById('gen-row-stopped').style.display = 'flex';
+  showToast('cancel', 'Stopped. Finished components keep their documents.', '#ffc966');
+}
+function genBannerResume() {
+  document.getElementById('gen-row-stopped').style.display = 'none';
+  document.getElementById('gen-row-running').style.display = 'flex';
+  showToast('play_circle', 'Resuming: the run carries on from where it stopped.', '#6aa9ff');
+}
+
+// ── Pause (NW-1) ──
+// Pause stops the run at once, in whatever phase it is in, and keeps what it made; the button
+// says Pausing for the moment its processes take to go. Paused, nothing runs: no process, no LLM
+// call. Resume starts the phase it stopped in again (`analyzer.py resume`): the parse from its
+// start, the model with the LLM's answers from the cache, the component at work from its views.
+// Cancel Job still deletes the draft. Demo: #paused.
+const PAUSE_COLORS = { base: '#a3a7b1', resume: '#6aa9ff', amber: '#f5a524', amberText: '#ffc966', onAmber: '#1a1205', live: '#1a6ce6', spin: '#1d7bff' };
+const RUNNING_INFO = 'Job runs on the server — switch branches or close this tab safely. Return any time to check progress.';
+let _pausedAt = 0;
+function setPauseButton(mode) {          // 'pause' | 'pausing' | 'resume'
+  const b = document.getElementById('gen-pause-btn');
+  document.getElementById('gen-pause-label').textContent = { pause: 'Pause', pausing: 'Pausing…', resume: 'Resume' }[mode];
+  document.getElementById('gen-pause-icon').textContent = mode === 'resume' ? 'play_circle' : 'pause_circle';
+  b.disabled = mode === 'pausing';
+  b.style.opacity = mode === 'pausing' ? '.6' : '';
+  b.style.cursor = mode === 'pausing' ? 'default' : '';
+  const c = mode === 'resume' ? PAUSE_COLORS.resume : PAUSE_COLORS.base;
+  b.style.color = c;
+  b.onmouseleave = () => { b.style.color = c; };
+  b.onclick = mode === 'resume' ? resumeGeneration : pauseGeneration;
+  b.title = mode === 'resume' ? 'Start the phase it stopped in again.'
+    : mode === 'pausing' ? 'The run is stopping.'
+    : 'Stop the run now. What it made is kept; Resume starts this phase again.';
+}
+function pauseGeneration() {
+  setPauseButton('pausing');
+  document.getElementById('act-sub').textContent = 'Pausing: the run stops now and keeps what it made.';
+  // Demo: its processes are gone a moment later. In Phases 3-4 the component at work starts
+  // again from its views (a component's export always follows its views).
+  setTimeout(() => showPaused(Math.min(_phase, 3)), 1000);
+}
+function setPhPaused(n) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = PAUSE_COLORS.amber;
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0';
+  ic.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:' + PAUSE_COLORS.onAmber + ';font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">pause</span>';
+  const tm = document.getElementById('ph'+n+'-time'); tm.textContent = 'Paused'; tm.style.color = PAUSE_COLORS.amberText;
+  document.getElementById('ph'+n+'-name').style.color = '#f2f3f5';
+}
+function showPaused(next) {
+  clearInterval(_elapsedTick);
+  _phaseTimers.forEach(clearTimeout); _phaseTimers = [];
+  _pausedAt = next;
+  const m = Math.floor(_elapsed/60), sec = _elapsed%60;
+  for (let n = 1; n < next; n++) {
+    if (!document.getElementById('ph'+n+'-time').textContent.startsWith('Done')) setPhDone(n, 'Done · '+m+'m '+sec+'s');
+    if (n > 1) setLine('line'+(n-1)+n, 'ph-done');
+  }
+  setPhPaused(next);
+  for (let n = next + 1; n <= 4; n++) setPhPending(n);
+
+  document.getElementById('gen-header-title').textContent = 'Analysis Paused';
+  const badge = document.getElementById('gen-live-badge');
+  badge.textContent = 'Paused'; badge.style.background = PAUSE_COLORS.amber; badge.style.color = PAUSE_COLORS.onAmber;
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0';
+  sw.style.cssText = 'background:' + PAUSE_COLORS.amber + ';';
+  sw.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:' + PAUSE_COLORS.onAmber + ';font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">pause</span>';
+
+  document.getElementById('act-icon').textContent = 'pause_circle';
+  document.getElementById('act-icon').style.color = PAUSE_COLORS.amberText;
+  document.getElementById('act-text').textContent = 'Paused at Phase ' + next + ' · ' + document.getElementById('ph'+next+'-name').textContent;
+  document.getElementById('act-sub').textContent = 'What the run made is kept. Resume starts Phase ' + next + ' from its beginning.';
+  document.getElementById('act-eta').textContent = '';
+  document.getElementById('act-pct').textContent = '';
+  document.getElementById('act-bar').style.background = PAUSE_COLORS.amber;
+  document.getElementById('gen-info').textContent = 'Nothing runs while the job is paused.';
+  setPauseButton('resume');
+  showToast('pause_circle', 'Analysis paused.', PAUSE_COLORS.amberText);
+}
+function resumeGeneration() {
+  const from = _pausedAt || _phase;
+  _pausedAt = 0;
+  document.getElementById('gen-header-title').textContent = 'Analysis Running';
+  const badge = document.getElementById('gen-live-badge');
+  badge.textContent = 'Live'; badge.style.background = PAUSE_COLORS.live; badge.style.color = '#fff';
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring';
+  sw.style.cssText = 'border:2px solid ' + PAUSE_COLORS.spin + ';border-top-color:transparent;';
+  sw.innerHTML = '<div class="w-full h-full rounded-full spin" style="border:2px solid ' + PAUSE_COLORS.spin + ';border-top-color:transparent;border-radius:9999px;"></div>';
+  setPhActive(from);
+  setActivity(from);
+  _phase = from;
+  document.getElementById('gen-info').textContent = RUNNING_INFO;
+  setPauseButton('pause');
+  clearInterval(_elapsedTick);
+  _elapsedTick = setInterval(() => { _elapsed++; document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed); }, 1000);
+  _phaseTimers = [];
+  for (let n = from + 1, t = 9000; n <= 4; n++, t += 9000) _phaseTimers.push(setTimeout(() => advanceToPhase(n), t));
+  _phaseTimers.push(setTimeout(() => finishGeneration(), (5 - from) * 9000));
+  showToast('play_circle', 'Resuming: Phase ' + from + ' starts again.', PAUSE_COLORS.resume);
+}
+if (location.hash === '#paused') window.addEventListener('load', () => {
+  startGeneration();
+  _elapsed = 2052;
+  advanceToPhase(2);
+  showPaused(2);
+  document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed);
+});
 
 // ── Toast ──
 let _toastTimer = null;

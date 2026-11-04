@@ -244,3 +244,73 @@ def test_only_the_descriptions_go_when_that_is_enough(tmp_path, monkeypatch):
     args = ("int f(void) { return 0; }", [], many, [], "int", "0", "", "")
     sent = _sent_prompt(tmp_path, monkeypatch, args, _SERVER_CFG)
     assert "xxxx" not in sent and "  - g_019 (int)" in sent and "more" not in sent
+
+
+# ── the unit-description prompt within the LLM's window (2026-10-29c) ───────────────────────
+
+def _unit_prompt_before(unit_name, fn_items, gv_items, abbreviations):
+    """The prompt as get_unit_description built it until 2026-10-29c, verbatim."""
+    def text(items):
+        lines = []
+        for name, desc in items:
+            name, desc = (name or "").strip(), (desc or "").strip()
+            if desc and desc not in ("-", "N/A"):
+                lines.append(f" - {name}: {desc}" if name else f" - {desc}")
+        return "\n".join(lines)
+    abbrev_block = ""
+    if abbreviations:
+        lines = [f"  {k}: {v}" for k, v in sorted(abbreviations.items()) if k and v]
+        if lines:
+            abbrev_block = "\nConsider these abbreviations when interpreting names:\n" + "\n".join(lines) + "\n\n"
+    return f"""Given the following C++ function and global-variable descriptions that belong to this unit, write ONE short sentence summarizing what the unit does overall.
+Be concrete but brief: at most ~25 words, no bullet list, no colon-separated catalog.
+
+Unit name: {unit_name or '(unnamed)'}
+
+Functions (descriptions):
+{text(fn_items) or '-'}
+
+Globals (descriptions):
+{text(gv_items) or '-'}{abbrev_block}
+
+One sentence:"""
+
+
+def _sent_unit_prompt(tmp_path, monkeypatch, args, cfg, abbreviations=None):
+    _fresh_cache(tmp_path, monkeypatch)
+    sent = []
+    monkeypatch.setattr(le, "_call_llm", lambda prompt, config, **kw: sent.append(prompt) or "It works.")
+    le.get_unit_description(*args, cfg, abbreviations)
+    return sent[0]
+
+
+def test_a_unit_prompt_that_fits_is_sent_as_it_was_built(tmp_path, monkeypatch):
+    args = ("Core", [("coreAdd", "Adds two values. Then saturates."), ("coreGet", "Reads the count.")],
+            [("g_tick", "The tick counter.")])
+    abbrev = {"FTL": "flash translation layer"}
+    for cfg in (_CFG, _SERVER_CFG):
+        assert _sent_unit_prompt(tmp_path, monkeypatch, args, cfg, abbrev) == _unit_prompt_before(*args, abbrev)
+
+
+def test_a_unit_prompt_too_big_for_the_window_is_cut_to_fit(tmp_path, monkeypatch):
+    """A large unit's prompt bigger than the model takes: first sentences first, then the items
+    past their section are counted -- the instructions never go."""
+    from llm_core.budget import ContextBudget
+    from llm_core.token_counter import get_counter
+    fns = [(f"fn_{i:04d}", f"Moves block {i} of the flash translation layer. " + "It also logs. " * 30)
+           for i in range(400)]
+    gvs = [(f"g_{i:03d}", "A counter. " + "More words. " * 20) for i in range(100)]
+    sent = _sent_unit_prompt(tmp_path, monkeypatch, ("BigUnit", fns, gvs), _SERVER_CFG)
+    counter = get_counter("m")
+    budget = ContextBudget(max_tokens=4000, task="unit_description", counter=counter)
+    assert counter.count(sent) <= budget.effective_input() - budget.allocate("output_reserve")
+    assert "It also logs" not in sent, "each description to its first sentence"
+    assert " - fn_0000: Moves block 0 of the flash translation layer." in sent
+    assert "more functions" in sent, "the functions past their section are counted"
+    assert sent.rstrip().endswith("One sentence:"), "the instructions are never cut"
+
+
+def test_first_sentences_only_when_that_is_enough(tmp_path, monkeypatch):
+    fns = [(f"fn_{i}", "Starts the pump. " + "Then it waits for the valve to settle. " * 40) for i in range(12)]
+    sent = _sent_unit_prompt(tmp_path, monkeypatch, ("Pump", fns, []), _SERVER_CFG)
+    assert "valve" not in sent and " - fn_11: Starts the pump." in sent and "more functions" not in sent

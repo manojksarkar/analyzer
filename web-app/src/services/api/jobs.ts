@@ -18,6 +18,9 @@ export interface StartJobInput {
   scope?: JobScope
   /** Skip the LLM steps (the engine's `--no-llm`): faster, for checking structure, not wording. */
   no_llm?: boolean
+  /** `full`: a fresh run, nothing taken from an earlier version (`generate --full`). Not sent:
+   *  `auto`, the newest earlier version (or `reference_version_id`) is the baseline. */
+  mode?: 'auto' | 'full'
 }
 
 export const jobsApi = {
@@ -35,6 +38,12 @@ export const jobsApi = {
     const r = await http.post<{ job: ApiJob }>(`/projects/${projectId}/jobs/${jobId}/cancel`)
     return mapJob(r.job)
   },
+  /** Pause (NW-1): the run stops at once and keeps what it made; `resume` carries the same job
+   *  on, starting the phase it stopped in again. */
+  pause: async (projectId: string, jobId: string): Promise<AnalysisJob> => {
+    const r = await http.post<{ job: ApiJob }>(`/projects/${projectId}/jobs/${jobId}/pause`)
+    return mapJob(r.job)
+  },
   resume: async (projectId: string, jobId: string): Promise<AnalysisJob> => {
     const r = await http.post<{ job: ApiJob }>(`/projects/${projectId}/jobs/${jobId}/resume`)
     return mapJob(r.job)
@@ -45,6 +54,13 @@ export const jobsApi = {
       summary: { total: number; hidden: number; new_since_last: number }
     }>(`/projects/${projectId}/jobs/${jobId}/functions`)
     return mapJobFunctions(r)
+  },
+  /** The version a run of `commit` would build on, when none is picked (read-only: no checkout).
+   *  `null`: none — the run is a fresh one anyway. */
+  baselinePreview: async (projectId: string, commit: string): Promise<string | null> => {
+    const r = await http.get<{ chosenBaseVersionId?: string | null }>(
+      `/projects/${projectId}/baseline-preview`, { commit })
+    return r.chosenBaseVersionId ?? null
   },
   /** SSE endpoint URL. The events route is unauthenticated, so no token needed. */
   eventsUrl: (projectId: string, jobId: string): string =>

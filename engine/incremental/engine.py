@@ -48,6 +48,7 @@ from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report, emit_run_summary
 from core.config import layer_sources
+from core.frozen_run import EXIT_PAUSED
 from incremental.generate import (AnalyzerRunFailed, _manifest, scope_to_args,
                                   per_component_docx_args,
                                   resolve_run_config, generate_full, _now_iso,
@@ -604,6 +605,8 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
                        # version's rows. A resume (--use-model --from-phase 4) would otherwise
                        # export a document containing just the changed files.
                        scratch_model=True)
+    if rc == EXIT_PAUSED:
+        raise AnalyzerRunFailed("paused", rc)
     if rc != 0:
         log.info(f"narrowed parse: partial parse failed (exit {rc}) — full parse")
         return False
@@ -801,6 +804,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     _rmtree_force(_paths().output_dir)
 
     def _fail(stage: str, rc: int):
+        if rc == EXIT_PAUSED:
+            # Paused, not failed: the version stays mid-pipeline, where `resume` carries it on.
+            raise AnalyzerRunFailed("paused", rc)
         m = _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",

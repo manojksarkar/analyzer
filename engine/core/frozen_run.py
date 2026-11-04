@@ -191,6 +191,41 @@ def detach(argv: List[str], *, code_root: str, data_root: str, workspaces_dir: s
 EXIT_FILE = "exit.json"
 EXIT_ENV = "ANALYZER_EXIT_FILE"
 
+# Pause (NW-1): someone asked the run to stop where `resume` carries it on. The request is a file
+# beside the exit code, read by every phase process (they inherit EXIT_ENV); the run checks it
+# before a phase that starts new work -- the parse, the model, a component's views -- and exits
+# EXIT_PAUSED, leaving what it has not started for `resume`. A resume runs in a new run folder,
+# so an old request never stops it.
+PAUSE_FILE = "pause.json"
+EXIT_PAUSED = 4
+
+
+def request_pause(run_dir_: str, reason: str = "") -> None:
+    """Ask the background run in `run_dir_` to pause at its next check."""
+    with open(os.path.join(run_dir_, PAUSE_FILE), "w", encoding="utf-8") as fh:
+        json.dump({"reason": reason,
+                   "at": datetime.datetime.now().isoformat(timespec="seconds")}, fh)
+
+
+def pause_asked(run_dir_: str) -> bool:
+    """Whether the run in `run_dir_` has been asked to pause."""
+    return os.path.isfile(os.path.join(run_dir_, PAUSE_FILE))
+
+
+def pause_requested() -> Optional[Dict[str, object]]:
+    """In a run's own processes: the pause request made of it ({reason, at}), or None. Always
+    None outside a background run."""
+    exit_path = os.environ.get(EXIT_ENV)
+    if not exit_path:
+        return None
+    try:
+        with open(os.path.join(os.path.dirname(exit_path), PAUSE_FILE), encoding="utf-8") as fh:
+            return json.load(fh) or {"reason": ""}
+    except FileNotFoundError:
+        return None
+    except Exception:                             # noqa: BLE001 - half written: still asked
+        return {"reason": ""}
+
 
 def record_exit(code: int, path: Optional[str]) -> None:
     """Write a background run's exit code beside its log, as it exits (analyzer.py's entry

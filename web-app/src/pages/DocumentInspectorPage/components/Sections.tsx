@@ -4,6 +4,7 @@ import { cn } from '../../../lib/cn'
 import type { BehaviorTableData, FlowchartTableData, RichSection, RichTable } from '../../../types'
 import { useEdit } from '../editContext'
 import { FlowchartFigure, ImageViewer } from './FlowchartFigure'
+import { FunctionCode } from './FunctionCode'
 import { SlotText } from './SlotText'
 
 /* The SWE.3 document, section by section as its DOCX. Texts the LLM wrote carry their slot and
@@ -118,6 +119,17 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                 <div key={i} data-flowchart-id={fc.flowchartId ?? undefined} className={i > 0 ? 'mt-4' : ''}>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     {fc.label && <p className="font-mono text-caption text-on-surface-variant truncate">{fc.label}</p>}
+                    {/* Each chart and its own function's code side by side (NW-7): the section's
+                        function, or a private callee drawn under it. An older render names only the
+                        section's function, so only its first chart then. The page's project and
+                        version come with the edit context, which the reader always provides. */}
+                    {(fc.functionId ?? (i === 0 ? data.functionId : null)) && edit?.projectId && edit.versionId && (
+                      <span className="ml-auto">
+                        <FunctionCode projectId={edit.projectId} versionId={edit.versionId}
+                                      functionId={(fc.functionId ?? data.functionId) as string}
+                                      title={fc.label || 'Function'} flowcharts={[fc]} />
+                      </span>
+                    )}
                     {edit?.editing && fc.editable && (
                       <button
                         type="button"

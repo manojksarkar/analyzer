@@ -523,7 +523,8 @@ def load_run_metadata(conn, version_id) -> Dict[str, Any]:
                      .where(v.c.id == version_id)).first()
     if r is None:
         return {}
-    out = {"basePath": r.base_path, "projectName": r.project_name,
+    from core.paths import rebase_stored_path              # the workspaces may have moved (NW-5)
+    out = {"basePath": rebase_stored_path(r.base_path), "projectName": r.project_name,
            "parseFingerprint": r.parse_fingerprint}
     return {k: val for k, val in out.items() if val is not None}
 

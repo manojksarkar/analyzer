@@ -46,7 +46,8 @@ def default_workspaces_root() -> str:
     Unchanged for production: data_root defaults to the project root, so this is the same
     path unless something has deliberately relocated the data.
     """
-    return os.path.join(_paths().data_root, "workspaces")
+    from core.paths import workspaces_root
+    return workspaces_root()      # ANALYZER_WORKSPACES_DIR, config.local.json paths.workspaces, or this
 
 
 def _read_json(path: str, default: Any) -> Any:

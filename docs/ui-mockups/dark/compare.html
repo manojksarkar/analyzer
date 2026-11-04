@@ -215,6 +215,22 @@
   /* Rows */
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
+
+  /* Review & update from the compare page (BACKLOG NW-6, 2026-11-02): the Current side's
+     LLM-written texts are corrected as in documents.html's edit mode; the Reference side never. */
+  .ed { display:block; border-radius:3px; outline:1px solid transparent; outline-offset:2px; transition:outline-color .1s, background .1s; }
+  .ed.corrected::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:#1a6ce6; margin-right:6px; vertical-align:2px; }
+  body.editing #canvas-current .ed { outline:1px dashed #2d4a80; cursor:text; background:#1c1e23; position:relative; padding-right:22px; }
+  body.editing #canvas-current .ed:hover { outline:1px solid #1d7bff; background:#1b2638; }
+  body.editing #canvas-current .ed:focus { outline:2px solid #1d7bff; background:#1c1e23; }
+  body.editing #canvas-current .ed::after { content:'edit'; position:absolute; top:1px; right:2px; font:normal 15px/1 'Material Symbols Outlined'; font-feature-settings:'liga'; color:#979ca7; pointer-events:none; }
+  body.editing #canvas-current .ed:hover::after { color:#6aa9ff; }
+  body.editing #canvas-current .ed:focus::after { display:none; }
+  #cmp-edit { display:flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; border:1px solid #454953; background:transparent; color:#f2f3f5; font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; font-weight:600; cursor:pointer; }
+  #cmp-cancel { display:flex; align-items:center; padding:2px 8px; border-radius:4px; border:1px solid #2c2f37; background:transparent; color:#f2f3f5; font-size:11px; font-weight:600; cursor:pointer; margin-right:6px; }
+  #cmp-cancel:hover { background:#1b2638; }
+  #cmp-edit:hover { background:#1b2638; }
+  body.editing #cmp-edit { background:#1d7bff; border-color:#1d7bff; color:#0b0c0f; }
 </style>
 <link rel="stylesheet" href="../a11y.css">
 <script src="../a11y.js" defer></script>
@@ -422,15 +438,27 @@
   <div class="flex-1 flex overflow-hidden">
 
     <!-- DOCUMENT TREE -->
-    <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden" aria-label="Documents">
+    <!-- The document list, folded (2026-11-02): a thin rail that opens it again - as documents.html. -->
+    <aside id="doc-tree-rail" class="hidden w-8 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex-col items-center pt-2" aria-label="Documents, folded">
+      <button type="button" onclick="foldDocTree(false)" title="Show the document list" aria-label="Show the document list"
+              class="w-full flex flex-col items-center gap-2 py-1.5 text-on-surface-variant hover:text-secondary">
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">left_panel_open</span>
+        <span style="writing-mode:vertical-rl;font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;">Documents</span>
+      </button>
+    </aside>
+    <aside id="doc-tree-panel" class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden" aria-label="Documents">
       <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
-        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em]">Documents</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] mr-auto">Documents</span>
         <div class="flex items-center rounded-lg border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;">
           <button id="toggle-diff" onclick="setTreeMode('diff')"
                   class="px-2 py-1 bg-secondary text-white transition-colors">Diff</button>
           <button id="toggle-all"  onclick="setTreeMode('all')"
                   class="px-2 py-1 text-on-surface-variant hover:bg-surface-container transition-colors">All</button>
         </div>
+        <button type="button" onclick="foldDocTree(true)" title="Fold the document list" aria-label="Fold the document list"
+                class="ml-1 p-0.5 rounded text-on-surface-variant hover:text-secondary hover:bg-surface-container">
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">left_panel_close</span>
+        </button>
       </div>
       <div class="flex-1 overflow-y-auto py-2" id="doc-tree"></div>
       <div class="px-3 py-2 border-t border-outline-variant flex-shrink-0">
@@ -472,9 +500,17 @@
             <span class="font-label-md text-label-md text-on-surface">Current</span>
             <span class="px-2 py-0.5 rounded" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;background:#3ddc84;color:#0b0c0f;">Latest</span>
             <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'SamsungOne','Roboto',sans-serif;" id="current-panel-ref">main @ b2e8d45</span>
-            <span id="current-commit-badge" class="ml-auto" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;">
+            <button id="cmp-cancel" type="button" class="ml-auto" onclick="cancelCompareEdit()" style="display:none;">Cancel</button>
+            <button id="cmp-edit" type="button" onclick="toggleCompareEdit()" aria-pressed="false" title="Correct the texts of this version">
+              <span class="material-symbols-outlined" aria-hidden="true" id="cmp-edit-icon" style="font-size:12px;">edit</span><span id="cmp-edit-label">Edit</span>
+            </button>
+            <span id="current-commit-badge" class="" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;">
               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">rate_review</span>In review
             </span>
+          </div>
+          <div id="cmp-edit-bar" class="hidden flex-shrink-0 px-4 py-2 flex items-center gap-2" style="background:#1b2638;color:#f2f3f5;border-bottom:1px solid #2c2f37;font-size:12px;">
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#6aa9ff;">edit_note</span>
+            <span><b>Editing.</b> Click an outlined text to correct it; it saves when you leave the box. Flowchart labels: in the document.</span>
           </div>
           <div class="flex-1 overflow-y-auto bg-transparent" id="canvas-current">
             <div class="max-w-2xl mx-auto px-5 py-6">
@@ -489,7 +525,7 @@
                   <!-- 1. Introduction -->
                   <section id="c-intro" class="transition-all duration-200">
                     <h2 class="font-headline-sm text-headline-sm text-primary mb-3">1. Introduction</h2>
-                    <p class="text-body-md text-on-surface leading-relaxed">
+                    <p class="ed text-body-md text-on-surface leading-relaxed" data-slot="unit">
                       The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
                       It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
                       via high-frequency PWM signals.
@@ -512,23 +548,23 @@
                           <tr class="border-b border-outline-variant/60">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_BrakeReq</td>
                             <td class="px-3 py-2 text-on-surface-variant">Input</td>
-                            <td class="px-3 py-2 text-on-surface-variant">Target deceleration from VCU</td>
+                            <td class="px-3 py-2 text-on-surface-variant"><span class="ed">Target deceleration from VCU</span></td>
                           </tr>
                           <tr class="border-b border-outline-variant/60">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td>
                             <td class="px-3 py-2 text-on-surface-variant">Input</td>
-                            <td class="px-3 py-2 text-on-surface-variant">Raw encoder pulse counts</td>
+                            <td class="px-3 py-2 text-on-surface-variant"><span class="ed">Raw encoder pulse counts</span></td>
                           </tr>
                           <tr class="border-b border-outline-variant/60">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_ValveCmd</td>
                             <td class="px-3 py-2 text-on-surface-variant">Output</td>
-                            <td class="px-3 py-2 text-on-surface-variant">PWM duty cycle for valves</td>
+                            <td class="px-3 py-2 text-on-surface-variant"><span class="ed">PWM duty cycle for valves</span></td>
                           </tr>
                           <tr class="diff-added">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_DiagStatus</td>
                             <td class="px-3 py-2 text-on-surface-variant">Output</td>
                             <td class="px-3 py-2 text-on-surface-variant">
-                              Diagnostic trouble code bitmask
+                              <span class="ed">Diagnostic trouble code bitmask</span>
                               <span class="ml-1.5 px-1.5 py-0.5 rounded text-on-tertiary-container bg-on-tertiary-container/10 font-label-sm text-label-sm">+ added</span>
                             </td>
                           </tr>
@@ -1113,6 +1149,90 @@ document.addEventListener('click', e => {
 renderTree();
 renderEmptyCards();
 setRole('admin');
+// ── The document list folds to a rail (2026-11-02), as on the document page; the page keeps
+// the choice. compare.html#folded opens folded.
+function foldDocTree(fold) {
+  document.getElementById('doc-tree-panel').style.display = fold ? 'none' : '';
+  const rail = document.getElementById('doc-tree-rail');
+  rail.classList.toggle('hidden', !fold);
+  rail.style.display = fold ? 'flex' : '';
+}
+if (location.hash === '#folded') { selectItem('Brake Controller'); foldDocTree(true); }
+
+// ── Review & update from the compare page (NW-6) ─────────────────────────────────
+// Edit turns the Current side's correctable texts into boxes, as documents.html#edit does; a box
+// saves when you leave it, and the diff is read again (the text may now equal the Reference's).
+let cmpEditing = false;
+function toggleCompareEdit(on) {
+  const was = cmpEditing;
+  cmpEditing = on === undefined ? !cmpEditing : on;
+  if (cmpEditing && !was) cmpSession = new Map();
+  document.getElementById('cmp-cancel').style.display = cmpEditing ? 'flex' : 'none';
+  document.body.classList.toggle('editing', cmpEditing);
+  document.querySelectorAll('#canvas-current .ed').forEach(el => { el.contentEditable = cmpEditing ? 'true' : 'false'; });
+  document.getElementById('cmp-edit-bar').classList.toggle('hidden', !cmpEditing);
+  document.getElementById('cmp-edit-label').textContent = cmpEditing ? 'Done' : 'Edit';
+  document.getElementById('cmp-edit-icon').textContent = cmpEditing ? 'check' : 'edit';
+  document.getElementById('cmp-edit').setAttribute('aria-pressed', String(cmpEditing));
+}
+document.querySelectorAll('#canvas-current .ed').forEach(el => {
+  let before = '';
+  el.addEventListener('focus', () => { before = el.textContent; });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { el.textContent = before; el.blur(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); }
+  });
+  el.addEventListener('blur', () => {
+    if (!cmpEditing || el.textContent === before) return;
+    if (!cmpSession.has(el)) cmpSession.set(el, { text: before, corrected: el.classList.contains('corrected') });
+    el.classList.add('corrected');
+    showToast('Saved - the comparison is read again');
+  });
+});
+// Cancel in edit mode (2026-11-03): put back every text corrected since Edit, after asking.
+let cmpSession = new Map();
+function cancelCompareEdit() {
+  if (!cmpSession.size) return toggleCompareEdit(false);
+  document.getElementById('cancel-n').textContent = cmpSession.size === 1 ? '1 correction' : `${cmpSession.size} corrections`;
+  document.getElementById('cancel-dlg').classList.remove('hidden');
+}
+function discardCompareSession() {
+  document.getElementById('cancel-dlg').classList.add('hidden');
+  const n = cmpSession.size;
+  cmpSession.forEach((o, el) => { el.textContent = o.text; el.classList.toggle('corrected', o.corrected); });
+  cmpSession = new Map(); toggleCompareEdit(false);
+  showToast(n === 1 ? '1 correction discarded' : `${n} corrections discarded`);
+}
+// compare.html#cancel: two texts corrected in edit mode, then Cancel.
+if (location.hash === '#cancel') {
+  selectItem('Brake Controller'); toggleCompareEdit(true);
+  [...document.querySelectorAll('#canvas-current .ed')].slice(0, 2).forEach(el => cmpSession.set(el, { text: el.textContent, corrected: false }));
+  setTimeout(cancelCompareEdit, 50);
+}
+// compare.html#edit opens a document straight in edit mode.
+if (location.hash === '#edit') { selectItem('Brake Controller'); toggleCompareEdit(true); }
+
 </script>
+
+<!-- Cancel in edit mode (2026-11-03): corrections save as each box is left, so Cancel puts back every
+     text corrected since Edit was pressed -- after asking. -->
+<div id="cancel-dlg" class="hidden fixed inset-0 z-[500] flex items-center justify-center" style="background:rgba(0,0,0,.8);"
+     onclick="if (event.target === this) this.classList.add('hidden')">
+  <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" class="w-full p-6"
+       style="max-width:440px;margin:0 16px;border-radius:12px;background:#1c1e23;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+    <h3 id="cancel-title" style="font:600 16px/24px Roboto,sans-serif;color:#f2f3f5;">Discard your corrections?</h3>
+    <p style="margin-top:8px;font:400 13px/1.55 Roboto,sans-serif;color:#a3a7b1;">
+      Discard the <b id="cancel-n" style="color:#f2f3f5;"></b> made since you pressed Edit? Each text goes back to
+      what it was before.
+    </p>
+    <div class="flex justify-end gap-2" style="margin:16px -24px 0;padding:16px 24px 0;border-top:1px solid #2c2f37;">
+      <button type="button" onclick="document.getElementById('cancel-dlg').classList.add('hidden')"
+              style="padding:6px 12px;border-radius:8px;border:1px solid #2c2f37;background:#1c1e23;color:#f2f3f5;font:500 12px/16px 'SamsungOne','Roboto',sans-serif;"
+              onmouseover="this.style.background='#1b2638'" onmouseout="this.style.background='#1c1e23'">Keep editing</button>
+      <button type="button" onclick="discardCompareSession()"
+              style="padding:6px 12px;border-radius:8px;border:1px solid #ff6b76;background:#ff6b76;color:#1a0005;font:600 12px/16px 'SamsungOne','Roboto',sans-serif;">Discard</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

@@ -1171,6 +1171,15 @@ message prints it); that also finishes the web job, so the version leaves draft.
 removes the version. Not covered: an API run under systemd with the default `KillMode=control-group`, or
 in a container that is restarted, takes its background runs down with it -- use `KillMode=process`.
 
+**Pause** (web app, admins). The run stops at once, in whatever phase it is in. Nothing is marked
+failed: the component it was making waits again, and the run record says `paused`. The job says
+**Paused at Phase N**; Resume in the web app runs `resume`, as the same job, and that phase starts again
+from its beginning -- the parse from its start, the model with the LLM's answers from the cache (all but
+the last minute's), the component at work from its views. An API restart leaves a paused job paused.
+Cancel removes the version as always. The pause is the file `pause.json` beside `run.log`; a phase that
+finds it before it starts exits with code 4 (the run pauses even if it could not be stopped). A resume
+runs in a run folder of its own.
+
 **One writer per version.** `generate`, `export`, `reexport`, `resume` and the web app's jobs hold a
 lock on the version while they run (Postgres only); a second one on the same version is refused,
 naming who holds it. The lock goes with the process, so a killed run never leaves its version
@@ -1182,6 +1191,28 @@ stores what they made and exits 3; `resume` makes the failed one again once the 
 detached run uses the database its starter resolved (`DATABASE_URL`), and records path arguments
 (`--config`, `--source`) as absolute paths, so `resume` can repeat them from anywhere. Other versions are not held up — but two runs that both use the LLM gateway share its
 ~1 call / 3 s limit, so run one at a time.
+
+## Moving the workspaces
+
+Every project's workspace -- its checkouts, each version's documents and diagrams, the copies kept
+at approval -- is under one folder: `<installation>/workspaces` unless set. To put it elsewhere
+(another disk, or another server with the database):
+
+1. Stop the API and any background run.
+2. Move the `workspaces` folder.
+3. In `engine/config/config.local.json`, set `"paths": {"workspaces": "D:/artifex/workspaces"}`
+   (absolute, or relative to the installation). `ANALYZER_WORKSPACES_DIR` still wins when set.
+4. Start again, then `python analyzer.py doctor`: its **stored paths** line counts the approved
+   copies and version checkouts it finds, and names any it cannot.
+
+The database is not rewritten. A path it stored under the old folder (Windows or Linux) is looked
+for under the new one when it is read. A checkout that is missing is cloned again when a run needs
+it. The logs, caches and background-run code copies (the data root) are not needed after a move; they
+move with `ANALYZER_DATA_ROOT` if you want them.
+
+**One database, one API server.** Each server keeps its files on its own disk, so an API refuses to
+start on a database another API already serves ("Another API server is already running on this
+database"). Stop the old one first. A second one on purpose: `ANALYZER_ALLOW_SECOND_API=1`.
 
 ## When a run stops
 
@@ -1203,6 +1234,7 @@ detached run uses the database its starter resolved (`DATABASE_URL`), and record
 | `version <id> is being written by analyzer <command> pid N on <host>` | Another run holds that version. `progress` shows how far it is; wait, or stop that process. |
 | `progress` says `STOPPED -- the process is gone` | The run was cut short: `python analyzer.py resume ... --detach` (the line under it). |
 | exit code 3, `N document plan(s) failed; the other components' documents were made` | Fix what the named component's log says, then `resume` — it makes only the failed ones. |
+| exit code 4, `Paused. What the run made is kept.` | Someone paused the run in the web app. `resume` carries it on: the phase it stopped at starts again. |
 | `has no model to re-export from` (from `reexport`) | Its Phase 2 did not finish: `resume` it first. |
 | `has no model yet: its Phase 2 did not finish` (from `export`) | `resume` the version first. |
 | `bad --scope '...'` | The message lists the four accepted forms. |

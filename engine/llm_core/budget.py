@@ -102,6 +102,17 @@ TASK_RATIOS: Dict[str, Dict[str, float]] = {
         "output_reserve":   0.07,
     },
 
+    # Phase 2 — a unit's one sentence from its published functions' and globals' descriptions
+    # (llm_enrichment.get_unit_description). Only a prompt over the window is fitted to it.
+    "unit_description": {
+        "system_prompt":    0.05,
+        "function_descriptions": 0.55,
+        "global_descriptions": 0.20,
+        "abbreviations":    0.07,
+        "instructions":     0.05,
+        "output_reserve":   0.08,
+    },
+
     # Phase 2 hierarchy summarizer — component summaries
     "component_summary": {
         "system_prompt":    0.05,

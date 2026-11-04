@@ -248,6 +248,16 @@ R10 `GET /versions/{versionId}/regeneration-queue`: texts the next Word-file upd
 rewrites because a correction changed what they were written from. Show each with its `reason`; an
 entry of kind `flowchartLabels` is one chart's labels, keyed by its flowchart id.
 
+### Flow 8 — correct a text from the compare page
+
+`GET /compare/documents/{docId}?current={versionId}&baseline={otherVersionId}` (the compare detail,
+`mode: "rich"`) gives each block of `sections[].current_blocks` the render's slot: a text or
+key-value block its `slot` (a behaviour row's bullets one text block, with `bullets`), a table block
+`cell_slots` beside its `rows`. `baseline_blocks` never carry one: a correction is made in the
+newer version. Save as Flow 2 / Flow 3 (R3, R6; R4 to undo), then read the compare detail again —
+the corrected text may now equal the reference's. Flowchart labels are corrected in the document
+(Flow 4).
+
 ### Drawing a flowchart
 
 The page payload and R7 both carry the flowchart as **Graphviz DOT, read from the database**:

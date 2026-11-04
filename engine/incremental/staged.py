@@ -94,6 +94,15 @@ def layers_to_add(view: List[Dict[str, Any]], components: List[str]) -> List[str
     return sorted(layers)
 
 
+def model_layers(view: List[Dict[str, Any]]) -> List[str]:
+    """The layers the version's model holds (`Layer1` of `Layer1.Math`), sorted -- what an add
+    of a layer parses again. A component without a layer is not one: the parser files a source
+    outside every configured component as `unknown`, and taken whole it became the layer
+    `unknown`, so the parse stopped with "Unknown --selected-layer 'unknown'"."""
+    return sorted({c["component"].partition(".")[0] for c in view
+                   if c["in_model"] and "." in c["component"]})
+
+
 def reexport_targets(view: List[Dict[str, Any]], found: List[str]) -> Tuple[List[str], List[str]]:
     """(to make again, refused as never generated)."""
     comps = _by_id(view)

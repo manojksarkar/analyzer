@@ -93,3 +93,24 @@ export function versionNameProblem(name: string, versions?: Version[]): string |
   if ((versions ?? []).some((v) => v.tag === n)) return `${n} already exists in this project. Choose another name.`
   return null
 }
+
+const NUMBERED_TAG = /^(v?)(\d+)(?:\.(\d+))?(?:\.(\d+))?$/i
+
+/** The name the Run dialog offers: the newest numbered version (`v3`, `v1.1`, `v1.2.0`) with its
+ *  second number up and any after it 0, in the same shape (`v4`, `v1.2`, `v1.3.0`), and never a
+ *  name the project has. No numbered version: `v1.0.0` for the first, else nothing. */
+export function suggestNextVersion(versions?: Version[]): string {
+  const vs = versions ?? []
+  if (vs.length === 0) return 'v1.0.0'
+  const m = vs.map((v) => v.tag.match(NUMBERED_TAG)).find((x) => x)
+  if (!m) return ''
+  const nums = m.slice(2).filter((x) => x !== undefined).map(Number)
+  const taken = new Set(vs.map((v) => v.tag))
+  for (let i = 0; i < 100; i++) {
+    if (nums.length === 1) nums[0] += 1
+    else { nums[1] += 1; nums.fill(0, 2) }
+    const name = m[1] + nums.join('.')
+    if (!taken.has(name)) return name
+  }
+  return ''
+}

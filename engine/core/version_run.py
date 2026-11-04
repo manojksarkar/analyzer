@@ -134,8 +134,16 @@ class _Run:
         self.outcome: Optional[str] = None
 
     def ok(self, rc: int = 0) -> int:
-        self.outcome = "complete" if not rc else "failed"
+        self.outcome = _outcome(rc)
         return rc
+
+
+def _outcome(rc) -> str:
+    """complete | paused (someone asked: core/frozen_run.py) | failed."""
+    from .frozen_run import EXIT_PAUSED
+    if rc in (None, 0):
+        return "complete"
+    return "paused" if rc == EXIT_PAUSED else "failed"
 
 
 @contextmanager
@@ -162,7 +170,7 @@ def writing(version_id: str, *, command: str, argv: Optional[list] = None,
         if run.outcome is None:
             run.outcome = "complete"
     except SystemExit as exc:
-        run.outcome = "complete" if exc.code in (None, 0) else "failed"
+        run.outcome = _outcome(exc.code)
         raise
     except BaseException:
         run.outcome = "failed"
@@ -389,7 +397,8 @@ def progress(stage: str, done: int, total: int, stage_started: Optional[float] =
 # ---------------------------------------------------------------------------
 
 def mark_components(version_id: Optional[str], components: Iterable[str], state: str, *,
-                    error: Optional[str] = None, layers: Optional[Iterable[str]] = None) -> None:
+                    error: Optional[str] = None, layers: Optional[Iterable[str]] = None,
+                    engine=None) -> None:
     """Move components to `state` (waiting | generating | generated | failed | stale).
 
     `stale` keeps when the documents were made (`finished_at`): they exist, only the model has
@@ -403,7 +412,7 @@ def mark_components(version_id: Optional[str], components: Iterable[str], state:
     comps = [c for c in dict.fromkeys(components or ()) if c]
     if not version_id or not comps or state not in STATES:
         return
-    eng = _engine()
+    eng = engine if engine is not None else _engine()
     if eng is None:
         return
     now = _now()
@@ -481,8 +490,8 @@ def generated_components(version_id: str) -> list:
     return sorted(n for n in names if n)
 
 
-def component_rows(version_id: str) -> Dict[str, Dict[str, Any]]:
-    eng = _engine()
+def component_rows(version_id: str, *, engine=None) -> Dict[str, Dict[str, Any]]:
+    eng = engine if engine is not None else _engine()
     if eng is None:
         return {}
     from sqlalchemy import select

@@ -147,7 +147,7 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 
 #: This server's blocks. Not in config.defaults.json, and never written into a project's or a
 #: version's config (`without_server_settings`).
-SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "speedups")
+SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "speedups", "paths")
 #: The server blocks a run reads through its config: laid over it when it is loaded
 #: (`with_server_settings`). The others have readers of their own, on the same file:
 #: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`.

@@ -25,7 +25,7 @@ Start context (read as needed, don't duplicate here):
 - **Everything — pipeline, schema, flags, views, DOCX, LLM, risks, decisions** → root
   [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), the index into [project-context/](project-context/) (agent-facing
   source of truth; CLAUDE.md loads the index — then read the topic file for your area).
-- **Doc contracts** → [docs/spec/SWE3_SPEC.md](docs/spec/SWE3_SPEC.md), [docs/spec/SWE4_SPEC.md](docs/spec/SWE4_SPEC.md).
+- **Doc contracts** → [docs/spec/SWE3_SPEC.md](docs/spec/SWE3_SPEC.md), [docs/spec/SWE4_WIKI.md](docs/spec/SWE4_WIKI.md).
 - **Carved-out areas** → `engine-flowchart` (flowchart/CFG + incremental), `engine-behaviour`.
 
 ## 1. Pipeline & orchestration

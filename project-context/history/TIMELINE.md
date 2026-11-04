@@ -10,16 +10,32 @@
 
 | Date | Change | File |
 |---|---|---|
-| 2026-10-29 | The web app shows how a version was made: Versions → View runs | [16](16-2026-10-14g.md) |
-| 2026-10-28b | A version records, run by run, the server settings it was made with -- no secret | [16](16-2026-10-14g.md) |
-| 2026-10-28 | The log says which LLM lane answered each call, and what `parseWorkers: "auto"` became | [16](16-2026-10-14g.md) |
-| 2026-10-15b | UT export: a return inside a spliced callee is reached by running the function, and its case expects the function's own return | [16](16-2026-10-14g.md) |
-| 2026-10-15 | UT export onto the speed branch: the target format (one test-case file per unit, one hierarchy.json) and solved input values | [16](16-2026-10-14g.md) |
-| 2026-10-14k | Phase 1's summary names every header libclang could not find, with how many files asked for it | [16](16-2026-10-14g.md) |
-| 2026-10-14j | The 502 in review after the descriptions: the Input / Output Names prompt fits the token window, a failed attempt names its prompt's size, and with lanes a 502 counts | [16](16-2026-10-14g.md) |
-| 2026-10-14i | A `case` whose constant comes from a header libclang cannot find keeps its branch in the flowchart and in the test steps | [16](16-2026-10-14g.md) |
-| 2026-10-14h | Two functions of one unit never print alike: overloads carry their parameter types, one name in two namespaces its scope -- and each overload has a flowchart of its own | [16](16-2026-10-14g.md) |
-| 2026-10-14g | What is published is one rule: something in another unit uses it. No PUBLIC / PRIVATE / PROTECTED marking and no C++ access is consulted any more | [16](16-2026-10-14g.md) |
+| 2026-11-04d | `fix/review-issues` and `feat/next-work` are in develop (fast-forward); each database runs `analyzer.py setup` once (0019) | [16](16-2026-10-30.md) |
+| 2026-11-04c | Resume after a pause in a run's first seconds starts it again (NW-1 check pass) | [16](16-2026-10-30.md) |
+| 2026-11-04b | Pause is instant (NW-1): the run stops now, in any phase; Resume starts that phase again | [16](16-2026-10-30.md) |
+| 2026-11-04 | Pause and resume at step boundaries (NW-1): a paused run keeps what it made, Resume carries the same job on | [16](16-2026-10-30.md) |
+| 2026-11-03c | Fresh run (NW-3): for an analyzer update or a check; names the corrections it leaves behind; Pause after Phase 1 removed | [16](16-2026-10-30.md) |
+| 2026-11-03b | Cancel beside Done in edit mode: the texts corrected since Edit go back, after asking | [16](16-2026-10-30.md) |
+| 2026-11-03 | View code: a dialog, beside every flowchart, each with its own function's code (NW-7) | [16](16-2026-10-30.md) |
+| 2026-11-02b | One database, one API server: a second API refuses to start; NW-5 closed | [16](16-2026-10-30.md) |
+| 2026-11-02 | Delete project: a dialog with the name typed; Archive before real projects (WA-19) | [16](16-2026-10-30.md) |
+| 2026-10-31d | A function's code beside its flowcharts (NW-7) | [16](16-2026-10-30.md) |
+| 2026-10-31c | The workspaces can move (NW-5, first part): paths.workspaces, stored paths found after a move | [16](16-2026-10-30.md) |
+| 2026-10-31b | A text can be corrected from the compare page (NW-6) | [16](16-2026-10-30.md) |
+| 2026-10-31 | Deleting a project leaves nothing behind (NW-4); migration 0019 delete rules | [16](16-2026-10-30.md) |
+| 2026-10-30b | Adding a layer to a version no longer stops on the `unknown` component | [16](16-2026-10-30.md) |
+| 2026-10-30 | One list of open work: docs/BACKLOG.md | [16](16-2026-10-30.md) |
+| 2026-10-29b | Run card's estimate is the step's own; a flowchart engine crashing on exit keeps its output | [15](15-2026-10-07h.md) |
+| 2026-10-29 | The web app shows how a version was made: Versions → View runs | [15](15-2026-10-07h.md) |
+| 2026-10-28b | A version records, run by run, the server settings it was made with -- no secret | [15](15-2026-10-07h.md) |
+| 2026-10-28 | The log says which LLM lane answered each call, and what `parseWorkers: "auto"` became | [15](15-2026-10-07h.md) |
+| 2026-10-15b | UT export: a return inside a spliced callee is reached by running the function, and its case expects the function's own return | [16](16-2026-10-30.md) |
+| 2026-10-15 | UT export onto the speed branch: the target format (one test-case file per unit, one hierarchy.json) and solved input values | [16](16-2026-10-30.md) |
+| 2026-10-14k | Phase 1's summary names every header libclang could not find, with how many files asked for it | [15](15-2026-10-07h.md) |
+| 2026-10-14j | The 502 in review after the descriptions: the Input / Output Names prompt fits the token window, a failed attempt names its prompt's size, and with lanes a 502 counts | [15](15-2026-10-07h.md) |
+| 2026-10-14i | A `case` whose constant comes from a header libclang cannot find keeps its branch in the flowchart and in the test steps | [15](15-2026-10-07h.md) |
+| 2026-10-14h | Two functions of one unit never print alike: overloads carry their parameter types, one name in two namespaces its scope -- and each overload has a flowchart of its own | [15](15-2026-10-07h.md) |
+| 2026-10-14g | What is published is one rule: something in another unit uses it. No PUBLIC / PRIVATE / PROTECTED marking and no C++ access is consulted any more | [15](15-2026-10-07h.md) |
 | 2026-10-14f | A third LLM provider, `anthropic`: the Claude Messages API, native | [15](15-2026-10-07h.md) |
 | 2026-10-14e | Log lines say how long something took in minutes, hours and days | [15](15-2026-10-07h.md) |
 | 2026-10-14d | Every speed-up is one key of ONE block, `speedups`; a key not set is develop's way, so an empty block runs exactly as develop does | [15](15-2026-10-07h.md) |

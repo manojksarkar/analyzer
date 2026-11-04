@@ -404,8 +404,17 @@ def delete_project(
         # Its thread would go on writing versions, documents and files for a project that is gone.
         raise conflict("JOB_RUNNING", "An analysis is running for this project. "
                                       "Cancel it before deleting the project.")
+    versions = [v.id for v in db.versions.list_for_project(project_id)]
+    # A run started from the command line holds its version's writer lock, not a web job: it
+    # would go on writing rows and files of a project that is gone, from a code copy deleted
+    # under it. (PostgreSQL only: SQLite cannot tell, and says None.)
+    vr = pipeline_runner._version_run_module() if getattr(db, "_engine", None) is not None else None
+    if vr is not None and any(vr.alive(v, engine=db._engine) for v in versions):
+        raise conflict("JOB_RUNNING", "A run is writing a version of this project. "
+                                      "Let it end, or stop it, before deleting the project.")
     db.projects.delete(project_id)
     _remove_workspace(project_id)
+    _remove_run_folders(versions)
 
 
 def _remove_workspace(project_id: str) -> None:
@@ -416,10 +425,6 @@ def _remove_workspace(project_id: str) -> None:
     silent disk leak on every delete. Best effort -- a failure is logged, the deletion stands.
     """
     import logging
-    import os
-    import shutil
-    import stat
-    import sys
     from ..services.settings import get_settings
 
     root = get_settings().workspaces.resolve()
@@ -427,16 +432,80 @@ def _remove_workspace(project_id: str) -> None:
     if target.parent != root or not target.is_dir():       # never outside the workspaces root
         return
 
-    def _retry(func, path, _exc):                           # git pack files are read-only
+    try:
+        _rmtree_force(target)
+    except Exception as exc:                                # noqa: BLE001 - logged, not fatal
+        logging.getLogger(__name__).warning(
+            "project %s deleted, but its workspace %s was not: %s", project_id, target, exc)
+
+
+def _rmtree_force(target) -> None:
+    """`shutil.rmtree`, through read-only files: git keeps its packs read-only, and a frozen code
+    copy holds such files too (its tools' own checkouts). Without this, Windows refused the first one
+    ("Access is denied") and left the rest of the folder behind."""
+    import os
+    import shutil
+    import stat
+    import sys
+
+    def _retry(func, path, _exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
 
     kwargs = {"onexc": _retry} if sys.version_info >= (3, 12) else {"onerror": _retry}
+    shutil.rmtree(target, **kwargs)
+
+
+def _runs_root():
+    """`<data root>/runs`: where each run started in the background keeps its frozen code copy,
+    `runs/<version id>/<stamp>/` (engine/core/frozen_run.py)."""
+    from pathlib import Path
+    from ..services import pipeline_runner
+    pipeline_runner._version_run_module()                  # puts the engine on the path
+    from core.paths import paths
+    return Path(paths().data_root) / "runs"
+
+
+def _remove_run_folders(version_ids) -> None:
+    """Delete `runs/<version id>/` of each of the project's versions -- about 10 MB of code copy
+    per run, kept by nothing once the version is gone (BACKLOG SG-3). The copy's `node_modules`
+    is a link (a junction on Windows) to this installation's own: it is removed as a link first,
+    so nothing can follow it into the real one. Best effort, as `_remove_workspace`."""
+    import logging
+    import os
+    import shutil
+
     try:
-        shutil.rmtree(target, **kwargs)
+        root = _runs_root().resolve()                       # puts the engine on the path too
+        from core.frozen_run import safe_name
     except Exception as exc:                                # noqa: BLE001 - logged, not fatal
-        logging.getLogger(__name__).warning(
-            "project %s deleted, but its workspace %s was not: %s", project_id, target, exc)
+        logging.getLogger(__name__).warning("run folders not removed: %s", exc)
+        return
+    for vid in version_ids:
+        target = (root / safe_name(vid)).resolve()
+        if target.parent != root or not target.is_dir():   # never outside the runs root
+            continue
+        try:
+            for stamp in target.iterdir():
+                link = stamp / "code" / "node_modules"
+                if os.path.islink(link) or _is_junction(link):
+                    os.unlink(link) if os.path.islink(link) else os.rmdir(link)
+            _rmtree_force(target)
+        except Exception as exc:                            # noqa: BLE001 - logged, not fatal
+            logging.getLogger(__name__).warning("version %s deleted, but its run folder %s was "
+                                                "not: %s", vid, target, exc)
+
+
+def _is_junction(path) -> bool:
+    import os
+    if hasattr(os.path, "isjunction"):                      # Python 3.12+
+        return os.path.isjunction(path)
+    try:
+        import stat
+        st = os.lstat(path)
+        return bool(getattr(st, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+    except (OSError, AttributeError):
+        return False
 
 
 # ---------------------------------------------------------------------------

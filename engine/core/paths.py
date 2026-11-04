@@ -192,3 +192,63 @@ def paths() -> ProjectPaths:
             cache_dir=os.path.join(data_root, ".flowchart_cache"),
         )
         return _CACHED
+
+
+# ---------------------------------------------------------------------------
+# The per-project workspaces, and a stored path after they moved (BACKLOG NW-5)
+# ---------------------------------------------------------------------------
+
+def local_paths_block() -> dict:
+    """`paths` of config.local.json: a machine setting, read from that file only. {} without one."""
+    try:
+        import json
+        from .config import _strip_json_comments, _strip_trailing_commas
+        path = paths().config_local_path
+        if not os.path.isfile(path):
+            return {}
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.loads(_strip_trailing_commas(_strip_json_comments(fh.read()))) or {}
+        block = cfg.get("paths")
+        return block if isinstance(block, dict) else {}
+    except Exception:                                   # noqa: BLE001 - unreadable: the default
+        return {}
+
+
+def configured_workspaces() -> Optional[str]:
+    """`paths.workspaces` of config.local.json as an absolute path (a relative one is taken from
+    the installation's root), or None when it names none."""
+    conf = str(local_paths_block().get("workspaces") or "").strip()
+    if not conf:
+        return None
+    return os.path.abspath(conf if os.path.isabs(conf) else os.path.join(paths().project_root, conf))
+
+
+def workspaces_root() -> str:
+    """The per-project workspaces folder (checkouts, every version's output, approved copies):
+    `ANALYZER_WORKSPACES_DIR`, else `paths.workspaces` in config.local.json, else
+    `<data root>/workspaces`. The API's `settings.workspaces` reads the same two settings."""
+    env = os.environ.get("ANALYZER_WORKSPACES_DIR", "").strip()
+    if env:
+        return os.path.abspath(env)
+    return configured_workspaces() or os.path.join(paths().data_root, "workspaces")
+
+
+def rebase_stored_path(stored: Optional[str], root: Optional[str] = None) -> Optional[str]:
+    """A path the database stored, as it is on this machine now.
+
+    As stored when it exists. Otherwise the part after its `workspaces` folder, under today's
+    workspaces root -- the folder was moved, or the database came from another machine (Windows
+    or POSIX separators alike) -- when that exists. Else as stored: the caller says it is missing.
+    Nothing is rewritten in the database; every reader resolves through here."""
+    if not stored or os.path.exists(stored):
+        return stored
+    import re
+    root = root or workspaces_root()
+    names = {"workspaces", os.path.basename(os.path.normpath(root))}
+    parts = [p for p in re.split(r"[\\/]+", str(stored)) if p]
+    for i in range(len(parts) - 2, -1, -1):             # the deepest `workspaces` first
+        if parts[i] in names:
+            candidate = os.path.join(root, *parts[i + 1:])
+            if os.path.exists(candidate):
+                return candidate
+    return stored

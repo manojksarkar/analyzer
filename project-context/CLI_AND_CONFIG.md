@@ -138,13 +138,13 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 
 | Source | Holds | Tracked |
 |---|---|---|
-| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`) | **gitignored** |
+| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`), `paths` (`workspaces`: where the per-project workspaces are; 2026-10-31c) | **gitignored** |
 | `engine/config/config.defaults.json` | **HOW DOCUMENTS ARE MADE.** `clang` (`clangArgs`, `includePathsFromProjectWalk`), `views`, `llm` (`descriptions`, `behaviourNames`, `summarize`, `enrichment`, `cacheVersion`, the prompt inputs), `docx`, the sample's `cores` / `layers`, `logs`, `ui` | yes |
 | a project — `projects.build_config`, or a CLI project's `workspaces/<pid>/config.json` | its own `clang`, `llm`, `views`, `docx`, `layers`, `cores`: they win over the defaults, and over what config.local.json says of the same | DB / workspace |
 | a version — `versions.resolved_config`, `versions/<vid>/config.json` | the config its run started with, so a resume runs as it began | DB / workspace |
 
 **No block name is in both files, and no server setting is in a project's or a version's
-config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the six),
+config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the seven, `paths` since 2026-10-31c),
 `RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `speedups` — the three a run reads through its config),
 `LLM_SERVER_KEYS`, `LLVM_KEYS_BEFORE`. Guard: `tests/unit/test_core_config.py`
 `TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds

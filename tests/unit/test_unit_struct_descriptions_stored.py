@@ -110,6 +110,20 @@ class TestPhase2GeneratesAndStores:
         assert n_u == 1
         assert units["Comp|UnitA"]["description"] == "A unit."
 
+    def test_each_stage_counts_its_calls(self, monkeypatch, caplog):
+        """One LLM call per unit and per record: each stage has its `[n/N]` counter (and so the
+        `analyzer.py progress` row and the run card's estimate). A review run's Phase 2 went silent
+        for hours here without them."""
+        import logging
+        self._patch_llm(monkeypatch)
+        units = {k: dict(v) for k, v in UNITS.items()}
+        dd = {"Cfg": {"kind": "struct", "name": "Cfg", "fields": [{"name": "x"}]}}
+        with caplog.at_level(logging.INFO):
+            md._enrich_unit_and_struct_descriptions(units, FUNCS, GLOBALS, dd, {})
+        lines = [r.getMessage() for r in caplog.records]
+        assert "start (1 items)" in lines and "[1/1] UnitA" in lines and "[1/1] Cfg" in lines, lines
+        assert sum(1 for l in lines if l.startswith("done in") and l.endswith("1 described")) == 2
+
     def test_the_struct_description_is_written_onto_the_entry(self, monkeypatch):
         self._patch_llm(monkeypatch)
         dd = {"Cfg": {"kind": "struct", "name": "Cfg", "fields": [{"name": "x"}]}}

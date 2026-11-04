@@ -121,9 +121,10 @@ class TestAnUnfinishedRunFreesItsVersion:
 
 
 class TestAJobAStoppedServerLeftRunning:
-    """At start-up every job still marked queued, running or paused belongs to a server that
-    stopped mid-run: no thread of the new process runs it (`fail_interrupted_jobs`). It used to say
-    "running" for ever, and every new run of its project was refused as JOB_ALREADY_RUNNING."""
+    """At start-up every job still marked queued or running belongs to a server that stopped
+    mid-run: no thread of the new process runs it (`fail_interrupted_jobs`). It used to say
+    "running" for ever, and every new run of its project was refused as JOB_ALREADY_RUNNING. A
+    paused job is left paused (test_staged_generation_db.py TestPause)."""
 
     def test_it_is_failed_with_the_reason_and_frees_its_draft(self, db, monkeypatch):
         project = _project(db)
@@ -249,6 +250,30 @@ class TestOnlyTheOnlyServerSweeps:
         monkeypatch.setattr(pr, "_runner_conn", None)
         engine = type("E", (), {"dialect": type("D", (), {"name": "sqlite"})()})()
         assert pr.claim_job_runner(engine) is True
+
+    def test_a_second_server_does_not_start(self, monkeypatch):
+        """NW-5: one database, one API server -- each keeps its files on its own disk."""
+        from api import main
+        engine, _conn = self._engine(False)
+        engine.url = "postgresql+psycopg://user:secret@db:5432/analyzer"
+        monkeypatch.setattr(pr, "_runner_conn", None)
+        monkeypatch.delenv(main.ALLOW_SECOND_API_ENV, raising=False)
+        with pytest.raises(main.SecondApiServer) as caught:
+            main._refuse_second_server(engine)
+        assert "Another API server is already running" in str(caught.value)
+        assert "secret" not in str(caught.value), "the password is never said"
+
+    def test_it_may_when_asked_and_the_only_server_always_may(self, monkeypatch):
+        from api import main
+        engine, _conn = self._engine(False)
+        engine.url = "postgresql://db/analyzer"
+        monkeypatch.setattr(pr, "_runner_conn", None)
+        monkeypatch.setenv(main.ALLOW_SECOND_API_ENV, "1")
+        main._refuse_second_server(engine)                    # warned later, not stopped
+        monkeypatch.delenv(main.ALLOW_SECOND_API_ENV)
+        engine, _conn = self._engine(True)
+        main._refuse_second_server(engine)
+        assert pr._runner_conn is _conn, "the only server keeps the lock"
 
 
 class TestCancelAfterTheReview:

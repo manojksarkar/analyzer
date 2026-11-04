@@ -73,6 +73,13 @@ class TestAddALayer:
         assert staged.layers_to_add(self.VIEW, ["L1.App", "L1.Math"]) == []
         assert staged.layers_to_add(self.VIEW, ["Nope"]) == []
 
+    def test_the_model_layers_leave_out_a_component_without_one(self):
+        """Sources outside every configured component are filed as `unknown`: it is not a layer
+        (it was, and the parse of the add stopped on `--selected-layer unknown`)."""
+        view = self.VIEW + [comp("unknown", "not_requested")]
+        assert staged.model_layers(view) == ["L1"]
+        assert staged.model_layers(self.VIEW) == ["L1"]
+
     def test_a_component_outside_the_model_in_a_parsed_layer_adds_no_layer(self):
         """A configured component the parse found no source for: parsing its layer again would
         not put it in the model."""
@@ -301,6 +308,19 @@ class TestResolve:
 
 
 class TestFrozenRun:
+    def test_a_pause_is_asked_of_one_run_and_read_by_its_processes(self, tmp_path, monkeypatch):
+        run = tmp_path / "r1"
+        run.mkdir()
+        monkeypatch.setenv(frozen_run.EXIT_ENV, str(run / frozen_run.EXIT_FILE))
+        assert frozen_run.pause_requested() is None and not frozen_run.pause_asked(str(run))
+        frozen_run.request_pause(str(run), reason="asked by admin@company.com")
+        assert frozen_run.pause_asked(str(run))
+        assert frozen_run.pause_requested()["reason"] == "asked by admin@company.com"
+        monkeypatch.setenv(frozen_run.EXIT_ENV, str(tmp_path / "r2" / frozen_run.EXIT_FILE))
+        assert frozen_run.pause_requested() is None        # a resume runs in a folder of its own
+        monkeypatch.delenv(frozen_run.EXIT_ENV)
+        assert frozen_run.pause_requested() is None        # not a background run
+
     def test_the_background_command_is_the_same_without_detach(self):
         assert frozen_run.strip_detach(["generate", "--detach", "--project-id", "P"]) == \
             ["generate", "--project-id", "P"]

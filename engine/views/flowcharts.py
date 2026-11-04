@@ -6,6 +6,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 from .registry import register
 from core.macro_input import args_for_scope, normalize_scoped_args
@@ -1458,6 +1459,19 @@ def _spec_scope_function_ids(config, model_dir_abs):
     return fids
 
 
+def engine_finished(out_dir, launched):
+    """True when the flowchart engine wrote its `_summary.json` in `out_dir` since `launched` (a
+    `time.time()`): the summary is the engine's LAST write (flowchart_engine.run), after every
+    chart file, so its output is complete -- whatever the exit code says. Every exit the engine
+    makes on purpose (a bad argument, a missing file, an invalid LLM config) comes before it writes
+    anything; a non-zero code with a fresh summary is a crash on the way out (libclang's at
+    shutdown, 0xC0000005 on Windows), which threw away a whole component's charts before."""
+    try:
+        return os.path.getmtime(os.path.join(out_dir, "_summary.json")) >= launched - 2
+    except OSError:
+        return False
+
+
 @register("flowcharts")
 def run(model, output_dir, model_dir, config):
     # No `views.flowcharts` gate here: `run_views` owns that decision and is the
@@ -1815,6 +1829,7 @@ def run(model, output_dir, model_dir, config):
 
         cmd.append(f"@{args_file}")
 
+    launched = time.time()
     if only_rewrite and not rewrite_keys:
         # An update with no chart of this run's to write again: the stored charts stand.
         returncode, stderr_tail = 0, ""
@@ -1846,6 +1861,16 @@ def run(model, output_dir, model_dir, config):
             _end_rewrite(rewrite_dir, out_dir, stored_charts)
             return
 
+    if returncode != 0 and engine_finished(out_dir, launched):
+        log_stderr_tail("flowchart engine", stderr_tail)
+        log(
+            "WARNING: the flowchart engine exited with code %s AFTER it wrote every chart and its "
+            "_summary.json -- a crash on the way out (libclang's at shutdown, 0xC0000005 on "
+            "Windows); its output is complete and is used" % returncode,
+            component="flowcharts",
+            err=True,
+        )
+        returncode = 0
     if returncode != 0:
         log_stderr_tail("flowchart engine", stderr_tail)
         log(

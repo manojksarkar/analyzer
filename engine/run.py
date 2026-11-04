@@ -1017,6 +1017,7 @@ from contextlib import contextmanager as _contextmanager
 # cannot be drawn must not cost the 39 behind it a run that lasts days -- and exits
 # EXIT_COMPONENTS_FAILED at the end, so the caller stores what succeeded and says what did not.
 EXIT_COMPONENTS_FAILED = 3
+from core.frozen_run import EXIT_PAUSED
 _FAILED_PLANS: list = []
 
 
@@ -1030,6 +1031,12 @@ def _component_states(_plan):
     try:
         yield
     except SystemExit as _exc:
+        if _exc.code == EXIT_PAUSED:
+            # Paused (core/frozen_run.py): not a failure, and no other component goes on. Back
+            # to waiting -- with no run at work, the components list shows it "stopped", the
+            # unfinished work `resume` makes.
+            _mark_components(_STATES_VID, _docs, "waiting")
+            raise
         _why = f"{_plan.label}: stopped with exit code {_exc.code} - see the run's log"
         _mark_components(_STATES_VID, _docs, "failed", error=_why)
         if not _docs or not _exc.code:

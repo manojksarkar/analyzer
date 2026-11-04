@@ -28,6 +28,7 @@ from typing import List, Sequence
 
 from . import run_metrics
 from .db import set_pipeline_status
+from .frozen_run import EXIT_PAUSED, pause_requested
 from .logging_setup import get_logger
 from .paths import paths
 from .subprocess_util import log_stderr_tail, run_streaming
@@ -45,6 +46,11 @@ _PIPELINE_STATUS_BY_SCRIPT = {
     "run_views.py":     "viewing",
     "docx_exporter.py": "exporting",
 }
+
+# A pause (core/frozen_run.py) waits for the phase at work and is honoured before one of these:
+# the parse, the model, a component's views. Never between a component's views and its export:
+# the export is short, and stopping there would throw its views away.
+_PAUSE_BEFORE = ("parser.py", "model_deriver.py", "run_views.py")
 
 
 @dataclass(frozen=True)
@@ -126,6 +132,11 @@ class PhaseRunner:
             if idx < from_phase:
                 _log.info(f"[{idx}/{len(phases)}] {phase.name} — skipped (--from-phase {from_phase})")
                 continue
+            if os.path.basename(phase.script) in _PAUSE_BEFORE and pause_requested() is not None:
+                # Not an "=== ... ===" line: the API reads those as a phase starting.
+                _log.info(f"[{idx}/{len(phases)}] Paused before {phase.name}; `resume` carries "
+                          f"the run on from here.")
+                raise SystemExit(EXIT_PAUSED)
             _log.info(f"[{idx}/{len(phases)}] === {phase.name} ===")
             # Live progress on the version row (doc 09, C1). No-op without a version id
             # or a database, so CLI runs and the DB-less gate are unaffected.

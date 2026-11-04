@@ -43,4 +43,4 @@ auto-loads when working in `web-app/`). In short:
 - **Keep pages thin** — big pages live in `pages/<Name>/`.
 - **Commits**: short and prefixed — `feat:`, `fix:`, `docs:`.
 
-**Docs in this folder:** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (product/design context) · [PLAN.md](PLAN.md) (forward work) · [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md) (API wiring, per-page gaps) · [TESTING.md](TESTING.md) (unit + contract suite).
+**Docs in this folder:** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (product/design context) · open work: [docs/BACKLOG.md](../docs/BACKLOG.md) · [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md) (API wiring, per-page gaps) · [TESTING.md](TESTING.md) (unit + contract suite).

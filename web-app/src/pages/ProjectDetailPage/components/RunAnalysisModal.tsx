@@ -4,17 +4,13 @@ import { cn } from '../../../lib/cn'
 import { ScopeTree } from '../../../components/run/ScopeTree'
 import { allKeys, keysWithDocuments, scopeOf } from '../../../lib/runScope'
 import { useVersionComponents } from '../../../hooks/useVersionComponents'
+import { useBaselinePreview } from '../../../hooks/useJobs'
+import { useExportReadiness } from '../../../hooks/useReview'
 import type { StartJobInput } from '../../../services/api'
 import type { Commit, Project, Version } from '../../../types'
-import { versionNameProblem } from '../helpers'
+import { suggestNextVersion, versionNameProblem } from '../helpers'
 
 /* ─── Run Analysis modal (matches project-detail.html) ─── */
-function suggestNextVersion(versions?: Version[]): string {
-  if (!versions || versions.length === 0) return 'v1.0.0'
-  const m = versions[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/)
-  return m ? `v${m[1]}.${parseInt(m[2], 10) + 1}.0` : ''
-}
-
 const SELECT_CLS = 'font-mono text-xs'
 const FIELD_LABEL = 'text-caption font-mono'
 
@@ -47,12 +43,20 @@ export function RunAnalysisModal({
   // arrives later never overwrites them. The modal mounts on each open: every run starts afresh.
   const layers = project.architectureLayers
   const [advOpen, setAdvOpen] = useState(false)
+  // A fresh run (NW-3): no baseline, so nothing is carried from an earlier version — no reused
+  // text, no reviewer corrections. "Compare against" then has nothing to pick, and the scope starts
+  // from every component, not the ones a version had documents for. For admins (every run is)
+  // after an analyzer update, or to check a run. Ticked, it says how many corrections stay behind
+  // in the version the run would have built on: the one picked, else the one the server would
+  // pick (baseline preview); R9's `overrideCount` counts those in force.
+  const [fresh, setFresh] = useState(false)
+  const buildsOn = fresh ? '' : referenceId
   const [own, setOwn] = useState<{ ref: string; keys: Set<string> } | null>(null)
-  const { data: baseline } = useVersionComponents(project.id, referenceId || undefined)
-  const baselineKeys = referenceId && baseline ? keysWithDocuments(layers, baseline.components) : null
-  const ticked = own && own.ref === referenceId ? own.keys
+  const { data: baseline } = useVersionComponents(project.id, buildsOn || undefined)
+  const baselineKeys = buildsOn && baseline ? keysWithDocuments(layers, baseline.components) : null
+  const ticked = own && own.ref === buildsOn ? own.keys
     : baselineKeys && baselineKeys.size > 0 ? baselineKeys : new Set(allKeys(layers))
-  const setTicked = (keys: Set<string>) => setOwn({ ref: referenceId, keys })
+  const setTicked = (keys: Set<string>) => setOwn({ ref: buildsOn, keys })
   const [skipLlm, setSkipLlm] = useState(false)
   const everyComp = allKeys(layers)
   const total = everyComp.length
@@ -64,9 +68,15 @@ export function RunAnalysisModal({
   const changed = [
     ...(total > 0 && tickedCount < total ? [`${tickedCount} of ${total} components`] : []),
     ...(skipLlm ? ['Skip LLM'] : []),
+    ...(fresh ? ['Fresh run'] : []),
   ]
 
   const refVersions = (versions ?? []).filter((v): v is Version & { id: string } => !!v.id)
+  const { data: autoBase } = useBaselinePreview(project.id, commitSha, fresh && !referenceId)
+  const baseId = fresh ? referenceId || autoBase || undefined : undefined
+  const { data: baseReadiness } = useExportReadiness(project.id, baseId)
+  const baseTag = refVersions.find((v) => v.id === baseId)?.tag
+  const leftBehind = baseId && baseTag ? baseReadiness?.overrideCount ?? 0 : 0
   const nameProblem = versionNameProblem(versionName, versions)
   const nameHintId = useId()
   // Start says why it is off: the first thing still missing.
@@ -78,10 +88,11 @@ export function RunAnalysisModal({
     onStart({
       commit_sha: commitSha,
       version_tag: versionName.trim(),
-      reference_version_id: referenceId || undefined,
+      reference_version_id: buildsOn || undefined,
       // Every component ticked is the whole project: no scope, as before.
       scope: scope && scope.type !== 'project' ? scope : undefined,
       no_llm: skipLlm || undefined,
+      mode: fresh ? 'full' : undefined,
     })
   }
 
@@ -134,14 +145,16 @@ export function RunAnalysisModal({
               <label className={cn('text-on-surface-variant', FIELD_LABEL)}>Compare against</label>
               <span className="text-label text-outline font-mono">OPTIONAL</span>
             </div>
-            <select value={referenceId} aria-label="Compare against" onChange={(e) => setReferenceId(e.target.value)} className={cn('w-full border border-field rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer', SELECT_CLS)}>
+            <select value={fresh ? '' : referenceId} disabled={fresh} aria-label="Compare against" onChange={(e) => setReferenceId(e.target.value)} className={cn('w-full border border-field rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer disabled:cursor-not-allowed disabled:opacity-60', SELECT_CLS)}>
               <option value="">— None —</option>
               {refVersions.map((v) => (
                 <option key={v.id} value={v.id}>{v.tag} · {v.shortSha} — {v.description}</option>
               ))}
             </select>
-            <p className={cn('text-on-surface-variant mt-1.5', FIELD_LABEL)}>Enables diff view between this run and the selected version.</p>
-            {baselineKeys && baselineKeys.size > 0 && own?.ref !== referenceId && (
+            <p className={cn('text-on-surface-variant mt-1.5', FIELD_LABEL)}>
+              {fresh ? 'A fresh run builds on no earlier version.' : 'The version this run builds on. None: the newest earlier one.'}
+            </p>
+            {baselineKeys && baselineKeys.size > 0 && own?.ref !== buildsOn && (
               <p className={cn('text-secondary mt-1', FIELD_LABEL)}>
                 Starts with the {baselineKeys.size} component{baselineKeys.size === 1 ? '' : 's'} {refVersions.find((v) => v.id === referenceId)?.tag ?? 'it'} has documents for.
               </p>
@@ -194,15 +207,21 @@ export function RunAnalysisModal({
                   <p className="text-on-surface-variant mt-0.5 text-caption">Faster: the LLM steps are skipped. Use it to check structure, not wording.</p>
                 </div>
               </label>
-              {/* Pause after Phase 1 — the server does not act on it yet: a run goes through all
-                  four phases, and there is no function-visibility editor to pause for. */}
-              <label className="flex items-start gap-3 cursor-not-allowed opacity-60">
-                <input type="checkbox" checked={false} disabled readOnly className="mt-0.5 rounded border-field text-secondary flex-shrink-0 w-[15px] h-[15px]" />
+              {/* Fresh run: the job's mode "full" */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input type="checkbox" checked={fresh} onChange={(e) => setFresh(e.target.checked)} className="mt-0.5 rounded border-field text-secondary flex-shrink-0 w-[15px] h-[15px]" />
                 <div>
-                  <span className="text-on-surface text-xs">Pause after Phase 1 to review function visibility</span>
-                  <p className="text-on-surface-variant mt-0.5 text-caption">Not available yet — a run goes through all four phases without stopping.</p>
+                  <span className="text-on-surface text-xs group-hover:text-secondary transition-colors">Fresh run</span>
+                  <p className="text-on-surface-variant mt-0.5 text-caption">Rebuilds everything with this analyzer version. Use after an analyzer update, or to check a run.</p>
+                  {leftBehind > 0 && (
+                    <p className="text-warn mt-1 text-caption font-semibold">
+                      Not carried over: {leftBehind} correction{leftBehind === 1 ? '' : 's'} in {baseTag}. They stay there.
+                    </p>
+                  )}
                 </div>
               </label>
+              {/* No "Pause after Phase 1" (2026-11-03): never used, and no function-visibility
+                  editor to pause for (BACKLOG WA-1). */}
             </div>
           </div>
         )}

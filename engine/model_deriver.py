@@ -1302,6 +1302,27 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
         except Exception:
             return ""
 
+    # One LLM call per unit and per record: a counter each, as every other LLM stage has. Without
+    # them a review run's Phase 2 went silent for hours after the global descriptions -- no
+    # `[n/N]` line, nothing for `analyzer.py progress`, no estimate on the run card.
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
+
+    def _counted(todo, label, ask):
+        if not todo:
+            return []
+        progress = ProgressReporter(label, total=len(todo), logger=get_logger("model_deriver"))
+        progress.start()
+
+        def one(item):
+            try:
+                return ask(item)
+            finally:
+                progress.step(label=item[1])
+        texts = map_in_order(one, todo, workers, label.lower())
+        progress.done(f"{sum(1 for x in texts if x and x not in ('-', 'N/A'))} described")
+        return texts
+
     # llm.workers > 1: several units at once -- each prompt holds only its own unit's functions and
     # globals, whose descriptions are all done by now; the texts land in the units' order.
     unit_todo = []
@@ -1314,8 +1335,8 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
             continue
         display = unit.get("name") or unit_key.split(KEY_SEP)[-1]
         unit_todo.append((unit, display, fn_items, gv_items))
-    texts = map_in_order(lambda u: _ask(get_unit_description, u[1], u[2], u[3], config, abbreviations),
-                         unit_todo, workers, "llm-unit")
+    texts = _counted(unit_todo, "LLM-unit-description",
+                     lambda u: _ask(get_unit_description, u[1], u[2], u[3], config, abbreviations))
     for (unit, *_rest), text in zip(unit_todo, texts):
         if text and text not in ("-", "N/A"):
             unit["description"] = text
@@ -1335,8 +1356,8 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
         if not name:
             continue
         struct_todo.append((entry, name, fields))
-    texts = map_in_order(lambda s: _ask(get_struct_description, s[1], s[2], config, abbreviations),
-                         struct_todo, workers, "llm-struct")
+    texts = _counted(struct_todo, "LLM-struct-description",
+                     lambda s: _ask(get_struct_description, s[1], s[2], config, abbreviations))
     for (entry, *_rest), text in zip(struct_todo, texts):
         if text and text not in ("-", "N/A"):
             entry["description"] = text
@@ -1591,16 +1612,23 @@ def main():
     def _fname(fid):
         return short_name(functions_data.get(fid, {}).get("qualifiedName", "")) or fid
 
-    def _writers_of(fentry, gid):
-        # Direct callees of fentry that write gid (directly or transitively) — the ones
-        # responsible for fentry inheriting this global as a transitive write.
-        writers = []
+    _callee_writes: dict = {}
+
+    def _writers_by_global(fentry):
+        # {gid: sorted names of fentry's direct callees that write it (directly or transitively)}
+        # -- the ones responsible for fentry inheriting that global as a transitive write. One pass
+        # over the callees, each callee's set built once: per (global, callee) as before, it took
+        # 19 s at 2,947 functions x 268 globals (2026-10-29, identical result).
+        by_g: dict = {}
         for cid in (fentry.get("callsIds") or []):
-            c = functions_data.get(cid) or {}
-            cw = set(c.get("writesGlobalIdsTransitive") or c.get("writesGlobalIds") or [])
-            if gid in cw:
-                writers.append(_fname(cid))
-        return sorted(set(writers))
+            cw = _callee_writes.get(cid)
+            if cw is None:
+                c = functions_data.get(cid) or {}
+                cw = _callee_writes[cid] = set(c.get("writesGlobalIdsTransitive")
+                                               or c.get("writesGlobalIds") or [])
+            for gid in cw:
+                by_g.setdefault(gid, set()).add(_fname(cid))
+        return {gid: sorted(names) for gid, names in by_g.items()}
 
     for fentry in functions_data.values():
         name = short_name(fentry.get("qualifiedName", "")) or ""
@@ -1633,8 +1661,9 @@ def main():
                     # transitive-only: written by a callee, not by this function's own body.
                     # Name the responsible callee(s) per global so the chain is verifiable.
                     parts = []
+                    writers_of = _writers_by_global(fentry)
                     for g in sorted(trans_w):
-                        writers = _writers_of(fentry, g)
+                        writers = writers_of.get(g, [])
                         via = ", ".join(writers) if writers else "a callee"
                         parts.append(f"{_gname(g)} (via {via})")
                     fentry["directionReason"] = f"In: writes global(s) transitively: {'; '.join(parts)}."

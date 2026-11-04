@@ -16,6 +16,8 @@ export const ApiJobSchema = z.object({
   /** `auto` / `full` / `incremental` = the version's own run; `export` / `reexport` add documents. */
   mode: z.string().nullable().optional(),
   started_at: z.string().nullable(), completed_at: z.string().nullable(), error_message: z.string().nullable(),
+  /** Pause asked, the run not stopped yet (NW-1). */
+  pausing: z.boolean().optional(),
 })
 export type ApiJob = z.infer<typeof ApiJobSchema>
 
@@ -51,6 +53,7 @@ export function mapJob(j: ApiJob): AnalysisJob {
     startedAt: j.started_at,
     completedAt: j.completed_at,
     errorMessage: j.error_message,
+    pausing: j.pausing ?? false,
   }
 }
 

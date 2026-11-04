@@ -1,5 +1,5 @@
 import { http } from '../../lib/http'
-import type { Document, DocStats, DocumentDetail, RichDocument } from '../../types'
+import type { Document, DocStats, DocumentDetail, FunctionSource, RichDocument } from '../../types'
 import {
   mapDocument, mapDocumentDetail, mapDocStats, mapRichDocument,
   type ApiDocument, type ApiDocumentDetail, type ApiRichDocument,
@@ -100,6 +100,14 @@ export const documentsApi = {
       `/projects/${projectId}/documents/${docId}`,
     )
     return mapDocumentDetail(r.document, versionTagById)
+  },
+  /** A function's lines of code in the version (NW-7); 409 SOURCE_NOT_HERE without its checkout. */
+  functionSource: async (projectId: string, versionId: string, functionId: string): Promise<FunctionSource> => {
+    const r = await http.get<{
+      function_id: string; file: string; start_line: number; end_line: number; lines: string[]; truncated: boolean
+    }>(`/projects/${projectId}/versions/${versionId}/functions/source`, { function_id: functionId })
+    return { functionId: r.function_id, file: r.file, startLine: r.start_line, endLine: r.end_line,
+      lines: r.lines ?? [], truncated: !!r.truncated }
   },
   render: async (projectId: string, docId: string): Promise<RichDocument> => {
     const r = await http.get<{ document: ApiRichDocument }>(

@@ -83,6 +83,8 @@ const ApiFlowchartSchema = z.object({
   // Review & update: the chart's id for the label editor, and whether it has labels to edit.
   flowchart_id: z.string().nullable().optional(),
   editable: z.boolean().optional(),
+  // NW-7: the function the chart is of (the section's own, or a private callee's under it).
+  function_id: z.string().nullable().optional(),
 })
 type ApiFlowchart = z.infer<typeof ApiFlowchartSchema>
 
@@ -99,6 +101,7 @@ const ApiFlowchartTableSchema = z.object({
   description_slot: ApiSlotRefSchema,
   input_name_slot: ApiSlotRefSchema,
   output_name_slot: ApiSlotRefSchema,
+  function_id: z.string().nullable().optional(),
 })
 type ApiFlowchartTable = z.infer<typeof ApiFlowchartTableSchema>
 
@@ -216,6 +219,7 @@ export function mapFlowchart(fc: ApiFlowchart): FlowchartEntry {
     boxes: fc.boxes ?? 0,
     flowchartId: fc.flowchart_id ?? null,
     editable: !!(fc.flowchart_id && fc.editable),
+    functionId: fc.function_id ?? null,
   }
 }
 
@@ -241,6 +245,7 @@ function mapRichSection(s: ApiRichSection): RichSection {
       descriptionSlot: mapSlotOrNull(ft.description_slot),
       inputNameSlot: mapSlotOrNull(ft.input_name_slot),
       outputNameSlot: mapSlotOrNull(ft.output_name_slot),
+      functionId: ft.function_id ?? null,
     }
   }
 

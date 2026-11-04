@@ -306,3 +306,26 @@ class TestOnlyPrintedChartsGetAWordPicture:
         (tmp_path / "U_helper_part_1_of_2.png").write_bytes(b"png")
         drawn = _pictures_to_draw(self._items(carried=True), {PUB, HELPER}, str(tmp_path))
         assert [it[1] for it in drawn] == ["pub", "old"]
+
+
+class TestAnEngineThatCrashesOnItsWayOut:
+    """The flowchart engine crashed at exit (0xC0000005, libclang at shutdown) after writing every
+    chart: the whole component's charts -- and so its web SVGs -- were thrown away. Its
+    `_summary.json` is its last write: written since it started, the output is complete and used."""
+
+    def test_a_fresh_summary_means_the_output_is_complete(self, tmp_path):
+        import time
+        from views.flowcharts import engine_finished
+        launched = time.time()
+        assert not engine_finished(str(tmp_path), launched), "no summary: a real failure"
+        (tmp_path / "_summary.json").write_text("{}", encoding="utf-8")
+        assert engine_finished(str(tmp_path), launched)
+
+    def test_a_summary_from_an_earlier_run_does_not_count(self, tmp_path):
+        import time
+        from views.flowcharts import engine_finished
+        summary = tmp_path / "_summary.json"
+        summary.write_text("{}", encoding="utf-8")
+        old = time.time() - 3600
+        os.utime(summary, (old, old))
+        assert not engine_finished(str(tmp_path), time.time())

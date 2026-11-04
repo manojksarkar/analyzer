@@ -49,3 +49,20 @@ def test_a_stage_says_done_in_minutes(caplog, monkeypatch):
         now[0] += 252.4
         pr.done()
     assert any(r.getMessage() == "done in 4m 12s" for r in caplog.records)
+
+
+def test_a_slow_stage_logs_its_counter_at_least_once_a_minute(caplog, monkeypatch):
+    """At every 10 % alone, a review run's LLM stage went half an hour between counter lines, and
+    the run card's estimate had nothing to work from."""
+    import logging
+    from core import progress as P
+    clock = [1000.0]
+    monkeypatch.setattr(P.time, "monotonic", lambda: clock[0])
+    pr = P.ProgressReporter("slow", total=1000, logger=logging.getLogger("slow"))   # 10 %: every 100
+    with caplog.at_level(logging.INFO, logger="slow"):
+        pr.start()
+        for _ in range(3):
+            clock[0] += 25                     # one LLM call every 25 s
+            pr.step(label="fn")
+    counters = [r.getMessage() for r in caplog.records if r.getMessage().startswith("[")]
+    assert counters == ["[3/1000] fn"], counters      # 75 s in: one line, though 10 % is far

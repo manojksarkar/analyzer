@@ -303,7 +303,7 @@
                 <div class="row-menu-item" onclick="event.stopPropagation();openRenameProject('vcu')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">edit</span>Rename</div>
                 <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
                 <div class="row-menu-sep"></div>
-                <div class="row-menu-item danger" onclick="event.stopPropagation();"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">delete</span>Delete</div>
+                <div class="row-menu-item danger" onclick="event.stopPropagation();openDeleteProject('vcu', false)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">delete</span>Delete</div>
               </div>
             </td>
           </tr>
@@ -436,7 +436,7 @@
                 <div class="row-menu-item" onclick="event.stopPropagation();openRenameProject('bbw')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">edit</span>Rename</div>
                 <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
                 <div class="row-menu-sep"></div>
-                <div class="row-menu-item danger" onclick="event.stopPropagation();"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">delete</span>Delete</div>
+                <div class="row-menu-item danger" onclick="event.stopPropagation();openDeleteProject('bbw', true)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">delete</span>Delete</div>
               </div>
             </td>
           </tr>
@@ -548,12 +548,72 @@ function hideToast() {
   setTimeout(function() { t.classList.add('hidden'); }, 300);
 }
 </script>
+<!-- ══ DELETE PROJECT - an admin's row menu (BACKLOG NW-4, 2026-11-02); the light mockup has the notes.
+     In this mockup: VCU deletes; BBW shows the refusal (a run is going). ══ -->
+<div id="dp-dialog" class="hidden fixed inset-0 z-[300] flex items-center justify-center" style="background:rgba(0,0,0,0.8);"
+     onclick="if (event.target === this) closeDeleteProject()">
+  <div role="dialog" aria-modal="true" aria-labelledby="dp-title" class="bg-surface-container-lowest w-full p-6"
+       style="max-width:440px;margin:0 16px;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.36);">
+    <div class="flex items-center justify-between" style="margin-bottom:12px;">
+      <h3 id="dp-title" style="font:600 16px/24px Roboto,sans-serif;color:#f2f3f5;">Delete project</h3>
+      <button type="button" onclick="closeDeleteProject()" aria-label="Close" style="padding:4px;border-radius:8px;color:#a3a7b1;">
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
+      </button>
+    </div>
+    <p style="font:400 14px/20px Roboto,sans-serif;color:#f2f3f5;">Delete <strong id="dp-name"></strong>?</p>
+    <p style="margin-top:8px;font:400 12px/1.6 Roboto,sans-serif;color:#a3a7b1;">
+      Everything of it goes: its versions, documents, diagrams and approved copies, and the code checked
+      out for it. This cannot be undone.
+    </p>
+    <label for="dp-confirm" style="display:block;margin:14px 0 6px;font:600 11px/16px 'SamsungOne','Roboto',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#a3a7b1;">Type the project name to delete it</label>
+    <input id="dp-confirm" type="text" autocomplete="off" spellcheck="false" oninput="deleteProjectCheck()">
+    <div class="flex justify-end gap-2" style="margin:16px -24px 0;padding:16px 24px 0;border-top:1px solid #2c2f37;">
+      <button type="button" class="rp-btn rp-outline" onclick="closeDeleteProject()">Cancel</button>
+      <button type="button" id="dp-submit" class="rp-btn" disabled onclick="submitDeleteProject()"
+              style="border:1px solid #ff6b76;background:#ff6b76;color:#1a0005;">
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">delete</span>Delete
+      </button>
+    </div>
+  </div>
+</div>
+<script>
+// ── Delete project: an admin's row menu ──
+var DP_KEY = null, DP_BUSY = false;
+function openDeleteProject(key, busy) {
+  closeRowMenus();
+  DP_KEY = key; DP_BUSY = busy;
+  document.getElementById('dp-name').textContent = rowName(rowNameEl(key));
+  var box = document.getElementById('dp-confirm');
+  box.value = '';
+  document.getElementById('dp-submit').disabled = true;
+  document.getElementById('dp-dialog').classList.remove('hidden');
+  box.focus();
+}
+// Delete turns on once the name typed is the project's, exactly (spaces at the ends aside).
+function deleteProjectCheck() {
+  document.getElementById('dp-submit').disabled =
+    document.getElementById('dp-confirm').value.trim() !== rowName(rowNameEl(DP_KEY));
+}
+function closeDeleteProject() { document.getElementById('dp-dialog').classList.add('hidden'); }
+function submitDeleteProject() {
+  if (document.getElementById('dp-submit').disabled) return;
+  var name = rowName(rowNameEl(DP_KEY));
+  closeDeleteProject();
+  if (DP_BUSY) {
+    showToast('Not deleted: a run is writing a version of ' + name + '. Let it end, or stop it, first.', true);
+    return;
+  }
+  rowNameEl(DP_KEY).closest('tr').remove();
+  showToast(name + ' deleted');
+}
+</script>
+
 <!-- ══ RENAME PROJECT - an admin's row menu (web-app ProjectsPage/components/RenameProjectDialog.tsx).
      A rename is rare: it is here, not on the project's own pages. ══ -->
 <style>
-  #rp-name { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #737885; border-radius: 12px; background: #1c1e23;
+  #rp-name, #dp-confirm { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #737885; border-radius: 12px; background: #1c1e23;
              font: 400 14px/20px Roboto, sans-serif; color: #f2f3f5; outline: none; transition: border-color .15s, box-shadow .15s; }
-  #rp-name:focus { border-color: #1d7bff; box-shadow: 0 0 0 2px rgba(29,123,255,0.52); }
+  #rp-name:focus, #dp-confirm:focus { border-color: #1d7bff; box-shadow: 0 0 0 2px rgba(29,123,255,0.52); }
   #rp-name.err { border-color: #ff4d5a; }
   .rp-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
             font: 500 12px/16px 'SamsungOne','Roboto',sans-serif; transition: background .15s, opacity .15s; }

@@ -426,12 +426,10 @@ def get_unit_description(
     abbreviations: dict = None,
 ) -> str:
     """Describe a unit from its functions/globals descriptions (summary for DOCX table)."""
-    def _items_to_text(items: list) -> str:
-        if not items:
-            return ""
+    def _items_to_lines(items: list) -> list:
         # items: list[(name, description)]
         lines = []
-        for name, desc in items:
+        for name, desc in items or []:
             name = (name or "").strip()
             desc = (desc or "").strip()
             if not desc or desc in ("-", "N/A"):
@@ -440,13 +438,28 @@ def get_unit_description(
                 lines.append(f" - {name}: {desc}")
             else:
                 lines.append(f" - {desc}")
-        return "\n".join(lines)
+        return lines
 
-    fn_block = _items_to_text(function_descriptions)
-    gv_block = _items_to_text(global_descriptions)
+    fn_lines = _items_to_lines(function_descriptions)
+    gv_lines = _items_to_lines(global_descriptions)
+    fn_block, gv_block = "\n".join(fn_lines), "\n".join(gv_lines)
     if not (fn_block or gv_block):
         return ""
     abbr_key = "".join(f"{k}={v};" for k, v in sorted((abbreviations or {}).items()) if k and v)
+
+    def _build(fn_text: str, gv_text: str, abbrev_block: str) -> str:
+        return f"""Given the following C++ function and global-variable descriptions that belong to this unit, write ONE short sentence summarizing what the unit does overall.
+Be concrete but brief: at most ~25 words, no bullet list, no colon-separated catalog.
+
+Unit name: {unit_name or '(unnamed)'}
+
+Functions (descriptions):
+{fn_text or '-'}
+
+Globals (descriptions):
+{gv_text or '-'}{abbrev_block}
+
+One sentence:"""
 
     def _gen() -> str:
         abbrev_block = ""
@@ -454,18 +467,7 @@ def get_unit_description(
             lines = [f"  {k}: {v}" for k, v in sorted(abbreviations.items()) if k and v]
             if lines:
                 abbrev_block = "\nConsider these abbreviations when interpreting names:\n" + "\n".join(lines) + "\n\n"
-        prompt = f"""Given the following C++ function and global-variable descriptions that belong to this unit, write ONE short sentence summarizing what the unit does overall.
-Be concrete but brief: at most ~25 words, no bullet list, no colon-separated catalog.
-
-Unit name: {unit_name or '(unnamed)'}
-
-Functions (descriptions):
-{fn_block or '-'}
-
-Globals (descriptions):
-{gv_block or '-'}{abbrev_block}
-
-One sentence:"""
+        prompt = _fit_unit_prompt(_build, fn_lines, gv_lines, abbrev_block, config, unit_name)
         # Ensemble path: 3 temperatures + synthesis for higher-quality unit summaries.
         enrichment_cfg = (config.get("llm") or {}).get("enrichment") or {}
         if bool(enrichment_cfg.get("ensemble", False)):
@@ -702,6 +704,64 @@ def _fit_behaviour_prompt(build, source: str, globals_read: list, globals_writte
               "(%d globals read, %d written)", before, counter.count(prompt),
               len(globals_read), len(globals_written))
     return prompt
+
+
+def _fit_unit_prompt(build, fn_lines: list, gv_lines: list, abbrev_block: str, config: dict,
+                     unit_name: str) -> str:
+    """The unit-description prompt within the LLM's token window (the budget table's
+    "unit_description" profile). A prompt that fits is sent as it was built. One that does not
+    is cut, in this order, until it fits: each description to its first sentence (every name
+    stays), then the functions and globals past their sections ("- ... and N more"), then the
+    abbreviations. Until 2026-10-29c it went out whole: a review run's Phase 2 sat for hours in
+    this stage, a large unit's prompt bigger than the model takes being a likely cause."""
+    prompt = build("\n".join(fn_lines), "\n".join(gv_lines), abbrev_block)
+    try:
+        from llm_core.budget import ContextBudget, resolve_max_tokens
+        from llm_core.token_counter import get_counter
+        llm_cfg = load_llm_config(config)
+        counter = get_counter(llm_cfg.get("defaultModel", ""))
+        budget = ContextBudget(max_tokens=resolve_max_tokens(llm_cfg), task="unit_description",
+                               counter=counter)
+    except Exception:                                 # noqa: BLE001 - no budget known: as built
+        return prompt
+    limit = budget.effective_input() - budget.allocate("output_reserve")
+    before = counter.count(prompt)
+    if before <= limit:
+        return prompt
+    fns, gvs, abbrev = [_first_sentence(l) for l in fn_lines], [_first_sentence(l) for l in gv_lines], abbrev_block
+    prompt = build("\n".join(fns), "\n".join(gvs), abbrev)
+    if counter.count(prompt) > limit:
+        fns = _lines_within(fns, budget.allocate("function_descriptions"), counter, "functions")
+        gvs = _lines_within(gvs, budget.allocate("global_descriptions"), counter, "globals")
+        prompt = build("\n".join(fns), "\n".join(gvs), abbrev)
+    if counter.count(prompt) > limit:
+        abbrev = ""
+        prompt = build("\n".join(fns), "\n".join(gvs), abbrev)
+    _log.info("Unit description %s: a prompt of %d tokens was cut to %d to fit the LLM's window "
+              "(%d functions, %d globals)", unit_name, before, counter.count(prompt),
+              len(fn_lines), len(gv_lines))
+    return prompt
+
+
+def _first_sentence(line: str) -> str:
+    """` - name: First sentence. More.` -> ` - name: First sentence.`"""
+    head, sep, desc = line.partition(": ")
+    text = desc if sep else line
+    cut = text.find(". ")
+    short = text[:cut + 1] if cut >= 0 else text
+    return f"{head}{sep}{short}" if sep else short
+
+
+def _lines_within(lines: list, budget: int, counter, what: str) -> list:
+    """The first `lines` that fit `budget` tokens, and a count of the rest."""
+    kept, used = [], 0
+    for i, line in enumerate(lines):
+        cost = counter.count(line) + 1
+        if used + cost > budget:
+            return kept + [f" - ... and {len(lines) - i} more {what}"]
+        kept.append(line)
+        used += cost
+    return kept
 
 
 def _globals_within(glist: list, budget: int, counter) -> list:

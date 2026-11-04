@@ -5,7 +5,7 @@ Built with **FastAPI** (Python 3.12+) over **PostgreSQL** (SQLite for local runs
 run the real pipeline (`analyzer.py generate`), and documents, render, download and compare read
 what it produced.
 
-> **Docs in this folder:** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (scoped context) · [PLAN.md](PLAN.md) (forward work + design record).
+> Open work: [docs/BACKLOG.md](../docs/BACKLOG.md). Agent context: [project-context/API_AND_FRONTEND.md](../project-context/API_AND_FRONTEND.md).
 > Full install (dependencies, database, config): [docs/SETUP.md](../docs/SETUP.md).
 
 ---
@@ -60,7 +60,8 @@ Demo users — `python analyzer.py setup --demo`, or the in-memory backend (all 
 | `API_DB_BACKEND` | `postgres` when a database is configured, else `memory` | `memory` = in-memory test backend (seed data, nothing persists) |
 | `JWT_SECRET` | a development value | Signs sign-in tokens — **set it in any shared deployment** |
 | `ANALYZER_REPO_ROOT` | auto-detected | Absolute path to the repo root (contains `analyzer.py`) |
-| `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Where per-project checkouts and output dirs live |
+| `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Where per-project checkouts and output dirs live (or `paths.workspaces` in `config.local.json`) |
+| `ANALYZER_ALLOW_SECOND_API` | _(unset)_ | `1` lets an API start on a database another API already serves (warned, sweeping nothing). Unset: it refuses to start — one database, one API server, since each keeps its files on its own disk |
 | `JOB_MAX_CONCURRENCY` | `2` | Max pipeline subprocesses running simultaneously |
 | `SUBPROCESS_TIMEOUT` | `0` | Seconds before a pipeline subprocess is killed (0 = no limit) |
 | `LIBCLANG_PATH` | _(auto)_ | Path to the libclang library, passed to the pipeline subprocesses |
@@ -139,6 +140,10 @@ api/
      A failed or cancelled run deletes its draft, so the name is free for the retry.
   The model and views live in the database per version; the version's files (DOCX,
   diagrams) under `workspaces/<project_id>/versions/<version_id>/`.
+
+- **The pipeline runs on the API's host**: LLVM/libclang, git and the analyzer's Python live
+  there, so the runner starts `analyzer.py` itself (no broker); the `pipeline_runner` boundary keeps one
+  swappable.
 
 - **Role enforcement is server-side**.  `require_project_admin` /
   `require_project_member` are called at the start of every protected handler.
@@ -226,7 +231,8 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | GET | `/projects/:id/jobs/:jobId` | Job detail |
 | GET | `/projects/:id/jobs/:jobId/events` | **SSE** live progress stream |
 | POST | `/projects/:id/jobs/:jobId/cancel` | Cancel running job (admin) |
-| POST | `/projects/:id/jobs/:jobId/resume` | Resume paused job (admin) |
+| POST | `/projects/:id/jobs/:jobId/pause` | Stop the run now and keep what it made; the job waits `paused` (admin) |
+| POST | `/projects/:id/jobs/:jobId/resume` | Carry a paused job on: the phase it stopped at starts again (admin) |
 | GET | `/projects/:id/jobs/:jobId/functions` | Discovered functions after Phase 1 |
 | POST | `/projects/:id/jobs/:jobId/reexport` | Re-export DOCX (admin) |
 
@@ -274,6 +280,7 @@ approval: `docs/spec/REVIEW_APPROVE_API_SPEC.md`.
 |---|---|---|
 | PATCH | `/projects/:id/functions/:fnId` | Set visibility (admin) |
 | PATCH | `/projects/:id/functions` | Bulk update visibility (admin) |
+| GET | `/projects/:id/versions/:vid/functions/source?function_id=` | The function's lines of code in that version, from its checkout (member); `409 SOURCE_NOT_HERE` when the code is not on this server (never cloned in the request) |
 
 ### Compare
 

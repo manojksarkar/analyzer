@@ -37,8 +37,20 @@ export function useCurrentJob(projectId: string) {
     enabled: !!projectId,
     refetchInterval: (query) => {
       const job = query.state.data
-      return job && ['queued', 'running', 'paused'].includes(job.status) ? 5000 : false
+      // Paused (NW-1): nothing moves until someone resumes it, perhaps from another tab.
+      if (job?.status === 'paused') return 30_000
+      return job && ['queued', 'running'].includes(job.status) ? 5000 : false
     },
+  })
+}
+
+/** The version a run of `commit` would build on when none is picked (`null`: none). Read only when
+ *  asked: the run dialog's Fresh run, to say which corrections it leaves behind. */
+export function useBaselinePreview(projectId: string, commit: string, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.baselinePreview(projectId, commit),
+    queryFn: () => jobsApi.baselinePreview(projectId, commit),
+    enabled: enabled && !!projectId && !!commit,
   })
 }
 
@@ -146,12 +158,24 @@ export function useCancelJob(projectId: string) {
   })
 }
 
+/** Pause a run (NW-1): it stops at once, in whatever phase it is in, and keeps what it made. The
+ *  job says `pausing` for the moment its processes take to go, `paused` after. */
+export function usePauseJob(projectId: string) {
+  const invalidate = useJobInvalidate(projectId)
+  return useMutation({
+    mutationFn: (jobId: string) => jobsApi.pause(projectId, jobId),
+    onSuccess: () => { invalidate(); toast.info('Pausing', 'The run stops now and keeps what it made.') },
+    onError: (e: Error) => toast.error('Could not pause', e.message),
+  })
+}
+
+/** Carry a paused job on: the phase it stopped in starts again. */
 export function useResumeJob(projectId: string) {
   const invalidate = useJobInvalidate(projectId)
   return useMutation({
     mutationFn: (jobId: string) => jobsApi.resume(projectId, jobId),
-    onSuccess: () => { invalidate(); toast.success('Job resumed') },
-    onError: (e: Error) => toast.error('Resume failed', e.message),
+    onSuccess: () => { invalidate(); toast.success('Resuming', 'The run carries on from where it stopped.') },
+    onError: (e: Error) => toast.error('Could not resume', e.message),
   })
 }
 

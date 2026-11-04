@@ -106,6 +106,8 @@ def _job_dict(job: AnalysisJob, db=None) -> dict:
         # `update` | `rebuild` | `submit`, an export's `export` | `resume`; null for a generation.
         "started_by": _started_by(job, db),
         "reason": getattr(job, "reason", None),
+        # Pause asked and the run not stopped yet (POST .../pause).
+        "pausing": pipeline_runner.pause_asked(job),
     }
 
 
@@ -336,6 +338,36 @@ def cancel_job(
     return {"job": _job_dict(job, db)}
 
 
+def _refused(exc: "pipeline_runner.ReexportRefused") -> HTTPException:
+    detail = {"code": exc.code, "message": str(exc), "status": exc.status, **exc.extra}
+    if exc.job_id:
+        detail["job_id"] = exc.job_id
+    return HTTPException(status_code=exc.status, detail=detail)
+
+
+@router.post("/projects/{project_id}/jobs/{job_id}/pause",
+             responses={200: {"model": JobResponse}})
+def pause_job(
+    project_id: str,
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Ask a running generation, export or resume to pause (NW-1). It stops before its next step
+    -- the model, or the next component -- keeps what it made, and the job ends `paused`; until
+    then the job says `pausing: true`. Asking twice is asking once. 409: NOT_RUNNING,
+    NOT_PAUSABLE (an update or re-export), NO_BACKGROUND_RUN."""
+    require_project_admin(project_id, current_user, db)
+    job = db.jobs.get(job_id)
+    if not job or job.project_id != project_id:
+        raise not_found("AnalysisJob", job_id)
+    try:
+        pipeline_runner.request_pause(db, job, by=current_user.email or current_user.id)
+    except pipeline_runner.PauseRefused as exc:
+        raise _refused(exc)
+    return {"job": _job_dict(db.jobs.get(job_id) or job, db)}
+
+
 @router.post("/projects/{project_id}/jobs/{job_id}/resume",
              responses={200: {"model": JobResponse}})
 def resume_job(
@@ -344,6 +376,9 @@ def resume_job(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """Carry a paused job on (NW-1): `analyzer.py resume` from the step it paused before, as the
+    same job (`start_resume`). 400 when the job is not paused; 409 as `POST .../versions/{id}/
+    resume` (VERSION_BUSY, RUN_ACTIVE, NOTHING_TO_RESUME, NO_BACKGROUND_RUNS)."""
     require_project_admin(project_id, current_user, db)
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
@@ -351,10 +386,14 @@ def resume_job(
     if job.status != "paused":
         raise HTTPException(400, detail={"code": "VALIDATION_ERROR",
                                          "message": "Job is not paused.", "status": 400})
-    job.status = "running"
-    db.jobs.update(job)
-    pipeline_runner.signal_resume(job_id)
-    return {"job": _job_dict(job, db)}
+    version = db.versions.get(job.version_id) if job.version_id else None
+    if version is None:
+        raise not_found("Version", job.version_id or "")
+    try:
+        resumed = pipeline_runner.start_resume(db, version, started_by=current_user.id)
+    except pipeline_runner.ReexportRefused as exc:
+        raise _refused(exc)
+    return {"job": _job_dict(resumed, db)}
 
 
 # ---------------------------------------------------------------------------

@@ -1,15 +1,15 @@
 """Function visibility routes — /api/v1/projects/:id/functions/*"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import Optional
 
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
-from ..middleware.auth import get_current_user, require_project_admin
+from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User
-from ..services.errors import not_found
+from ..services.errors import conflict, not_found
 
 router = APIRouter(tags=["functions"])
 
@@ -52,3 +52,31 @@ def bulk_update_visibility(
     updated = db.functions.bulk_update_visibility(body.function_ids, body.is_visible,
                                                   project_id=project_id)
     return {"updated_count": updated}
+
+
+@router.get("/projects/{project_id}/versions/{version_id}/functions/source")
+def get_function_source(
+    project_id: str,
+    version_id: str,
+    function_id: str = Query(..., description="the function's id, as the render payload gives it"),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """The function's own lines of code in this version, for the reader beside its flowchart
+    (BACKLOG NW-7). Any member: they read the documents made from this code. 409 SOURCE_NOT_HERE
+    when the version's code is not on this machine."""
+    from ..services import function_source as fs
+    if not db.projects.get(project_id):
+        raise not_found("Project", project_id)
+    require_project_member(project_id, current_user, db)
+    version = db.versions.get(version_id)
+    if not version or version.project_id != project_id:
+        raise not_found("Version", version_id)
+    try:
+        return fs.function_source(db, project_id, version_id, function_id)
+    except LookupError:
+        raise not_found("Function", function_id)
+    except fs.SourceNotHere:
+        raise conflict("SOURCE_NOT_HERE", "The code of this version is not on this server. "
+                                          "A run or a re-export of the version puts it back.")
+

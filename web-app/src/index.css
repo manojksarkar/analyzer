@@ -474,6 +474,7 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
 
 /* Project row — hover tints all cells */
 .project-row:hover td { background: var(--color-surface); }
+.project-row:hover td > .row-tint { display: none; }   /* the pinned menu cell's stale tint, as the row's */
 
 /* ── Accessibility ─────────────────────────────────────────────────────────────────────────────
    Keyboard focus: one ring, on everything, 3:1 or better on every surface of its theme. It shows

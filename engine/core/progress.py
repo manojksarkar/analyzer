@@ -28,6 +28,12 @@ import time
 from typing import Optional
 
 
+#: A slow stage (the LLM's, one call every few seconds) still logs its counter at least this often:
+#: at 10 % alone, a review run's stage of thousands of functions went half an hour between lines,
+#: and the web app's "Est. ~X remaining" -- worked out from these lines -- had nothing to go on.
+LOG_EVERY_SECONDS = 60.0
+
+
 class ProgressReporter:
     def __init__(
         self,
@@ -49,6 +55,7 @@ class ProgressReporter:
         self._idx = 0
         self._started = False
         self._t0 = 0.0
+        self._last_log = 0.0                # monotonic time of the last counter line logged
         self._lock = threading.Lock()
         self._tty = bool(getattr(self.stream, "isatty", lambda: False)())
         self._line_active = False  # do we currently own a `\r` line?
@@ -61,6 +68,7 @@ class ProgressReporter:
         with self._lock:
             self._started = True
             self._t0 = time.perf_counter()
+            self._last_log = time.monotonic()
             self._idx = 0
             text = msg or (f"start ({self.total} items)" if self.total else "start")
             self.logger.info(text)
@@ -114,8 +122,11 @@ class ProgressReporter:
             except Exception:
                 pass
 
-        # Periodic INFO line (also goes to the file handler)
-        if total == 0 or idx == total or (idx % self.log_every == 0):
+        # Periodic INFO line (also goes to the file handler): every `log_every` items, and at
+        # least every LOG_EVERY_SECONDS on a slow stage.
+        now = time.monotonic()
+        if total == 0 or idx == total or (idx % self.log_every == 0)                 or now - self._last_log >= LOG_EVERY_SECONDS:
+            self._last_log = now
             self.logger.info(f"{progress}{suffix}")
 
     def _clear_live_line(self) -> None:

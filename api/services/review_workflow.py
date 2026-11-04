@@ -241,7 +241,11 @@ def approved_docx(doc: Any) -> Optional[Path]:
     """The copy of an approved document's Word file, when there is one on this machine."""
     if doc.status != "approved" or not doc.approved_docx_path:
         return None
-    p = Path(doc.approved_docx_path)
+    from ..db.session import _engine_on_path
+    _engine_on_path()
+    from core.paths import rebase_stored_path             # the workspaces may have moved (NW-5)
+    from .settings import get_settings
+    p = Path(rebase_stored_path(doc.approved_docx_path, str(get_settings().workspaces)))
     return p if p.is_file() else None
 
 

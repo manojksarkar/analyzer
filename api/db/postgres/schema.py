@@ -145,7 +145,7 @@ versions = Table(
     Column("docs_count", Integer, default=0),
     Column("created_by", String),
     _ts("created_at", nullable=False),
-    Column("baseline_version_id", String, ForeignKey("versions.id")),   # incremental baseline (self-ref)
+    Column("baseline_version_id", String, ForeignKey("versions.id", ondelete="SET NULL")),   # incremental baseline (self-ref)
     Column("decision", String),                                  # incremental|full
     Column("regenerated", Integer),
     Column("reused", Integer),
@@ -182,7 +182,7 @@ analysis_jobs = Table(
     "analysis_jobs", metadata,
     Column("id", String, primary_key=True),
     Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
-    Column("version_id", String, ForeignKey("versions.id")),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="SET NULL")),
     Column("commit_sha", String),
     Column("branch", String),
     Column("reference_version_id", String),
@@ -355,8 +355,8 @@ compare_results = Table(
     "compare_results", metadata,
     Column("id", String, primary_key=True),
     Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
-    Column("current_version_id", String, ForeignKey("versions.id")),
-    Column("baseline_version_id", String, ForeignKey("versions.id")),
+    Column("current_version_id", String, ForeignKey("versions.id", ondelete="CASCADE")),
+    Column("baseline_version_id", String, ForeignKey("versions.id", ondelete="CASCADE")),
     Column("diff_summary", _JSONB),
 )
 
@@ -364,7 +364,7 @@ document_diffs = Table(
     "document_diffs", metadata,
     Column("id", String, primary_key=True),
     Column("compare_result_id", String, ForeignKey("compare_results.id", ondelete="CASCADE"), nullable=False),
-    Column("document_id", String, ForeignKey("documents.id")),
+    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE")),
     Column("diff_type", String),
     Column("sections_changed", _JSONB),
 )

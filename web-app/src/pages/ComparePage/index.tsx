@@ -1,11 +1,15 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useCallback, Fragment } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
-  useVersions, useCommits, useDocuments, useDocument,
+  useVersions, useCommits, useDocuments, useDocument, useTeam,
 } from '../../hooks/useProjects'
+import { EditContext, type EditApi } from '../DocumentInspectorPage/editContext'
+import { useEditSession } from '../DocumentInspectorPage/editSession'
+import { CancelEdit } from '../DocumentInspectorPage/components/CancelEdit'
+import type { CompareBlock } from '../../types'
 import { useFollowDocumentVersion, useProjectViewState } from '../../hooks/useProjectViewState'
 import { useCompareDocuments, useCompareDocumentDetail } from '../../hooks/useCompare'
-import { Icon, Skeleton, CompareSectionSkeleton, StatusBadge } from '../../components/ui'
+import { Icon, Skeleton, CompareSectionSkeleton, StatusBadge, toast } from '../../components/ui'
 import { LoadError } from '../../components/LoadError'
 import { cn } from '../../lib/cn'
 import { documentSubtitle } from '../../lib/docTree'
@@ -13,6 +17,8 @@ import { failedLoad } from '../../lib/failedLoad'
 import { BlocksPane, SectionBody } from './components/DiffBlocks'
 import { DocTree, type TreeRow } from './components/DocTree'
 import { DocStateBar } from './components/DocStateBar'
+import { TreeRail } from '../DocumentInspectorPage/components/TreeRail'
+import { useUIStore } from '../../store/ui'
 import { ReferencePicker } from './components/ReferencePicker'
 import {
   DIFF_BADGE, compareVersions, olderVersions, paneSections, sectionAccent, signColumns, versionRef, type TreeMode,
@@ -57,6 +63,8 @@ export function ComparePage() {
   const baselineCommit = commits?.find((c) => c.sha === baselineVersion?.sha)
 
   const [treeModePick, setTreeMode] = useState<TreeMode | null>(null)
+  const treeFolded = useUIStore((s) => s.compareTreeFolded)
+  const setTreeFolded = useUIStore((s) => s.setCompareTreeFolded)
   const [changesOnly, setChangesOnly] = useState(false)
 
   const compareDocsQuery = useCompareDocuments(pid, readRef, baselineRef)
@@ -89,6 +97,32 @@ export function ComparePage() {
 
   const isRich = detail?.mode === 'rich'
   const sections = useMemo(() => paneSections(detail), [detail])
+
+  // Correcting a text here, as in the reader (NW-6): the Current side of a SWE.3 document of the
+  // Current version that is not approved, when the page shows a correctable text. The Reference
+  // side carries no slots, so it stays as it is.
+  const versionId = currentVersion?.id ?? ''
+  const [editPick, setEditing] = useState(false)
+  const { data: team } = useTeam(pid)
+  // Save and undo remember each text as it was before Edit, for Cancel.
+  const session = useEditSession(pid, versionId)
+  const { save: saveText, undo: undoText } = session
+  const names = useMemo(() => new Map((team ?? []).map((m) => [m.userId ?? m.id, m.name])), [team])
+  const userName = useCallback((id: string | null) => (id ? names.get(id) ?? '' : ''), [names])
+  const hasSlots = useMemo(() => sections.some((s) => (s.current ?? []).some(hasSlot)), [sections])
+  const canEdit = isRich && !!stateDoc && stateDoc.process !== 'SWE.4' && stateDoc.status !== 'approved' && hasSlots
+  const editing = editPick && canEdit
+  const editApi: EditApi = useMemo(() => ({
+    editing,
+    locked: false,
+    projectId: pid,
+    versionId,
+    save: saveText,
+    undo: undoText,
+    openFlowchart: () => toast.info('Correct flowchart labels in the document.'),
+    labelsLocked: null,
+    userName,
+  }), [editing, pid, versionId, saveText, undoText, userName])
 
   const changedSections = sections.filter((s) => s.diffType !== 'unchanged')
   const total = changedSections.length
@@ -150,13 +184,16 @@ export function ComparePage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <DocTree
-        rows={treeRows} mode={treeMode} setMode={setTreeMode}
-        activeId={activeDocId} onSelect={selectDoc}
-        changedCount={changedCount} total={totalCount}
-        loading={holding || (treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs)}
-        failed={treeFailed}
-      />
+      {treeFolded ? <TreeRail onOpen={() => setTreeFolded(false)} /> : (
+        <DocTree
+          rows={treeRows} mode={treeMode} setMode={setTreeMode}
+          activeId={activeDocId} onSelect={selectDoc}
+          changedCount={changedCount} total={totalCount}
+          loading={holding || (treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs)}
+          failed={treeFailed}
+          onFold={() => setTreeFolded(true)}
+        />
+      )}
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Loading until the versions say what is compared and the list (and a linked document)
@@ -232,6 +269,18 @@ export function ComparePage() {
                   {isLatest && <span className="px-2 py-0.5 rounded uppercase font-mono text-micro font-bold bg-on-tertiary-container text-on-status">Latest</span>}
                   <span className="text-on-surface-variant font-mono text-caption">{currentTag ? currentTag : `${currentBranch} @ ${currentShort}`}</span>
                   <div className="ml-auto flex items-center gap-2">
+                    {editing && <CancelEdit session={session} onLeave={() => setEditing(false)} size="sm" />}
+                    {canEdit && (
+                      <button
+                        onClick={() => { if (!editing) session.start(); setEditing((v) => !v) }}
+                        aria-pressed={editing}
+                        className={cn('flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-label transition-colors',
+                          editing ? 'bg-selected text-white border-selected' : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-low')}
+                        title={editing ? 'Stop correcting' : 'Correct the texts of this version'}
+                      >
+                        <Icon name={editing ? 'check' : 'edit'} size={11} />{editing ? 'Done' : 'Edit'}
+                      </button>
+                    )}
                     <button
                       onClick={() => setChangesOnly((v) => !v)}
                       className={cn('flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-label transition-colors',
@@ -309,7 +358,11 @@ export function ComparePage() {
                             </div>
                           )}
                           {isRich
-                            ? <BlocksPane blocks={s.current ?? []} signs={signs} emptyLabel={s.diffType === 'removed' ? 'Removed — not present in current.' : 'No content.'} />
+                            ? (
+                              <EditContext.Provider value={editApi}>
+                                <BlocksPane blocks={s.current ?? []} signs={signs} emptyLabel={s.diffType === 'removed' ? 'Removed — not present in current.' : 'No content.'} />
+                              </EditContext.Provider>
+                            )
                             : <SectionBody content={s.currentText ?? ''} />}
                         </div>
                       </Fragment>
@@ -326,4 +379,10 @@ export function ComparePage() {
       </div>
     </div>
   )
+}
+
+/** Whether a block of the Current side holds a text a reviewer can correct. */
+function hasSlot(b: CompareBlock): boolean {
+  if (b.kind === 'table') return !!b.cellSlots?.some((row) => row.some(Boolean))
+  return (b.kind === 'text' || b.kind === 'keyvalue') && !!b.slot
 }

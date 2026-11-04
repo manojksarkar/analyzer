@@ -28,6 +28,8 @@ export const projectKeys = {
     ['projects', id, 'documents', filters ?? {}] as const,
   document: (id: string, docId: string) =>
     ['projects', id, 'documents', 'detail', docId] as const,
+  functionSource: (id: string, versionId: string, functionId: string) =>
+    ['projects', id, 'versions', versionId, 'function-source', functionId] as const,
   documentRender: (id: string, docId: string) =>
     ['projects', id, 'documents', 'render', docId] as const,
   /** Every rendered document of the project: a label save changes SWE.3 and SWE.4 renders. */
@@ -59,6 +61,9 @@ export const projectKeys = {
   commits: (id: string) => ['projects', id, 'commits'] as const,
   job: (id: string) => ['projects', id, 'job'] as const,
   jobFunctions: (id: string, jobId: string) => ['projects', id, 'job', jobId, 'functions'] as const,
+  baselinePreview: (id: string, commit: string) => ['projects', id, 'baseline-preview', commit] as const,
+  /** Every comparison of the project: a correction saved changes what they show. */
+  compareAll: (id: string) => ['projects', id, 'compare'] as const,
   compare: (id: string, current: string, baseline: string) =>
     ['projects', id, 'compare', current, baseline] as const,
 }
@@ -117,6 +122,18 @@ export function useDocument(projectId: string, docId: string) {
     queryKey: projectKeys.document(projectId, docId),
     queryFn: () => documentsApi.get(projectId, docId),
     enabled: !!projectId && !!docId,
+  })
+}
+
+/** A function's lines of code, read when the reader opens them (NW-7). A version's code does not
+ *  change, so it is read once; a 409 (not on this server) is not retried. */
+export function useFunctionSource(projectId: string, versionId: string, functionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.functionSource(projectId, versionId, functionId ?? ''),
+    queryFn: () => documentsApi.functionSource(projectId, versionId, functionId as string),
+    enabled: enabled && !!projectId && !!versionId && !!functionId,
+    staleTime: Infinity,
+    retry: false,
   })
 }
 
@@ -199,7 +216,8 @@ export function useDeleteProject() {
       qc.invalidateQueries({ queryKey: projectKeys.all })
       toast.success('Project deleted')
     },
-    onError: (e: Error) => toast.error('Delete failed', e.message),
+    // 409 JOB_RUNNING: a run of the project is going (the web app's or a command-line one).
+    onError: (e: Error) => toast.error('Not deleted', e.message),
   })
 }
 

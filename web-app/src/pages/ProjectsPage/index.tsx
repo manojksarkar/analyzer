@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
-import { Icon, TableSkeleton, toast } from '../../components/ui'
+import { Icon, ScrollX, TableSkeleton, toast } from '../../components/ui'
 import { HomeTopbar } from '../../components/shell/HomeTopbar'
 import { LogsPanel } from '../../components/livelogs/LogsPanel'
 import { useLogsTakeThePage } from '../../components/livelogs/useLogRuns'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
 import { RenameProjectDialog } from './components/RenameProjectDialog'
+import { DeleteProjectDialog } from './components/DeleteProjectDialog'
 
 /* Column headers — width baked into the class so no inline style is needed. */
 const COLUMNS = [
@@ -18,7 +19,8 @@ const COLUMNS = [
   { label: 'Progress',  cls: 'px-4 py-3 w-40' },
   { label: 'Last Run',  cls: 'text-left px-4 py-3' },
   { label: 'Team',      cls: 'text-left px-4 py-3' },
-  { label: '',          cls: 'px-4 py-3 w-11' },
+  // The row menu stays in view when the table scrolls sideways (a narrow window): pinned right.
+  { label: '',          cls: 'px-4 py-3 w-11 sticky right-0 bg-surface-container-low shadow-[-6px_0_8px_-6px_rgba(4,22,39,.18)]' },
 ]
 
 export function ProjectsPage() {
@@ -30,6 +32,7 @@ export function ProjectsPage() {
   // The project being renamed (a row's menu). The dialog is the page's, not the row's: a click in
   // it would reach the row and open the project.
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
   // The Logs panel at full height takes the page's place (superusers only).
   const logsFull = useLogsTakeThePage()
 
@@ -92,7 +95,8 @@ export function ProjectsPage() {
                 onRequestAccess={requestAccess}
               />
             ) : (
-              <table className="w-full">
+              <ScrollX>
+              <table className="w-full min-w-[960px]">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
                     {COLUMNS.map(({ label, cls }) => (
@@ -115,10 +119,12 @@ export function ProjectsPage() {
                           onNavigate={(id) => navigate(`/projects/${id}/overview`)}
                           onTeam={(id) => navigate(`/projects/${id}/team`)}
                           onRename={(p) => setRenaming({ id: p.id, name: p.name })}
+                          onDelete={(p) => setDeleting({ id: p.id, name: p.name })}
                         />
                       ))}
                 </tbody>
               </table>
+              </ScrollX>
             )}
             {isLoading && <TableSkeleton rows={5} cols={8} />}
           </div>
@@ -129,6 +135,7 @@ export function ProjectsPage() {
               onClose={() => setRenaming(null)}
             />
           )}
+          {deleting && <DeleteProjectDialog project={deleting} onClose={() => setDeleting(null)} />}
         </div>
       </main>
       <LogsPanel />
