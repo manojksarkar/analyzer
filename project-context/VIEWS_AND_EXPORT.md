@@ -167,7 +167,7 @@ Full logic and layout rules: `docs/spec/SWE3_WIKI.md` — UD rules (unit archite
 #### Edge-label spacing — the ELK options are a no-op here (2026-08-08)
 
 Reported: *"function mapping is difficult to read in the Static Diagram, there is less
-space between the lines/labels."* SWE3-UD-06 puts every interface id for a unit pair on ONE
+space between the lines/labels."* SWE3-SD-16 puts every interface id for a unit pair on ONE
 arrow, so a busy edge stacks 10+ ids in a single label; joined with a bare `<br/>` they
 render as contiguous rows with no leading.
 
@@ -198,7 +198,7 @@ both rendered byte-identically to none, because once labels are tall the label c
 not the node — sets the height. Only an absurd 36 lines moved it, and that draws the unit
 as a grotesque tall bar.
 
-Not changed, per the user: no label splitting (SWE3-UD-06 mandates the shared arrow), no id
+Not changed, per the user: no label splitting (SWE3-SD-16 mandates the shared arrow), no id
 capping (the diagram stays complete), no DOCX width change, and diagram height is
 explicitly not a concern. A `to <partner>` header on each block was tried and **reverted**
 (`76fa866` / `fb281cb`) — the ask was spacing, not relabelling.

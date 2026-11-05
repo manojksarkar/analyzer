@@ -7,21 +7,25 @@ which rule: [TEST_INVENTORY.md](TEST_INVENTORY.md).
 
 ## How to use the rule ids
 
-A rule id is `SWE3-`, the section's code and a two-digit number: `SWE3-IT-14` is rule 14 of the
-interface table. `SWE3` names the document, so a review sheet that mixes documents stays clear; SWE.4
-rules would be `SWE4-…`. One rule table per section of the document, in document order:
+A rule id is `SWE3-`, the section's code and a two-digit number: `SWE3-UI-14` is rule 14 of the
+unit interface. `SWE3` names the document, so a review sheet that mixes documents stays clear; SWE.4
+rules would be `SWE4-…`. One rule table per section, in document order, named as the review scores
+them:
 
-| Code | Section | Rules |
+| Code | Review section | What it covers |
 |---|---|---|
-| DOC | the document as a whole: what is in it, units, files, LLM text | [DOC](#doc--the-document-as-a-whole) |
-| INT | 1 Introduction | [INT](#int--introduction) |
-| CO | component diagrams and the Component/Unit table (N.1.1, N.1.2) | [CO](#co--component-diagrams-and-table) |
-| UD | unit architecture diagram (N.1.3) | [UD](#ud--unit-architecture-diagram) |
-| UH | unit header table (N.1.4) | [UH](#uh--unit-header-table) |
-| IT | unit interface table (N.1.5) | [IT](#it--unit-interface-table) |
-| FC | function entry and flowcharts (N.1.6) | [FC](#fc--function-entry-and-flowcharts) |
-| BD | Dynamic Behaviour (N.2) | [BD](#bd--dynamic-behaviour) |
-| FX | fixed values, Code Metrics, Appendix | [FX](#fx--fixed-values-code-metrics-appendix) |
+| DOC | — | [the document as a whole](#doc--the-document-as-a-whole): what is in it, units, files, LLM text |
+| INT | — | [1 Introduction](#int--introduction) |
+| SD | **Static diagram** | [N.1 Static Design](#sd--static-diagram): the component's two diagrams, the Component/Unit table, each unit's architecture diagram |
+| UH | **Unit header** | [the unit header table](#uh--unit-header) |
+| UI | **Unit interface** | [the unit interface table](#ui--unit-interface) |
+| FD | **Flow diagram** | [each public function's entry](#fd--flow-diagram): its table and flowchart(s) |
+| DB | **Dynamic behaviour** | [N.2 Dynamic Behaviour](#db--dynamic-behaviour) |
+| FX | — | [fixed values, Code Metrics, Appendix](#fx--fixed-values-code-metrics-appendix) |
+
+A review scores the five named sections. A comment is counted in the section where it was made, even
+when the rule it names is a DOC, INT or FX one: "functions of `x.c` are missing" in the unit interface
+is a Unit interface comment on [SWE3-DOC-09](#doc--the-document-as-a-whole).
 
 Each rule has its **ID**, the **Rule**, an **Example**, and **Looks wrong, but is expected**: what a
 reader may take for a defect although the rule asks for it. ⚠ marks a rule, or a case, not agreed yet;
@@ -83,7 +87,7 @@ Appendix A  Design Guideline
 | SWE3-DOC-05 | A component section holds N.1 Static Design (the component diagrams, the Component/Unit table, then one sub-section per unit) and N.2 Dynamic Behaviour | — | — |
 | SWE3-DOC-06 | A unit sub-section holds, in order: the unit architecture diagram, the unit header table, the unit interface table, one entry per public function | — | — |
 | SWE3-DOC-07 | A unit is a source file and the header of the same name, as one thing: `Foo.cpp` + `Foo.h` is unit `Foo` | — | a function defined in `Foo.h` sits in the same tables as those of `Foo.cpp` |
-| SWE3-DOC-08 | Only a unit with a source file (`.cpp`, `.cc`, `.cxx`) gets a sub-section. A header with no source file of its own gets none; its content is listed inside one unit that uses it ([SWE3-UH-18](#uh--unit-header-table)) | — | "header `Types.h` has no section" |
+| SWE3-DOC-08 | Only a unit with a source file (`.cpp`, `.cc`, `.cxx`) gets a sub-section. A header with no source file of its own gets none; its content is listed inside one unit that uses it ([SWE3-UH-18](#uh--unit-header)) | — | "header `Types.h` has no section" |
 | SWE3-DOC-09 | Files read: `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hxx` under the component's folders. A `.c` file is not read. A file whose name contains `emul` is skipped, unless the project's settings list other name patterns to skip | — | "functions of `x.c` are missing"; "the emulator files are missing" |
 | SWE3-DOC-10 | A file that two components list belongs to the first one in the settings | — | — |
 | SWE3-DOC-11 | ⚠ Two source files with the same name in one component become one unit; the run prints a warning | — | — |
@@ -106,12 +110,12 @@ Appendix A  Design Guideline
 
 | Text | Without the LLM | With the LLM |
 |---|---|---|
-| Interface **Information** ([SWE3-IT-18](#column-3--information)) | `-` | one line describing the function or global |
-| Component/Unit **Description** ([SWE3-CO-09](#co--component-diagrams-and-table)) | its interface rows' descriptions joined, cut at 120 characters | one line summarising the unit |
-| Unit header **information** of a struct typedef ([SWE3-UH-07](#uh--unit-header-table)) | a phrase built from the type name | one line from the type name **and** its fields |
-| Flowchart box labels ([SWE3-FC-07](#fc--function-entry-and-flowcharts)) | the box's own source text | a short label per box |
-| Behaviour bullets ([SWE3-BD-08](#bd--dynamic-behaviour)) | `A calls B` | `A calls B to …` (20 words at most) |
-| Input / Output Name ([SWE3-FC-12](#fc--function-entry-and-flowcharts)) | worked out from the code | asked for only when the worked-out name is a placeholder |
+| Interface **Information** ([SWE3-UI-18](#column-3--information)) | `-` | one line describing the function or global |
+| Component/Unit **Description** ([SWE3-SD-09](#sd--static-diagram)) | its interface rows' descriptions joined, cut at 120 characters | one line summarising the unit |
+| Unit header **information** of a struct typedef ([SWE3-UH-07](#uh--unit-header)) | a phrase built from the type name | one line from the type name **and** its fields |
+| Flowchart box labels ([SWE3-FD-07](#fd--flow-diagram)) | the box's own source text | a short label per box |
+| Behaviour bullets ([SWE3-DB-08](#db--dynamic-behaviour)) | `A calls B` | `A calls B to …` (20 words at most) |
+| Input / Output Name ([SWE3-FD-12](#fd--flow-diagram)) | worked out from the code | asked for only when the worked-out name is a placeholder |
 
 ---
 
@@ -126,48 +130,54 @@ Appendix A  Design Guideline
 
 ---
 
-## CO — Component diagrams and table
+## SD — Static diagram
 
-Sections N.1.1 (the two pictures) and N.1.2 (the Component/Unit table), at the top of every component.
+The pictures and the table of N.1 Static Design: at the top of every component, its two diagrams and
+the Component/Unit table; in every unit, its architecture diagram.
 
-| ID | Rule | Example | Looks wrong, but is expected |
-|---|---|---|---|
-| SWE3-CO-01 | Container diagram: the component as a yellow box, one blue box per unit inside it, no arrows. Units are in sorted order, so the same code gives the same picture on any machine | — | — |
-| SWE3-CO-02 | File dependency diagram, drawn bottom to top: a blue box per source file, a dark box per header, an arrow source → header for every header the source includes | — | — |
-| SWE3-CO-03 | Only headers of this component are drawn. An include of another component's header, or of a system header, is not | — | "the include of `Hil.h` is missing" |
-| SWE3-CO-04 | An include inside `#if` / `#ifdef` / `#ifndef` / `#elif` / `#else` counts only when its branch is active for this build. A condition that cannot be worked out counts as active, so an include is never lost quietly | — | — |
-| SWE3-CO-05 | A source file's own header (same name) is always drawn as included, even with no `#include` line | — | — |
-| SWE3-CO-06 | The Component/Unit table has one row per unit with a source file, in four columns: Component, Unit, Description, Note | — | — |
-| SWE3-CO-07 | Component: the name for reading — layer prefix removed, hyphens back to spaces (`Layer1.Sample-Core` → `Sample Core`) — written once, in the first row, and merged down the column | — | — |
-| SWE3-CO-08 | Unit: the file name without its extension | `FtlMap` | — |
-| SWE3-CO-09 | Description: one line from the LLM, summarising the descriptions of the unit's **public** functions and globals — its interface rows — kept as two lists, duplicates and blanks removed; never the raw source. LLM off or failing: those descriptions joined with `; `, cut at 120 characters. No description at all: `N/A` | — | a sentence cut short when the LLM is off; `N/A` for a unit with no public item |
-| SWE3-CO-10 | ⚠ Note: always `N/A` ([SWE3-FX-03](#fx--fixed-values-code-metrics-appendix)) | — | — |
-
----
-
-## UD — Unit architecture diagram
-
-Section N.1.3: one diagram per unit. **Boxes are units, arrows are interfaces.**
+### Component diagrams
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-UD-01 | One diagram per unit with a source file, drawn left to right. Each arrow is labelled with its interface id(s) | — | — |
-| SWE3-UD-02 | Only the unit's **own** interfaces are drawn: for each public function of the unit, an arrow to each unit that calls it | `HilQueue` calls `FtlSetEntry` → an arrow in `FtlMap`'s diagram | "the call from `FtlMap` to `FtlCache` is missing" — it is in `FtlCache`'s diagram |
-| SWE3-UD-03 | So each relationship between two units appears once in the document: in the diagram of the unit that provides the function | — | — |
-| SWE3-UD-04 | A private function has no arrow, so an arrow never carries an id the reader cannot find in a table | — | — |
-| SWE3-UD-05 | The arrow's direction is the providing function's Direction ([SWE3-IT-27…SWE3-IT-29](#column-6--directioninout)): `Out` points from the provider to the caller, `In` from the caller to the provider. The caller's own direction does not matter | `FtlSetEntry` is `In`: `HilQueue` → `FtlMap` | an arrow that points against the call |
-| SWE3-UD-06 | Interfaces between the same two units in the same direction share one arrow; its label lists all their ids, spaced so labels never run together | — | — |
-| SWE3-UD-07 | A function published only through a table of function pointers draws its arrow to the unit that registers it | — | — |
-| SWE3-UD-08 | A unit never draws an arrow to itself | — | — |
-| SWE3-UD-09 | Layout: a yellow component box in the middle holds this unit (thick border) and the units of the document's components that share an arrow with it (lighter style). Units of other components are drawn outside the box. A unit with no arrow to this one is not drawn | — | "unit `FtlLog` of the same component is missing" — it shares no interface |
-| SWE3-UD-10 | Inside the box and outside it alike, a unit whose arrow points **into** this unit comes before it (left); one whose arrow points **out of** it comes after it (right). A unit with arrows both ways is drawn twice, each box with the ids of its own arrow | — | "a unit is drawn twice" |
-| SWE3-UD-11 | The unit's own **published** globals (those with an interface row) are boxes with **no arrows** — a global is always `In/Out` — stacked above the unit in interface-id order, labelled with the name (`Owner::s_count` for a class static member) | — | "the global has no arrow" |
-| SWE3-UD-12 | Other units' globals, private globals and `extern` declarations are not drawn | — | "the global this unit reads is missing" |
-| SWE3-UD-13 | Box labels are `Component/Unit`, the layer dropped. A character that would break the picture is replaced | — | — |
+| SWE3-SD-01 | Container diagram: the component as a yellow box, one blue box per unit inside it, no arrows. Units are in sorted order, so the same code gives the same picture on any machine | — | — |
+| SWE3-SD-02 | File dependency diagram, drawn bottom to top: a blue box per source file, a dark box per header, an arrow source → header for every header the source includes | — | — |
+| SWE3-SD-03 | Only headers of this component are drawn. An include of another component's header, or of a system header, is not | — | "the include of `Hil.h` is missing" |
+| SWE3-SD-04 | An include inside `#if` / `#ifdef` / `#ifndef` / `#elif` / `#else` counts only when its branch is active for this build. A condition that cannot be worked out counts as active, so an include is never lost quietly | — | — |
+| SWE3-SD-05 | A source file's own header (same name) is always drawn as included, even with no `#include` line | — | — |
+
+### Component/Unit table
+
+| ID | Rule | Example | Looks wrong, but is expected |
+|---|---|---|---|
+| SWE3-SD-06 | The Component/Unit table has one row per unit with a source file, in four columns: Component, Unit, Description, Note | — | — |
+| SWE3-SD-07 | Component: the name for reading — layer prefix removed, hyphens back to spaces (`Layer1.Sample-Core` → `Sample Core`) — written once, in the first row, and merged down the column | — | — |
+| SWE3-SD-08 | Unit: the file name without its extension | `FtlMap` | — |
+| SWE3-SD-09 | Description: one line from the LLM, summarising the descriptions of the unit's **public** functions and globals — its interface rows — kept as two lists, duplicates and blanks removed; never the raw source. LLM off or failing: those descriptions joined with `; `, cut at 120 characters. No description at all: `N/A` | — | a sentence cut short when the LLM is off; `N/A` for a unit with no public item |
+| SWE3-SD-10 | ⚠ Note: always `N/A` ([SWE3-FX-03](#fx--fixed-values-code-metrics-appendix)) | — | — |
+
+### Unit architecture diagram
+
+One diagram per unit. **Boxes are units, arrows are interfaces.**
+
+| ID | Rule | Example | Looks wrong, but is expected |
+|---|---|---|---|
+| SWE3-SD-11 | One diagram per unit with a source file, drawn left to right. Each arrow is labelled with its interface id(s) | — | — |
+| SWE3-SD-12 | Only the unit's **own** interfaces are drawn: for each public function of the unit, an arrow to each unit that calls it | `HilQueue` calls `FtlSetEntry` → an arrow in `FtlMap`'s diagram | "the call from `FtlMap` to `FtlCache` is missing" — it is in `FtlCache`'s diagram |
+| SWE3-SD-13 | So each relationship between two units appears once in the document: in the diagram of the unit that provides the function | — | — |
+| SWE3-SD-14 | A private function has no arrow, so an arrow never carries an id the reader cannot find in a table | — | — |
+| SWE3-SD-15 | The arrow's direction is the providing function's Direction ([SWE3-UI-27…SWE3-UI-29](#column-6--directioninout)): `Out` points from the provider to the caller, `In` from the caller to the provider. The caller's own direction does not matter | `FtlSetEntry` is `In`: `HilQueue` → `FtlMap` | an arrow that points against the call |
+| SWE3-SD-16 | Interfaces between the same two units in the same direction share one arrow; its label lists all their ids, spaced so labels never run together | — | — |
+| SWE3-SD-17 | A function published only through a table of function pointers draws its arrow to the unit that registers it | — | — |
+| SWE3-SD-18 | A unit never draws an arrow to itself | — | — |
+| SWE3-SD-19 | Layout: a yellow component box in the middle holds this unit (thick border) and the units of the document's components that share an arrow with it (lighter style). Units of other components are drawn outside the box. A unit with no arrow to this one is not drawn | — | "unit `FtlLog` of the same component is missing" — it shares no interface |
+| SWE3-SD-20 | Inside the box and outside it alike, a unit whose arrow points **into** this unit comes before it (left); one whose arrow points **out of** it comes after it (right). A unit with arrows both ways is drawn twice, each box with the ids of its own arrow | — | "a unit is drawn twice" |
+| SWE3-SD-21 | The unit's own **published** globals (those with an interface row) are boxes with **no arrows** — a global is always `In/Out` — stacked above the unit in interface-id order, labelled with the name (`Owner::s_count` for a class static member) | — | "the global has no arrow" |
+| SWE3-SD-22 | Other units' globals, private globals and `extern` declarations are not drawn | — | "the global this unit reads is missing" |
+| SWE3-SD-23 | Box labels are `Component/Unit`, the layer dropped. A character that would break the picture is replaced | — | — |
 
 ---
 
-## UH — Unit header table
+## UH — Unit header
 
 Section N.1.4: two columns, `declaration` and `information`. The table says what the unit **declares**,
 not what it publishes.
@@ -178,7 +188,7 @@ not what it publishes.
 |---|---|---|---|
 | SWE3-UH-01 | One row per symbol declared in the unit's own files (source **and** header): globals (`extern` declarations too), `#define`s, enums, typedefs, `using` aliases, structs, classes, unions. Functions are not listed here — they are in the interface table | — | an `extern int g_x;` row: the unit uses a global another unit owns |
 | SWE3-UH-02 | Access and markings change nothing: a class with private members, a `PRIVATE` global, a file-scope `static` global — all are listed | `PRIVATE uint8_t gErrCount = 0;` listed | "a private item is listed" |
-| SWE3-UH-03 | ⚠ A symbol of the unit's own files is listed whether or not the unit uses it. The use test applies to orphan headers only ([SWE3-UH-20](#uh--unit-header-table)) | — | "an unused define is listed" |
+| SWE3-UH-03 | ⚠ A symbol of the unit's own files is listed whether or not the unit uses it. The use test applies to orphan headers only ([SWE3-UH-20](#uh--unit-header)) | — | "an unused define is listed" |
 
 **Column 2 — information**
 
@@ -235,7 +245,7 @@ means. None of this reaches the interface table, which shows a name and a type o
 
 ---
 
-## IT — Unit interface table
+## UI — Unit interface
 
 Section N.1.5. One row per interface of the unit:
 
@@ -256,76 +266,76 @@ Section N.1.5. One row per interface of the unit:
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-01 | One table per unit with a source file, the eight columns above on every row. A unit with no source file has no table | — | — |
-| SWE3-IT-02 | One row per **public** function and **public** global of the unit, from both halves (`.cpp` and `.h`) | — | — |
-| SWE3-IT-03 | A function is public when a function in **another unit** calls it, or its address sits in a file-level table (`static const fp_t table[] = { fn, … };`). A call from the unit's own header is a call from the same unit | — | "`PUBLIC` function `main` is missing" — no other unit calls it |
-| SWE3-IT-04 | A global is public when a function in **another unit** reads or writes it. A use through an `extern` declaration counts for the global it declares; so does a class static member used through an object (`obj.s_x`, `p->s_x`). Calling a function that touches the global does not count | `Lib` reads `g_sharedTick` through `SharedDefs.h` → `Core`'s global has a row | "global `g_result` is missing" — only its own unit uses it |
-| SWE3-IT-05 | **No marking decides.** `PUBLIC`, `PRIVATE`, `PROTECTED` and the C++ `public:`, `protected:`, `private:` are ignored | `coreGetCount` is `PROTECTED`, called by `App/Main` → it has a row | "a private function is in the table" |
-| SWE3-IT-06 | A file-scope `static` variable never has a row: nothing outside its file can name it. An `extern` declaration has none either: the defining unit's row stands for it (the unit header lists the `extern` line) | — | "the global this unit declares `extern` has no row here" |
-| SWE3-IT-07 | A private item has no row, no arrow and no heading. Its internal id `PIF_…` is never printed; it exists only in the tool's data and logs | — | — |
-| SWE3-IT-08 | ⚠ The answer depends on what was parsed: an entry point nothing calls by name (an ISR, a registered callback) is private unless a table holds its address, and a run of one layer cannot see the layer above calling in | — | "the ISR is missing" |
-| SWE3-IT-09 | Types and macros are never rows: they are in the unit header table | — | — |
+| SWE3-UI-01 | One table per unit with a source file, the eight columns above on every row. A unit with no source file has no table | — | — |
+| SWE3-UI-02 | One row per **public** function and **public** global of the unit, from both halves (`.cpp` and `.h`) | — | — |
+| SWE3-UI-03 | A function is public when a function in **another unit** calls it, or its address sits in a file-level table (`static const fp_t table[] = { fn, … };`). A call from the unit's own header is a call from the same unit | — | "`PUBLIC` function `main` is missing" — no other unit calls it |
+| SWE3-UI-04 | A global is public when a function in **another unit** reads or writes it. A use through an `extern` declaration counts for the global it declares; so does a class static member used through an object (`obj.s_x`, `p->s_x`). Calling a function that touches the global does not count | `Lib` reads `g_sharedTick` through `SharedDefs.h` → `Core`'s global has a row | "global `g_result` is missing" — only its own unit uses it |
+| SWE3-UI-05 | **No marking decides.** `PUBLIC`, `PRIVATE`, `PROTECTED` and the C++ `public:`, `protected:`, `private:` are ignored | `coreGetCount` is `PROTECTED`, called by `App/Main` → it has a row | "a private function is in the table" |
+| SWE3-UI-06 | A file-scope `static` variable never has a row: nothing outside its file can name it. An `extern` declaration has none either: the defining unit's row stands for it (the unit header lists the `extern` line) | — | "the global this unit declares `extern` has no row here" |
+| SWE3-UI-07 | A private item has no row, no arrow and no heading. Its internal id `PIF_…` is never printed; it exists only in the tool's data and logs | — | — |
+| SWE3-UI-08 | ⚠ The answer depends on what was parsed: an entry point nothing calls by name (an ISR, a registered callback) is private unless a table holds its address, and a run of one layer cannot see the layer above calling in | — | "the ISR is missing" |
+| SWE3-UI-09 | Types and macros are never rows: they are in the unit header table | — | — |
 
 ### Order
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-10 | Functions first, then globals, each in interface-id order (by the number at the end, so `_99` before `_100`). The id column reads `01, 02, 03…` with no gap | — | "rows are not in source order" — `.h` and `.cpp` have their own line numbers |
+| SWE3-UI-10 | Functions first, then globals, each in interface-id order (by the number at the end, so `_99` before `_100`). The id column reads `01, 02, 03…` with no gap | — | "rows are not in source order" — `.h` and `.cpp` have their own line numbers |
 
 ### Column 1 — Interface ID
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-11 | `IF_<LAYER>_<GROUP>_<UNIT>_<NN>`. Each part is the name in capitals with every character that is not a letter removed; the layer part keeps its digits | `Sample Core` → `SAMPLECORE`, `Ftl_Map` → `FTLMAP`, `Layer1` → `LAYER1` | ⚠ `Map` and `Map2` both give `MAP` |
-| SWE3-IT-12 | No layer: the project name takes its place, letters only. No group: the group part is left out (`IF_<LAYER>_<UNIT>_<NN>`). The unit part is the file name, not the folder path | — | — |
-| SWE3-IT-13 | `<NN>` is two digits counted **per unit**, `.h` and `.cpp` on one list: functions first, ordered by file name then line (`.cpp` before `.h`), then globals the same way. Private items are counted apart, so the printed numbers never skip | — | — |
-| SWE3-IT-14 | ⚠ Units whose ids would read the same (`Map`, `Map2`) share one count, so no id is printed twice: `Map` takes `_01`, `_02`, `Map2` goes on at `_03` | — | `Map2` starting at `_03` |
-| SWE3-IT-15 | An id is a position: when a function becomes public, each later id of its unit grows by one | — | "ids changed between versions" |
+| SWE3-UI-11 | `IF_<LAYER>_<GROUP>_<UNIT>_<NN>`. Each part is the name in capitals with every character that is not a letter removed; the layer part keeps its digits | `Sample Core` → `SAMPLECORE`, `Ftl_Map` → `FTLMAP`, `Layer1` → `LAYER1` | ⚠ `Map` and `Map2` both give `MAP` |
+| SWE3-UI-12 | No layer: the project name takes its place, letters only. No group: the group part is left out (`IF_<LAYER>_<UNIT>_<NN>`). The unit part is the file name, not the folder path | — | — |
+| SWE3-UI-13 | `<NN>` is two digits counted **per unit**, `.h` and `.cpp` on one list: functions first, ordered by file name then line (`.cpp` before `.h`), then globals the same way. Private items are counted apart, so the printed numbers never skip | — | — |
+| SWE3-UI-14 | ⚠ Units whose ids would read the same (`Map`, `Map2`) share one count, so no id is printed twice: `Map` takes `_01`, `_02`, `Map2` goes on at `_03` | — | `Map2` starting at `_03` |
+| SWE3-UI-15 | An id is a position: when a function becomes public, each later id of its unit grows by one | — | "ids changed between versions" |
 
 ### Column 2 — Interface Name
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-16 | Function: the short name with its class in front; the namespace is dropped. Global: the name after the last `::`. Headings use the same name | `MapCache::insert`, `FtlLookup` | "the namespace is missing" |
-| SWE3-IT-17 | Two functions of one unit never print alike: overloads add their parameter types, one name in two namespaces adds its scope. Every other name prints plainly | `FtlRead(Lba_t)`, `FtlRead(Lba_t, uint32_t)`; `fast::init` | a name with brackets |
+| SWE3-UI-16 | Function: the short name with its class in front; the namespace is dropped. Global: the name after the last `::`. Headings use the same name | `MapCache::insert`, `FtlLookup` | "the namespace is missing" |
+| SWE3-UI-17 | Two functions of one unit never print alike: overloads add their parameter types, one name in two namespaces adds its scope. Every other name prints plainly | `FtlRead(Lba_t)`, `FtlRead(Lba_t, uint32_t)`; `fast::init` | a name with brackets |
 
 ### Column 3 — Information
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-18 | One line describing the function or global, written by the LLM from its source, what it calls and its callers; `-` when there is none. With the LLM off every cell is `-`, and no other column changes | — | ⚠ `-` |
+| SWE3-UI-18 | One line describing the function or global, written by the LLM from its source, what it calls and its callers; `-` when there is none. With the LLM off every cell is `-`, and no other column changes | — | ⚠ `-` |
 
 ### Column 4 — Data Type
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-19 | Function: the parameters as `type name; type name; …` in declared order (the type alone when a parameter has no name), then a line `return: <type>`. `const`, `volatile`, `*` and `&` are kept as written | `Lba_t lba; uint32_t ppn` / `return: int` | — |
-| SWE3-IT-20 | No parameters: `VOID`. A `void` return: `return: VOID`. The `return:` line appears only when a return type was recorded | — | — |
-| SWE3-IT-21 | Global: the declared type as written | `uint16_t` | — |
+| SWE3-UI-19 | Function: the parameters as `type name; type name; …` in declared order (the type alone when a parameter has no name), then a line `return: <type>`. `const`, `volatile`, `*` and `&` are kept as written | `Lba_t lba; uint32_t ppn` / `return: int` | — |
+| SWE3-UI-20 | No parameters: `VOID`. A `void` return: `return: VOID`. The `return:` line appears only when a return type was recorded | — | — |
+| SWE3-UI-21 | Global: the declared type as written | `uint16_t` | — |
 
 ### Column 5 — Data Range
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-22 | One range per Data Type line, in the same order: `range; range; …`, then `return: range` (`NA` for `void`). No parameters: `NA` | `0-0xFFFFFFFF; 0-0xFFFFFFFF` / `return: -0x80000000-0x7FFFFFFF` | — |
-| SWE3-IT-23 | A range is looked up **by type name** in one data dictionary, never made up per function. Only this layer's entries and the shared ones answer; a type of the same name in another layer is never used | — | — |
-| SWE3-IT-24 | The first that answers wins: a supplied CSV; what libclang measured for the build target; the built-in table of primitives; a lookup by name; `NA` | `uint8_t` → `0-0xFF`, `bool` → `0-1` | "`long` has a different range on another machine" — 4 bytes on Windows, 8 on Linux |
-| SWE3-IT-25 | A typedef with no range of its own follows the type it stands for, up to 10 steps. The match is case-sensitive, as C++ is | `Lba_t` → `uint32_t` → `0-0xFFFFFFFF`; `Size_t` is not `size_t` | — |
-| SWE3-IT-26 | Structs, unions, pointers and floats are `NA` on purpose | `uint32_t*` → `NA` | "the range is missing" |
+| SWE3-UI-22 | One range per Data Type line, in the same order: `range; range; …`, then `return: range` (`NA` for `void`). No parameters: `NA` | `0-0xFFFFFFFF; 0-0xFFFFFFFF` / `return: -0x80000000-0x7FFFFFFF` | — |
+| SWE3-UI-23 | A range is looked up **by type name** in one data dictionary, never made up per function. Only this layer's entries and the shared ones answer; a type of the same name in another layer is never used | — | — |
+| SWE3-UI-24 | The first that answers wins: a supplied CSV; what libclang measured for the build target; the built-in table of primitives; a lookup by name; `NA` | `uint8_t` → `0-0xFF`, `bool` → `0-1` | "`long` has a different range on another machine" — 4 bytes on Windows, 8 on Linux |
+| SWE3-UI-25 | A typedef with no range of its own follows the type it stands for, up to 10 steps. The match is case-sensitive, as C++ is | `Lba_t` → `uint32_t` → `0-0xFFFFFFFF`; `Size_t` is not `size_t` | — |
+| SWE3-UI-26 | Structs, unions, pointers and floats are `NA` on purpose | `uint32_t*` → `NA` | "the range is missing" |
 
 Every run prints how many ranges it filled in — `data ranges: 64/65 resolved, 1 NA (int[6] x1)` — which
 names the types a supplied CSV would still need to cover.
 
 ### Column 6 — Direction(In/Out)
 
-A function's Direction is decided by the first of SWE3-IT-27, SWE3-IT-28, SWE3-IT-29 that matches.
+A function's Direction is decided by the first of SWE3-UI-27, SWE3-UI-28, SWE3-UI-29 that matches.
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-27 | The name contains the whole word `set` → `In`; otherwise the whole word `get` → `Out`. The name is split into words across camelCase and snake_case | `SetX`, `setX`, `Module_SetX`, `SET_X`, `coreSetResult` match; `Setup`, `Settings`, `Reset`, `offset` do not | `FtlSetEntry` is `In` though it returns `int`; ⚠ `isSet` matches too |
-| SWE3-IT-28 | Otherwise, a return type that is not `void` → `Out` (`void *` counts as a value) | `int bump() { s_count++; return s_count; }` → `Out` | ⚠ "it writes a global, so it should be `In`" |
-| SWE3-IT-29 | Otherwise: writes a global, itself or through any function it calls → `In`; only reads, or touches none → `Out`. A class static member is a global however it is reached (`Foo::s_x`, `s_x`, `this->s_x`, `obj.s_x`), whatever its access | a `void` function that changes state only through a helper → `In` | — |
-| SWE3-IT-30 | Global rows: always `In/Out` | — | — |
+| SWE3-UI-27 | The name contains the whole word `set` → `In`; otherwise the whole word `get` → `Out`. The name is split into words across camelCase and snake_case | `SetX`, `setX`, `Module_SetX`, `SET_X`, `coreSetResult` match; `Setup`, `Settings`, `Reset`, `offset` do not | `FtlSetEntry` is `In` though it returns `int`; ⚠ `isSet` matches too |
+| SWE3-UI-28 | Otherwise, a return type that is not `void` → `Out` (`void *` counts as a value) | `int bump() { s_count++; return s_count; }` → `Out` | ⚠ "it writes a global, so it should be `In`" |
+| SWE3-UI-29 | Otherwise: writes a global, itself or through any function it calls → `In`; only reads, or touches none → `Out`. A class static member is a global however it is reached (`Foo::s_x`, `s_x`, `this->s_x`, `obj.s_x`), whatever its access | a `void` function that changes state only through a helper → `In` | — |
+| SWE3-UI-30 | Global rows: always `In/Out` | — | — |
 
 Each decision is kept in words in the tool's data — `In: function name 'FtlSetEntry' contains 'Set'`,
 `Out: returns a value (int).`, `In: writes global(s) gState (via cacheFlush).` — so any row can be checked
@@ -335,23 +345,23 @@ without reading the code. It is not printed in the document.
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-31 | Function: every **other** unit that calls it, as `Component/Unit`, A-Z, separated by `, `. Units of the same component count; the function's own unit is left out. It matches the unit diagram (SWE3-UD-02) | `HilCore/HilQueue` | ⚠ "a unit it calls is missing" — callers only |
-| SWE3-IT-32 | Published only through a pointer table: the unit that registers it. Nothing qualifies: `-` | — | — |
-| SWE3-IT-33 | ⚠ The layer prefix is dropped and hyphens are kept | `Sample-Core/Core` | the heading says `Sample Core` |
-| SWE3-IT-34 | Global: the unit's own `Component/Unit` | `FtlCore/FtlMap` | — |
+| SWE3-UI-31 | Function: every **other** unit that calls it, as `Component/Unit`, A-Z, separated by `, `. Units of the same component count; the function's own unit is left out. It matches the unit diagram (SWE3-SD-12) | `HilCore/HilQueue` | ⚠ "a unit it calls is missing" — callers only |
+| SWE3-UI-32 | Published only through a pointer table: the unit that registers it. Nothing qualifies: `-` | — | — |
+| SWE3-UI-33 | ⚠ The layer prefix is dropped and hyphens are kept | `Sample-Core/Core` | the heading says `Sample Core` |
+| SWE3-UI-34 | Global: the unit's own `Component/Unit` | `FtlCore/FtlMap` | — |
 
-Why callers only (SWE3-IT-31): each relationship between two units is written down once, on the side that
+Why callers only (SWE3-UI-31): each relationship between two units is written down once, on the side that
 provides the function. A function's calls appear in the rows of the units it calls.
 
 ### Column 8 — Interface Type
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-IT-35 | `Function` or `Global Variable`, from what the row is | — | — |
+| SWE3-UI-35 | `Function` or `Global Variable`, from what the row is | — | — |
 
 ---
 
-## FC — Function entry and flowcharts
+## FD — Flow diagram
 
 Section N.1.6: one heading per public function, with a table and its flowchart(s).
 
@@ -359,49 +369,49 @@ Section N.1.6: one heading per public function, with a table and its flowchart(s
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-FC-01 | One heading `N.1.u.k <Unit>-<Function>` per public function ([SWE3-IT-03](#which-rows--public-and-private)), named as in the interface table; each overload has its own. Globals get none | `FtlMap-FtlSetEntry` | "private function `isValidLba` has no heading" |
-| SWE3-FC-02 | Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name | — | — |
-| SWE3-FC-03 | Requirements: the function's description (its name if it has none), then its flowchart picture(s), each with its signature above it | — | — |
-| SWE3-FC-04 | After the function's own flowchart comes one for each **private** function it calls directly. Each private function is drawn once per unit, under the first public function that calls it; hidden ones are skipped | `bool isValidLba(Lba_t lba)` + flowchart under `FtlSetEntry` | "`isValidLba`'s flowchart sits under another function"; ⚠ a private function called only by another private function has no flowchart |
-| SWE3-FC-05 | Risk `Medium`, Capacity(Density) `Common`: fixed values ([SWE3-FX-01](#fx--fixed-values-code-metrics-appendix)) | — | ⚠ the same value on every function |
+| SWE3-FD-01 | One heading `N.1.u.k <Unit>-<Function>` per public function ([SWE3-UI-03](#which-rows--public-and-private)), named as in the interface table; each overload has its own. Globals get none | `FtlMap-FtlSetEntry` | "private function `isValidLba` has no heading" |
+| SWE3-FD-02 | Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name | — | — |
+| SWE3-FD-03 | Requirements: the function's description (its name if it has none), then its flowchart picture(s), each with its signature above it | — | — |
+| SWE3-FD-04 | After the function's own flowchart comes one for each **private** function it calls directly. Each private function is drawn once per unit, under the first public function that calls it; hidden ones are skipped | `bool isValidLba(Lba_t lba)` + flowchart under `FtlSetEntry` | "`isValidLba`'s flowchart sits under another function"; ⚠ a private function called only by another private function has no flowchart |
+| SWE3-FD-05 | Risk `Medium`, Capacity(Density) `Common`: fixed values ([SWE3-FX-01](#fx--fixed-values-code-metrics-appendix)) | — | ⚠ the same value on every function |
 
 **The flowchart**
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-FC-06 | The shape comes from the code: libclang reads the function and builds its control flow. An oval for Start and End, a diamond for a decision, a box for everything else; Yes/No on a decision's arrows | — | — |
-| SWE3-FC-07 | The LLM writes only the box labels, with the box's calls, comments and the meaning of the enums, macros and typedefs it uses as context; a second pass keeps the wording consistent across the function. Without the LLM, a box shows its own source text | — | — |
-| SWE3-FC-08 | Every call in a box is written `Name()`, and a call the label dropped is added as `Calls: X()`, so no call is lost to rewording | — | a `Calls: X()` line |
-| SWE3-FC-09 | `Return` and `End` are drawn at the bottom; a loop's back arrow and its exit run in separate lanes, so lines do not cross | — | — |
-| SWE3-FC-10 | A header that cannot be found removes no branch: a statement that uses its names stays as written, and a `case X:` whose `X` comes from it is read from the source text. Still lost: a `#if` branch on a macro of the missing header. The run log names every header not found | — | — |
-| SWE3-FC-11 | The picture is 4 inches wide. One too tall for a page is split across pages at blank rows, not shrunk | — | a flowchart over two pages |
+| SWE3-FD-06 | The shape comes from the code: libclang reads the function and builds its control flow. An oval for Start and End, a diamond for a decision, a box for everything else; Yes/No on a decision's arrows | — | — |
+| SWE3-FD-07 | The LLM writes only the box labels, with the box's calls, comments and the meaning of the enums, macros and typedefs it uses as context; a second pass keeps the wording consistent across the function. Without the LLM, a box shows its own source text | — | — |
+| SWE3-FD-08 | Every call in a box is written `Name()`, and a call the label dropped is added as `Calls: X()`, so no call is lost to rewording | — | a `Calls: X()` line |
+| SWE3-FD-09 | `Return` and `End` are drawn at the bottom; a loop's back arrow and its exit run in separate lanes, so lines do not cross | — | — |
+| SWE3-FD-10 | A header that cannot be found removes no branch: a statement that uses its names stays as written, and a `case X:` whose `X` comes from it is read from the source text. Still lost: a `#if` branch on a macro of the missing header. The run log names every header not found | — | — |
+| SWE3-FD-11 | The picture is 4 inches wide. One too tall for a page is split across pages at blank rows, not shrunk | — | a flowchart over two pages |
 
 **Input Name and Output Name** — worked out from the code; the LLM is asked only for a placeholder
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-FC-12 | Input Name: the first parameter's name. A function with no named parameter: the first global it writes, else the first global it reads. Nothing found: `<Function> input` | `lba` → `Lba` | — |
-| SWE3-FC-13 | Output Name, the first that gives a name: a plain name from the `return` line; the return type, unless `void`, `int`, `bool`, `float`, `double`, `char`, `short` or `long`; the first global it writes; the first global it reads; `<Function> result`. A function returning `TRUE` or `FALSE` gets `TRUE/FALSE` | — | — |
-| SWE3-FC-14 | Tidying: a leading `g_`, `s_` or `t_` is removed, underscores become spaces, the first letter is a capital. A name of 2 characters or fewer is dropped: the Input Name becomes the placeholder, the Output Name goes on to the globals. The globals include those reached through the functions it calls | `g_entry_count` → `Entry count` | `Scale input` for `scale(int x)`, with the LLM off |
-| SWE3-FC-15 | Only a placeholder (`<Function> input`, `<Function> result`) is sent to the LLM for a better name, with the source, parameters, globals, return type and return line | — | — |
+| SWE3-FD-12 | Input Name: the first parameter's name. A function with no named parameter: the first global it writes, else the first global it reads. Nothing found: `<Function> input` | `lba` → `Lba` | — |
+| SWE3-FD-13 | Output Name, the first that gives a name: a plain name from the `return` line; the return type, unless `void`, `int`, `bool`, `float`, `double`, `char`, `short` or `long`; the first global it writes; the first global it reads; `<Function> result`. A function returning `TRUE` or `FALSE` gets `TRUE/FALSE` | — | — |
+| SWE3-FD-14 | Tidying: a leading `g_`, `s_` or `t_` is removed, underscores become spaces, the first letter is a capital. A name of 2 characters or fewer is dropped: the Input Name becomes the placeholder, the Output Name goes on to the globals. The globals include those reached through the functions it calls | `g_entry_count` → `Entry count` | `Scale input` for `scale(int x)`, with the LLM off |
+| SWE3-FD-15 | Only a placeholder (`<Function> input`, `<Function> result`) is sent to the LLM for a better name, with the source, parameters, globals, return type and return line | — | — |
 
 ---
 
-## BD — Dynamic Behaviour
+## DB — Dynamic behaviour
 
 Section N.2: one entry per **interaction** — a call coming into the component from outside, and what it
 does across the component's units.
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| SWE3-BD-01 | A function gets an entry only when all five hold: it is public; its calls inside its own component reach more than one unit; a function in a **different component** calls it; the traced calls hold at least one arrow between two units of the component; it is not hidden | — | "public function `FtlGetPpn` has no entry" — no other component calls it |
-| SWE3-BD-02 | One entry per function, for its first caller from another component | — | "the second caller has no entry" |
-| SWE3-BD-03 | Heading: `<Unit> - <Function> (<CallerUnit> - <CallerFunction>)` | `FtlMap - FtlSetEntry (HilQueue - hilFlush)` | — |
-| SWE3-BD-04 | A sequence diagram: one participant per unit, grouped and coloured by component; the outside caller enters the function | — | — |
-| SWE3-BD-05 | Calls are followed only inside the function's component. Calls that leave it, back into the caller's component too, are not drawn | — | "the call into `HilCore` is missing" |
-| SWE3-BD-06 | Calls within one unit are skipped, and the chain is joined across them, so no arrow starts from a function not on the picture. Returns go back along the same chain | — | "the call to `isValidLba` is missing" |
-| SWE3-BD-07 | The table: Requirements (`Behavior Description`, then one bullet per arrow in diagram order), Risk `Medium`, Capacity `Common`, Input Name and Output Name (the function's, SWE3-FC-12, SWE3-FC-13) | — | — |
-| SWE3-BD-08 | A call bullet reads `A calls B to <reason>` with the LLM (20 words at most), `A calls B` without. A return bullet is always `B returns to A` | — | — |
+| SWE3-DB-01 | A function gets an entry only when all five hold: it is public; its calls inside its own component reach more than one unit; a function in a **different component** calls it; the traced calls hold at least one arrow between two units of the component; it is not hidden | — | "public function `FtlGetPpn` has no entry" — no other component calls it |
+| SWE3-DB-02 | One entry per function, for its first caller from another component | — | "the second caller has no entry" |
+| SWE3-DB-03 | Heading: `<Unit> - <Function> (<CallerUnit> - <CallerFunction>)` | `FtlMap - FtlSetEntry (HilQueue - hilFlush)` | — |
+| SWE3-DB-04 | A sequence diagram: one participant per unit, grouped and coloured by component; the outside caller enters the function | — | — |
+| SWE3-DB-05 | Calls are followed only inside the function's component. Calls that leave it, back into the caller's component too, are not drawn | — | "the call into `HilCore` is missing" |
+| SWE3-DB-06 | Calls within one unit are skipped, and the chain is joined across them, so no arrow starts from a function not on the picture. Returns go back along the same chain | — | "the call to `isValidLba` is missing" |
+| SWE3-DB-07 | The table: Requirements (`Behavior Description`, then one bullet per arrow in diagram order), Risk `Medium`, Capacity `Common`, Input Name and Output Name (the function's, SWE3-FD-12, SWE3-FD-13) | — | — |
+| SWE3-DB-08 | A call bullet reads `A calls B to <reason>` with the LLM (20 words at most), `A calls B` without. A return bullet is always `B returns to A` | — | — |
 
 ---
 
@@ -463,29 +473,29 @@ PUBLIC  int  FtlGetPpn(Lba_t lba, uint32_t* ppnOut); // called by FtlCache
 | `IF_FTL_MAP_FTLMAP_03` | `gEntryCount` | Number of populated map entries. | `uint16_t` | `0-0xFFFF` | `In/Out` | `FtlCore/FtlMap` | Global Variable |
 
 - `FtlSetEntry` and `FtlGetPpn` have rows because another unit calls them; `PUBLIC` did not decide it
-  (SWE3-IT-03, SWE3-IT-05). `isValidLba` and `gErrCount` have none (SWE3-IT-07).
-- `FtlSetEntry` is `In` by SWE3-IT-27 (the word `Set`), though it returns `int`: the name is checked first.
-  `FtlGetPpn` is `Out` by SWE3-IT-27 (`Get`).
-- Functions take `_01`, `_02`, the global `_03` (SWE3-IT-13).
-- `Lba_t` gives `0-0xFFFFFFFF` through the typedef (SWE3-IT-25); `uint32_t*` is a pointer, so `NA` (SWE3-IT-26).
-- Source/Destination names the callers, without the layer (SWE3-IT-31, SWE3-IT-33).
+  (SWE3-UI-03, SWE3-UI-05). `isValidLba` and `gErrCount` have none (SWE3-UI-07).
+- `FtlSetEntry` is `In` by SWE3-UI-27 (the word `Set`), though it returns `int`: the name is checked first.
+  `FtlGetPpn` is `Out` by SWE3-UI-27 (`Get`).
+- Functions take `_01`, `_02`, the global `_03` (SWE3-UI-13).
+- `Lba_t` gives `0-0xFFFFFFFF` through the typedef (SWE3-UI-25); `uint32_t*` is a pointer, so `NA` (SWE3-UI-26).
+- Source/Destination names the callers, without the layer (SWE3-UI-31, SWE3-UI-33).
 
 ### 2.1.1.3 FtlMap-FtlSetEntry
 
 | | |
 |---|---|
-| Requirements | Stores a mapping entry for a logical block.<br>`int FtlSetEntry(Lba_t lba, uint32_t ppn)` + flowchart<br>`bool isValidLba(Lba_t lba)` + flowchart *(the private function it calls, SWE3-FC-04)* |
+| Requirements | Stores a mapping entry for a logical block.<br>`int FtlSetEntry(Lba_t lba, uint32_t ppn)` + flowchart<br>`bool isValidLba(Lba_t lba)` + flowchart *(the private function it calls, SWE3-FD-04)* |
 | Risk | Medium |
 | Capacity(Density) | Common |
 | Input Name | `Lba` |
 | Output Name | `Entry count` |
 
-Input Name is the first parameter, tidied (SWE3-FC-12, SWE3-FC-14). Output Name falls through to the first global
-the function writes, `gEntryCount`, because the return line is not a plain name and `int` is skipped (SWE3-FC-13).
+Input Name is the first parameter, tidied (SWE3-FD-12, SWE3-FD-14). Output Name falls through to the first global
+the function writes, `gEntryCount`, because the return line is not a plain name and `int` is skipped (SWE3-FD-13).
 
 ### 2.2.1 FtlMap - FtlSetEntry (HilQueue - hilFlush)
 
-It qualifies (SWE3-BD-01): public ✓, its calls reach `FtlMap` and `FtlCache` ✓, a caller in `HilCore` ✓, a
+It qualifies (SWE3-DB-01): public ✓, its calls reach `FtlMap` and `FtlCache` ✓, a caller in `HilCore` ✓, a
 cross-unit arrow inside `FtlCore` ✓. `FtlGetPpn` does not: its only caller is in its own component.
 
 | | |
@@ -497,7 +507,7 @@ cross-unit arrow inside `FtlCore` ✓. `FtlGetPpn` does not: its only caller is 
 | Output Name | `Entry count` |
 
 The call to `isValidLba` is not drawn: it stays inside `FtlMap`, so it is skipped and the chain joins
-straight to the `FtlCache` arrow (SWE3-BD-06).
+straight to the `FtlCache` arrow (SWE3-DB-06).
 
 ---
 
@@ -509,17 +519,17 @@ Each ⚠ above, by rule:
 |---|---|
 | SWE3-DOC-11 | Two source files with the same name in one component merge into one unit — does that happen in the code under review? |
 | SWE3-INT-04, SWE3-FX-05 | The wording of Purpose and Scope, and the abbreviation list |
-| SWE3-CO-10, SWE3-FX-03 | What goes in Note |
+| SWE3-SD-10, SWE3-FX-03 | What goes in Note |
 | SWE3-UH-03 | List a unit's own symbol only when the unit uses it? The review asked for "of the unit **and** used by the unit" |
 | SWE3-UH-05 | A macro value is shown as written (`(1<<6)`), not worked out (`64`) — acceptable? |
-| SWE3-IT-08 | Entry points nothing calls by name (ISRs, callbacks) are private unless a table holds their address |
-| SWE3-IT-11, SWE3-IT-14 | The way names are shortened for ids — repeatable, but `Map` and `Map2` both give `MAP`. Fixed-width codes, or an agreed list of component codes? |
-| SWE3-IT-18, SWE3-FX-08 | Is the LLM-written text part of the acceptance check, or is `-` acceptable for V1? |
-| SWE3-IT-27 | Rule 1 also matches `isSet`, `hasGet` — accept, or agree a list of exceptions |
-| SWE3-IT-28 | A function that returns a value **and** writes a global is `Out` — keep, or let the write decide first (every status-returning writer would become `In`)? |
-| SWE3-IT-31 | Source/Destination lists callers only — is that the intended reading? |
-| SWE3-IT-33 | Source/Destination keeps hyphens (`Sample-Core/Core`) while headings show spaces (`Sample Core`) |
-| SWE3-FC-04 | A private function reached only through another private function gets no flowchart anywhere — print it under its caller's caller too? |
-| SWE3-FC-05, SWE3-FX-01, SWE3-FX-02 | Risk and Capacity — real values, or agreed constants? |
+| SWE3-UI-08 | Entry points nothing calls by name (ISRs, callbacks) are private unless a table holds their address |
+| SWE3-UI-11, SWE3-UI-14 | The way names are shortened for ids — repeatable, but `Map` and `Map2` both give `MAP`. Fixed-width codes, or an agreed list of component codes? |
+| SWE3-UI-18, SWE3-FX-08 | Is the LLM-written text part of the acceptance check, or is `-` acceptable for V1? |
+| SWE3-UI-27 | Rule 1 also matches `isSet`, `hasGet` — accept, or agree a list of exceptions |
+| SWE3-UI-28 | A function that returns a value **and** writes a global is `Out` — keep, or let the write decide first (every status-returning writer would become `In`)? |
+| SWE3-UI-31 | Source/Destination lists callers only — is that the intended reading? |
+| SWE3-UI-33 | Source/Destination keeps hyphens (`Sample-Core/Core`) while headings show spaces (`Sample Core`) |
+| SWE3-FD-04 | A private function reached only through another private function gets no flowchart anywhere — print it under its caller's caller too? |
+| SWE3-FD-05, SWE3-FX-01, SWE3-FX-02 | Risk and Capacity — real values, or agreed constants? |
 | SWE3-FX-04 | Requirements traceability: nothing to link to until SWE.1 / Polarion is available |
 | SWE3-FX-06, SWE3-FX-07 | Code Metrics and Appendix — produce them here, or take them from the project's own tools? |

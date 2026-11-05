@@ -859,7 +859,7 @@ where it had to pick, the pick is reversible. Tracked as `RU-1`…`RU-6` in
 
 ### 8.1 Interface ids of units whose ids start the same — `RU-1`
 
-SWE3-IT-13 counts `<NN>` **within the unit**; SWE3-IT-14 requires the id to be
+SWE3-UI-13 counts `<NN>` **within the unit**; SWE3-UI-14 requires the id to be
 **unique**. They disagree only when two units' ids start the same: `Map` and `Map2` in one group both
 give `IF_<L>_<G>_MAP_…`, and develop numbers each from `_01`, so the document prints
 `IF_…_MAP_01` twice. This branch (`15df7c5`, `model_deriver._iface_scope_key`) numbers by what the id

@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 WIKI = os.path.join(ROOT, "docs", "spec", "SWE3_WIKI.md")
 INVENTORY = os.path.join(ROOT, "docs", "spec", "TEST_INVENTORY.md")
 #: In document order -- the order of the wiki's sections.
-PREFIXES = ("DOC", "INT", "CO", "UD", "UH", "IT", "FC", "BD", "FX")
+PREFIXES = ("DOC", "INT", "SD", "UH", "UI", "FD", "DB", "FX")
 _ID = r"SWE3-(?:%s)-\d{2}" % "|".join(PREFIXES)
 #: A removed rule stays in its table, struck through (`| ~~SWE3-UH-07~~ |`), so no number is reused.
 _ROW = re.compile(r"^\| (?:~~)?(%s)(?:~~)? \|(.*)$" % _ID, re.M)
