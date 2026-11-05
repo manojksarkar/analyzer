@@ -1,10 +1,11 @@
 """SWE3_WIKI's rule ids stay usable: a review comment names one, so each must lead to one rule.
 
-The wiki is one rule table per section of the document, each row a rule `<PREFIX>-NN`. A review's
-comments are counted by rule id (BACKLOG S3-12), so an id defined twice, skipped, renumbered or
-named but never defined points a comment at the wrong rule, or at none. Checked here: every id is
-defined once and numbered 01, 02, … in its section; every rule marked ⚠ is in Open questions; and
-every id named in the wiki, or as `SWE3_WIKI <id>` anywhere in the repo, exists.
+The wiki is one rule table per section of the document, each row a rule `SWE3-<SECTION>-NN`. A
+review's comments are counted by rule id (BACKLOG S3-12), so an id defined twice, skipped, renumbered
+or named but never defined points a comment at the wrong rule, or at none. Checked here: every id is
+defined once and numbered 01, 02, … in its section; none is written without its `SWE3-`; every rule
+marked ⚠ is in Open questions; and every id named in the wiki, the test inventory or anywhere in the
+repo exists.
 """
 import os
 import re
@@ -16,19 +17,26 @@ pytestmark = pytest.mark.unit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WIKI = os.path.join(ROOT, "docs", "spec", "SWE3_WIKI.md")
+INVENTORY = os.path.join(ROOT, "docs", "spec", "TEST_INVENTORY.md")
 #: In document order -- the order of the wiki's sections.
 PREFIXES = ("DOC", "INT", "CO", "UD", "UH", "IT", "FC", "BD", "FX")
-_ID = r"(?:%s)-\d{2}" % "|".join(PREFIXES)
-#: A removed rule stays in its table, struck through (`| ~~UH-07~~ |`), so no number is reused.
+_ID = r"SWE3-(?:%s)-\d{2}" % "|".join(PREFIXES)
+#: A removed rule stays in its table, struck through (`| ~~SWE3-UH-07~~ |`), so no number is reused.
 _ROW = re.compile(r"^\| (?:~~)?(%s)(?:~~)? \|(.*)$" % _ID, re.M)
 _ANY_ID = re.compile(r"\b%s\b" % _ID)
-_REFERENCE = re.compile(r"SWE3_WIKI(?:\.md)? (%s)" % _ID)
-#: Where `SWE3_WIKI <id>` may be written: docs, code, tests and the context.
+#: An id without its `SWE3-` -- `IT-14` -- which a review sheet could not tell from another document's.
+_BARE = re.compile(r"(?<![\w-])(?:%s)-\d{2}\b" % "|".join(PREFIXES))
+#: Where a rule id may be written: docs, code, tests and the context.
 _SEARCHED = ("docs", "engine", "api", "tests", "project-context", ".claude")
 
 
 def _wiki():
     with open(WIKI, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _inventory():
+    with open(INVENTORY, encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -44,8 +52,13 @@ def _rules(text):
 
 
 def test_every_section_has_rules():
-    found = {rid.split("-")[0] for rid, _ in _rules(_wiki())}
+    found = {rid.split("-")[1] for rid, _ in _rules(_wiki())}
     assert found == set(PREFIXES)
+
+
+def test_no_id_is_written_without_its_prefix():
+    for text in (_wiki(), _inventory()):
+        assert _BARE.findall(text) == []
 
 
 def test_every_id_is_defined_once():
@@ -56,7 +69,7 @@ def test_every_id_is_defined_once():
 def test_ids_count_up_from_01_in_each_section():
     numbers = {}
     for rid, _ in _rules(_wiki()):
-        prefix, number = rid.split("-")
+        _, prefix, number = rid.split("-")
         numbers.setdefault(prefix, []).append(int(number))
     for prefix, seen in numbers.items():
         assert seen == list(range(1, len(seen) + 1)), f"{prefix}: {seen}"
@@ -80,14 +93,6 @@ def test_every_id_named_in_the_wiki_exists():
     text = _wiki()
     defined = {rid for rid, _ in _rules(text)}
     assert sorted(set(_ANY_ID.findall(text)) - defined) == []
-
-
-INVENTORY = os.path.join(ROOT, "docs", "spec", "TEST_INVENTORY.md")
-
-
-def _inventory():
-    with open(INVENTORY, encoding="utf-8") as fh:
-        return fh.read()
 
 
 def test_every_id_in_the_test_inventory_exists():
@@ -123,7 +128,7 @@ def test_every_reference_from_the_repo_exists():
                     continue
                 path = os.path.join(folder, name)
                 with open(path, encoding="utf-8", errors="replace") as fh:
-                    for rid in _REFERENCE.findall(fh.read()):
+                    for rid in _ANY_ID.findall(fh.read()):
                         if rid not in defined:
                             missing.append(f"{os.path.relpath(path, ROOT)}: {rid}")
     assert missing == []

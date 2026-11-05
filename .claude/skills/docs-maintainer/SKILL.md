@@ -79,7 +79,7 @@ Rules that fall out of this:
   sizes, the index's links and CLAUDE.md's import of it: `tests/unit/test_project_context_fits.py`.
 - **SWE3_WIKI's rule ids are stable** — a review's comments are counted by them (BACKLOG S3-12). A new rule
   takes the next free number of its section, at the end of the table it belongs to; a rule that goes is
-  struck through in place (`~~UH-07~~ removed YYYY-MM-DD: why`), never renumbered or reused. A ⚠ rule is
+  struck through in place (`~~SWE3-UH-07~~ removed YYYY-MM-DD: why`), never renumbered or reused. A ⚠ rule is
   listed in Open questions. `tests/unit/test_swe3_wiki_rules.py` checks ids, order and open questions.
   `docs/spec/TEST_INVENTORY.md` lists the tests by the same ids: a new test goes under its rule.
 - **One list of open work.** Every open item — defect, enhancement, a subsystem's forward work — is a row

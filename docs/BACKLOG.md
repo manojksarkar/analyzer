@@ -50,9 +50,9 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | S3-4 | Dynamic-behaviour issue | issue | — | — | a repro (3.10) | blocked | `behaviour_diagram/` |
 | S3-5 | A header inline function with a sibling `.cpp` has a row but no flowchart | issue | — | — | — | open | — |
 | S3-6 | The flowchart Layer-2 test counts Mermaid shapes; the output is DOT | debt | — | S | — | open | `tests/unit/test_cfg_topo.py` |
-| S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3_WIKI UH-03 |
+| S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3-UH-03 |
 | S3-11 | A Dynamic Behaviour row carries the wrong caller | issue | — | — | — | open | `views/behaviour_diagram.py`, `behaviour_diagram/selector.py` |
-| S3-12 | A review's comments judged against the numbered rules (UH-01, IT-27, …), with a score per section; the rule tables are done (2026-11-05) | enhance | — | S | the review's sheet (stays with the team) | open | SWE3_WIKI |
+| S3-12 | A review's comments judged against the numbered rules (SWE3-UH-01, SWE3-IT-27, …), with a score per section; the rule tables are done (2026-11-05) | enhance | — | S | the review's sheet (stays with the team) | open | SWE3_WIKI |
 
 ## SWE.3 — review round 1 (received 2026-09-23; in develop)
 
@@ -264,7 +264,7 @@ Steps 3–4 are done with the review's sheet, which stays with the team.
 **RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
 listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
 has ONE owner unit that lists every used symbol. RV-5: the companion header belongs to its unit. RV-6:
-the unit's published globals as boxes inside the component, no edges (SWE3_WIKI UD-11). RV-7: struct, class and
+the unit's published globals as boxes inside the component, no edges (SWE3-UD-11). RV-7: struct, class and
 union listed, nested types inside their parent.
 
 **S4-3** Table B's Generation Method today is `Analysis of Requirements` only; Equivalence Class and

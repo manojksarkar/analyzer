@@ -123,7 +123,7 @@ def _escape_label(text):
     return t
 
 
-# One arrow carries every interface id for a unit pair (SWE3_WIKI UD-06), so a busy edge stacks
+# One arrow carries every interface id for a unit pair (SWE3-UD-06), so a busy edge stacks
 # 10+ ids in a single label. ELK lays every edge's label out in ONE column, so with a bare
 # <br/> join the ids of two DIFFERENT edges run together into a single wall of text and you
 # cannot see where one arrow's group ends and the next begins.

@@ -90,7 +90,7 @@ class TestEscapeLabel:
 # ---------------------------------------------------------------------------
 
 class TestEdgeLabel:
-    """One arrow carries every interface id for a unit pair (SWE3_WIKI UD-06), and ELK lays every
+    """One arrow carries every interface id for a unit pair (SWE3-UD-06), and ELK lays every
     edge's label out in ONE column — so with a bare <br/> join the ids of two DIFFERENT
     edges run together and you cannot see where one arrow's group ends.
 
