@@ -5,7 +5,8 @@ How [JOB_SCHEDULING_SPEC](../spec/JOB_SCHEDULING_SPEC.md) is built; the HTTP con
 ([§20](#20-decisions-beyond-the-spec) confirmed) and built on `feat/job-scheduling` — the queue, the
 scheduler, the API, the command line and pause; the web screens are Manoj's ([§14](#14-web-app)). One
 server now; [§18](#18-two-servers-later) says what is left for two. Testing it on a server:
-[JOB_SCHEDULING_TESTING](../JOB_SCHEDULING_TESTING.md).
+[JOB_SCHEDULING_TESTING](../JOB_SCHEDULING_TESTING.md). What is built and what is left, in key points,
+for review: [JOB_SCHEDULING_SUMMARY](../planning/JOB_SCHEDULING_SUMMARY.md).
 
 **Outline:** [1 Principles](#1-principles) · [2 Data](#2-data--migration-0019) ·
 [3 States](#3-a-jobs-states) · [4 Submitting](#4-submitting) · [5 Scheduler](#5-the-scheduler) ·
