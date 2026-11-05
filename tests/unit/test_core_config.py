@@ -1,6 +1,7 @@
 """Unit tests for src/core/config.py — load_llm_config and format_llm_config_banner."""
 import json
 import os
+import re
 import sys
 import pytest
 
@@ -18,7 +19,7 @@ from core.config import (
     has_llm_server, llm_text_wanted, llvm_paths, local_config_notes, local_config_path,
     moved_settings, with_server_settings, without_server_settings,
 )
-from core.component_files import component_path_problems
+from core.component_files import component_path_problems, is_header_file, is_source_file
 
 _SERVER_ENV = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_DEFAULT_MODEL", "LLM_TIMEOUT_SECONDS",
                "LLM_NUM_CTX", "LLM_RETRIES", "LLM_API_KEY", "LLM_RATE_LIMIT_SECONDS",
@@ -763,6 +764,39 @@ class TestComponentPathsTheParseWouldMiss:
             src = f.read()
         assert "from core.component_files import" in src
         assert "def _build_file_component_map" not in src, "a second copy would drift"
+
+
+class TestFileExtensionsInAnyCase:
+    """The component map lower-cases a file's name; the parser's file walk compared it as
+    written, so `Main.CPP` was mapped to its component and never parsed. The interface table,
+    unit diagram and SWE.4 specs took `.cpp` only, so a `.cc` or `.cxx` unit got no section.
+    One rule now, `is_source_file` / `is_header_file`, everywhere."""
+
+    @pytest.mark.parametrize("name, source, header", [
+        ("Main.CPP", True, False), ("a.cc", True, False), ("b.CXX", True, False),
+        ("Layer1/Core/u.cpp", True, False),
+        ("Types.H", False, True), ("a.HPP", False, True), ("b.hxx", False, True),
+        ("x.c", False, False), ("notes.txt", False, False), ("", False, False),
+    ])
+    def test_a_file_is_a_source_or_a_header_whatever_the_case(self, name, source, header):
+        assert is_source_file(name) is source
+        assert is_header_file(name) is header
+
+    def test_no_extension_test_in_the_engine_is_case_sensitive(self):
+        ext_test = re.compile(r"\.endswith\(\s*\(?\s*['\"]\.(cpp|cc|cxx|h|hpp|hxx)['\"]"
+                              r"|\.endswith\(\s*_?[A-Z_]*EXTS\b")
+        found = []
+        for folder, dirs, files in os.walk(os.path.join(PROJECT_ROOT, "engine")):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(folder, name)
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    for number, line in enumerate(fh, 1):
+                        if ext_test.search(line) and "lower()" not in line:
+                            found.append(f"{os.path.relpath(path, PROJECT_ROOT)}:{number}")
+        assert found == []
 
 
 class TestRunSettingsSnapshot:

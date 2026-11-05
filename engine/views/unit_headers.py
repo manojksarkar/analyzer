@@ -20,6 +20,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from .registry import register
+from core.component_files import is_source_file
 from core.model_io import read_model_file
 from core.paths import paths as _paths
 from docx_common import load_abbreviations
@@ -738,7 +739,7 @@ def _lent_by_unit(model, dd, globals_data, macro_users, type_users, source_unit_
             type_by_fid.setdefault(fid, set()).add(tq)
     uses = {}
     for uk, u in units_data.items():
-        if not (u.get("fileName") or "").lower().endswith((".cpp", ".cc", ".cxx")):
+        if not is_source_file(u.get("fileName") or ""):
             continue
         fids = set(u.get("functionIds") or [])
         mk = set().union(*(macro_by_fid.get(f, set()) for f in fids)) if fids else set()
@@ -778,7 +779,7 @@ def run(model, output_dir, model_dir, config):
     source_unit_paths = {
         u.get("path")
         for u in units_data.values()
-        if (u.get("fileName") or "").lower().endswith((".cpp", ".cc", ".cxx")) and u.get("path")
+        if is_source_file(u.get("fileName") or "") and u.get("path")
     }
     global_users = _global_users(functions_data)
     used_names = _unit_used_names(functions_data, globals_data, base_path)
@@ -797,7 +798,7 @@ def run(model, output_dir, model_dir, config):
         # A header-only entry -- an orphan header, which units_data holds because a unit is
         # keyed off a file -- would put rows in the JSON that nothing renders, and its
         # symbols are already listed by the unit that owns that header (`_lent_by_unit`).
-        if not (unit_info.get("fileName") or "").lower().endswith((".cpp", ".cc", ".cxx")):
+        if not is_source_file(unit_info.get("fileName") or ""):
             continue
         rows_by_unit[unit_key] = build_rows(
             unit_info, [], data_dict, globals_data, base_path, config, abbreviations,

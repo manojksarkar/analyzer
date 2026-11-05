@@ -98,7 +98,7 @@ newer entry and the code win.
   Pause and Resume. Left, in [BACKLOG](docs/BACKLOG.md): RA-5 approve after the base document, LG-3 the
   speed-ups as the default, SG-8 the rest of Pause (once NW-2, NW-8, NW-1).
 - **SWE3_WIKI rewritten** (2026-11-05i…k, `docs/swe3-rule-tables`, not committed): 28 rules for three teams; details in
-  [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md); decisions BACKLOG S3-10, S3-14…19; assumes `fix/file-extension-case`.
+  [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md); decisions BACKLOG S3-10, S3-14…19; with the extension fix (S3-13).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

@@ -209,6 +209,13 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert isinstance(result, str)
 
+    @pytest.mark.parametrize("filename", ["core.cc", "core.cxx", "Core.CPP"])
+    def test_a_unit_of_any_source_extension_returns_string(self, filename):
+        # Only a lower-case `.cpp` once got a diagram.
+        unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context(filename=filename)
+        result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert isinstance(result, str)
+
     def test_output_contains_flowchart_lr(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)

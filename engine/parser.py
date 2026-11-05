@@ -154,8 +154,9 @@ from core.config import get_flat_groups as _get_flat_groups, get_group_layer_nam
 # The rule itself lives in core.component_files: the check a run makes before the parse
 # (report.emit_run_summary) reads the config with it too, so the two cannot drift apart.
 from core.component_files import (
-    HEADER_EXTS as _HEADER_EXTS, SOURCE_EXTS as _SOURCE_EXTS, TU_EXTS as _TU_EXTS,
+    SOURCE_EXTS as _SOURCE_EXTS,
     build_file_component_map as _build_file_component_map,
+    is_header_file as _is_header_file, is_source_file as _is_source_file,
     exclude_name_patterns as _exclude_name_patterns,
     merge_group_components as _merge_group_components,
 )
@@ -2731,9 +2732,9 @@ def _collect_source_files():
     sources, headers = [], []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
-            if f.endswith(_TU_EXTS):
+            if _is_source_file(f):
                 bucket = sources
-            elif f.endswith(_HEADER_EXTS):
+            elif _is_header_file(f):
                 bucket = headers
             else:
                 continue
@@ -2764,12 +2765,11 @@ def _restrict_to_only_files(source_files):
 
 
 def _collect_define_files():
-    """Files to scan for #define (includes headers)."""
-    exts = (".cpp", ".cc", ".cxx", ".h", ".hpp")
+    """Files to scan for #define: the files the parse reads, headers included."""
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
-            if f.endswith(exts):
+            if _is_source_file(f) or _is_header_file(f):
                 path = os.path.join(root, f)
                 if is_project_file(path):
                     files.append(path)

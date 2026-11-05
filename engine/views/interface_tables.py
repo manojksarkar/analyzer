@@ -4,6 +4,7 @@ import os
 import re
 
 from .registry import register
+from core.component_files import is_source_file
 from core.config import get_group_layer_name
 from utils import get_range, log, scoped_name, short_name, KEY_SEP
 from core.function_names import display_names
@@ -84,7 +85,7 @@ def _build_interface_tables(
         if allowed_components:
             if KEY_SEP in unit_key and unit_key.split(KEY_SEP, 1)[0].lower() not in allowed_components:
                 continue
-        if not (unit_info.get("fileName") or "").endswith(".cpp"):
+        if not is_source_file(unit_info.get("fileName") or ""):
             continue
         unit_name_display = unit_info.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         entries = []

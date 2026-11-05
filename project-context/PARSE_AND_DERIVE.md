@@ -238,7 +238,8 @@ Tests: `tests/unit/test_typedef_underlying.py`.
 
 ### Define scanning (`_scan_defines`)
 
-Plain text scan of every `.cpp`, `.h`, `.hpp` for `#define` lines. Honours
+Plain text scan of every file the parse reads -- `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hxx`, in any
+case (`core.component_files.is_source_file` / `is_header_file`, 2026-11-05h) -- for `#define` lines. Honours
 backslash continuation. Stores `name`, `value`, full macro text, and
 `location`.
 
@@ -449,8 +450,10 @@ with a clear "Run Phase 1 first" message on `ModelFileMissing`.
 ### `_build_units_components`
 
 Groups all functions and globals by file path. Produces:
-- `model/units.json` — one entry per `.cpp/.cc/.cxx` (headers excluded from
-  unit keys). Each entry has `name`, `path`, `fileName`, `functionIds` (sorted
+- `model/units.json` — one entry per file stem: a `.cpp/.cc/.cxx` and its same-name header are one
+  unit; a header with no source of its own is an entry too, but only a unit whose `fileName` is a
+  source (`core.component_files.is_source_file`, any case) gets tables, a diagram and a section.
+  Each entry has `name`, `path`, `fileName`, `functionIds` (sorted
   by source line), `globalVariableIds`, `callerUnits` (set), `calleesUnits` (set),
   and `includedHeaders` (read from local `#include` directives).
 - `model/components.json` — one entry per component containing its unit keys

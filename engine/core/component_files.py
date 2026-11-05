@@ -24,6 +24,19 @@ TU_EXTS = (".cpp", ".cc", ".cxx")         # parsed first, as translation units
 HEADER_EXTS = (".h", ".hpp", ".hxx")      # parsed after them
 PARSED_EXTS = TU_EXTS + HEADER_EXTS       # a `.c` file is mapped to its component, never parsed
 
+
+# The extension tests every phase uses, in any case: the map above lower-cases the name, so a
+# test that did not left `Main.CPP` mapped to its component and never parsed, and a unit whose
+# source is `.cc` or `.cxx` parsed but given no interface table, unit diagram or section.
+def is_source_file(name: str) -> bool:
+    """A translation unit -- `.cpp`, `.cc`, `.cxx` -- whatever the case of its extension."""
+    return os.path.splitext(name or "")[1].lower() in TU_EXTS
+
+
+def is_header_file(name: str) -> bool:
+    """A header the parse reads -- `.h`, `.hpp`, `.hxx` -- whatever the case of its extension."""
+    return os.path.splitext(name or "")[1].lower() in HEADER_EXTS
+
 # A report of 200 lines is read by nobody: the first ones name the problem.
 _MAX_MESSAGES = 40
 
@@ -213,7 +226,7 @@ def component_path_problems(cfg: Dict[str, Any], checkout: str,
 
     def read(key: str) -> bool:
         """Would the parse read this file? Parsed extension, not excluded, and there."""
-        return (key.endswith(PARSED_EXTS)
+        return ((is_source_file(key) or is_header_file(key))
                 and not any(pat in key.rsplit("/", 1)[-1] for pat in excluded)
                 and (key not in named or _spelling(checkout, key, cache) is not None))
 

@@ -90,6 +90,14 @@ def test_header_only_unit_produces_no_section(model):
     assert "C|H" not in r
 
 
+@pytest.mark.parametrize("file_name", ["U.cc", "U.CPP"])
+def test_a_unit_of_any_source_extension_gets_its_specs(model, file_name):
+    """Only a lower-case `.cpp` unit once had specs; `.cc`, `.cxx` and `.CPP` are sources too."""
+    units, functions, globals_ = model
+    units["C|U"]["fileName"] = file_name
+    assert "pub" in _specs((units, functions, globals_))
+
+
 # --- mock rule -------------------------------------------------------------
 
 def test_callee_with_its_own_spec_is_mocked(model):
