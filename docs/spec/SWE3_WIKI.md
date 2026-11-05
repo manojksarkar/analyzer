@@ -2,8 +2,8 @@
 
 Every part of the generated design document follows a numbered rule. Agree the rules first, then judge
 the output against them: a review comment names the rule it is about. The partner document is
-[SWE4_WIKI.md](SWE4_WIKI.md) (unit test specifications, built from this design). Until 2026-11-05 a second
-list, `SWE3_SPEC.md`, held some of these rules; [Old spec ids](#old-spec-ids) maps its ids to these.
+[SWE4_WIKI.md](SWE4_WIKI.md) (unit test specifications, built from this design). Which test checks
+which rule: [TEST_INVENTORY.md](TEST_INVENTORY.md).
 
 ## How to use the rule ids
 
@@ -37,7 +37,7 @@ A review comment is one of five things:
 | no rule covers the case | a **gap** | a rule is written |
 | an LLM-written text is badly worded | a **wording** fix | the reviewer corrects the text in the app ([DOC-15](#doc--the-document-as-a-whole)) |
 
-Further down: [Worked example](#worked-example) · [Open questions](#open-questions) · [Old spec ids](#old-spec-ids).
+Further down: [Worked example](#worked-example) · [Open questions](#open-questions).
 
 ---
 
@@ -275,7 +275,7 @@ Section N.1.5. One row per interface of the unit:
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
 | IT-11 | `IF_<LAYER>_<GROUP>_<UNIT>_<NN>`. Each part is the name in capitals with every character that is not a letter removed; the layer part keeps its digits | `Sample Core` → `SAMPLECORE`, `Ftl_Map` → `FTLMAP`, `Layer1` → `LAYER1` | ⚠ `Map` and `Map2` both give `MAP` |
-| IT-12 | No layer: the project name takes its place. No group: the group part is left out (`IF_<LAYER>_<UNIT>_<NN>`). The unit part is the file name, not the folder path | — | — |
+| IT-12 | No layer: the project name takes its place, letters only. No group: the group part is left out (`IF_<LAYER>_<UNIT>_<NN>`). The unit part is the file name, not the folder path | — | — |
 | IT-13 | `<NN>` is two digits counted **per unit**, `.h` and `.cpp` on one list: functions first, ordered by file name then line (`.cpp` before `.h`), then globals the same way. Private items are counted apart, so the printed numbers never skip | — | — |
 | IT-14 | ⚠ Units whose ids would read the same (`Map`, `Map2`) share one count, so no id is printed twice: `Map` takes `_01`, `_02`, `Map2` goes on at `_03` | — | `Map2` starting at `_03` |
 | IT-15 | An id is a position: when a function becomes public, each later id of its unit grows by one | — | "ids changed between versions" |
@@ -521,49 +521,3 @@ Each ⚠ above, by rule:
 | FC-05, FX-01, FX-02 | Risk and Capacity — real values, or agreed constants? |
 | FX-04 | Requirements traceability: nothing to link to until SWE.1 / Polarion is available |
 | FX-06, FX-07 | Code Metrics and Appendix — produce them here, or take them from the project's own tools? |
-
----
-
-## Old spec ids
-
-`SWE3_SPEC.md` was retired on 2026-11-05; its rules are in the tables above. Where a test, a comment or
-[TEST_INVENTORY.md](TEST_INVENTORY.md) names an old id, it means:
-
-| Old id | Now | Changed since the old text |
-|---|---|---|
-| REQ-DS-01 | DOC-03 | — |
-| REQ-DS-02 | DOC-06 | — |
-| REQ-DS-03 | DOC-05 | — |
-| REQ-DS-04 | DOC-05, BD-01 | — |
-| REQ-IT-01 | IT-01 | — |
-| REQ-IT-02 | IT-02 … IT-06 | — |
-| REQ-IT-03 | IT-10 | rows follow the interface id, not the line number |
-| REQ-IT-04 | IT-01 | — |
-| REQ-IT-05 | IT-27 … IT-30 | — |
-| REQ-IT-06 | IT-16, IT-17 | the class is kept in front of the name |
-| REQ-IT-07 | IT-18 | — |
-| REQ-IT-08 | IT-19 … IT-21 | — |
-| REQ-IT-09 | IT-22 … IT-26 | — |
-| REQ-IT-10 | IT-35 | — |
-| REQ-IT-11 | IT-11 … IT-14 | the first part is the layer, not the project |
-| REQ-IT-12 | IT-31 … IT-34 | callers only; the units a function calls are not listed |
-| REQ-UH-01 | UH-01, UH-02, UH-16, UH-17 | — |
-| REQ-UH-02 | UH-18 … UH-21 | — |
-| REQ-UD-01 | UD-01 | — |
-| REQ-UD-02, REQ-UD-03 | UD-13 | — |
-| REQ-UD-04 | UD-01, UD-09 | — |
-| REQ-UD-05 | UD-02, UD-05, UD-06, UD-08 | an arrow is drawn only in the providing unit's diagram, not in both |
-| REQ-UD-06 | UD-10 | — |
-| REQ-UD-07, REQ-UD-08 | UD-09 | — |
-| REQ-UD-09 | UD-11, UD-12 | — |
-| REQ-BD-01 | BD-01, BD-02 | five conditions, one entry per function |
-| REQ-BD-02 | BD-03 | — |
-| REQ-BD-03 | BD-04 | — |
-| REQ-BD-04 | BD-07 | — |
-| REQ-BD-05 | FC-12 … FC-15 | — |
-| REQ-FC-01 | FC-01 | one entry per public function, not every function |
-| REQ-FC-02 | FC-01, IT-16 | the class is kept in front of the name |
-| REQ-FC-03 | FC-06 | drawn with Graphviz, not Mermaid |
-| REQ-FC-04 | FC-02 | — |
-| REQ-CO-01, REQ-CO-02 | CO-06 | — |
-| REQ-CO-03 | CO-01, CO-02 | — |

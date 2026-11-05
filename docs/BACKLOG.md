@@ -253,7 +253,7 @@ runNestedFolderTests's diagram. Fix: return the caller each diagram was drawn fo
 follow our rules. To answer with data:
 1. Done 2026-11-05: each SWE3_WIKI section has a rule table, `ID | Rule | Example | Looks wrong, but is
    expected`, ids DOC, INT, CO, UD, UH, IT, FC, BD, FX; the drift fixed on the way.
-2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; its old ids are mapped at the wiki's end.
+2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; TEST_INVENTORY lists the tests by the new rule ids.
 3. Each review comment gets a rule id and one verdict: **Defect** (breaks a rule: we fix it) · **As per
    rule** (expected: reply with the id) · **Change request** (wants the rule changed: decide) · **Gap**
    (no rule: write one) · **Wording** (LLM text: corrected in the app). Only Defect counts against us.

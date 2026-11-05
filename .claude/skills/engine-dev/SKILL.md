@@ -212,7 +212,8 @@ The list the user should not have to retype. A rule change is not done until all
    `python-docx` before believing a cell is ugly.
 5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md`: a numbered row in its section's rule table
    (`ID | Rule | Example | Looks wrong, but is expected`), the next free id, never a renumbering —
-   reviews count comments by id; an undecided rule gets `⚠` and a row in Open questions. Mechanism, gaps
+   reviews count comments by id; an undecided rule gets `⚠` and a row in Open questions. The new test →
+   `docs/spec/TEST_INVENTORY.md`, under the rule's id. Mechanism, gaps
    and the matrix → the `project-context/` topic file + a dated entry in the newest `project-context/history/`
    file.
 6. **Every consumer** — an output rule has more than one implementation:

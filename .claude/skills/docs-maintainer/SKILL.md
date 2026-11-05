@@ -81,6 +81,7 @@ Rules that fall out of this:
   takes the next free number of its section, at the end of the table it belongs to; a rule that goes is
   struck through in place (`~~UH-07~~ removed YYYY-MM-DD: why`), never renumbered or reused. A ⚠ rule is
   listed in Open questions. `tests/unit/test_swe3_wiki_rules.py` checks ids, order and open questions.
+  `docs/spec/TEST_INVENTORY.md` lists the tests by the same ids: a new test goes under its rule.
 - **One list of open work.** Every open item — defect, enhancement, a subsystem's forward work — is a row
   in `docs/BACKLOG.md`. There are no subsystem `PLAN.md` files (the ones in `engine/`, `api/` and `web-app/`
   were folded into BACKLOG on 2026-10-30): a second list drifts. `docs/planning/*_PLAN.md` stay: they are
@@ -157,7 +158,7 @@ Update this doc first when changing <PROC> logic, then code + tests. Companion: 
 ## Open items    (optional — client/blocked)
 ```
 
-REQ IDs: `REQ-<2–3-letter feature>-NN` (e.g. `REQ-IT-04`, `REQ-TC-02`). One requirement per `###`, each with a
+REQ IDs: `REQ-<2–3-letter feature>-NN` (e.g. `REQ-TC-02`). One requirement per `###`, each with a
 **Verification** line, sections separated by `---`.
 
 ## 7. Before you finish

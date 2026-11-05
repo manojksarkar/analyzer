@@ -65,14 +65,14 @@ def test_ids_count_up_from_01_in_each_section():
 def test_every_open_rule_is_in_open_questions():
     text = _wiki()
     open_ids = {rid for rid, row in _rules(text) if "⚠" in row}
-    listed = set(_ANY_ID.findall(_section(text, "## Open questions", "## Old spec ids")))
+    listed = set(_ANY_ID.findall(_section(text, "## Open questions")))
     assert sorted(open_ids - listed) == []
 
 
 def test_open_questions_name_open_rules_only():
     text = _wiki()
     open_ids = {rid for rid, row in _rules(text) if "⚠" in row}
-    listed = set(_ANY_ID.findall(_section(text, "## Open questions", "## Old spec ids")))
+    listed = set(_ANY_ID.findall(_section(text, "## Open questions")))
     assert sorted(listed - open_ids) == []
 
 
@@ -82,14 +82,34 @@ def test_every_id_named_in_the_wiki_exists():
     assert sorted(set(_ANY_ID.findall(text)) - defined) == []
 
 
-def test_every_old_spec_id_is_mapped():
-    old = _section(_wiki(), "## Old spec ids")
-    mapped = set(re.findall(r"REQ-[A-Z]{2}-\d{2}", old))
-    expected = ({f"REQ-DS-{n:02}" for n in range(1, 5)} | {f"REQ-IT-{n:02}" for n in range(1, 13)}
-                | {f"REQ-UH-{n:02}" for n in range(1, 3)} | {f"REQ-UD-{n:02}" for n in range(1, 10)}
-                | {f"REQ-BD-{n:02}" for n in range(1, 6)} | {f"REQ-FC-{n:02}" for n in range(1, 5)}
-                | {f"REQ-CO-{n:02}" for n in range(1, 4)})
-    assert sorted(expected - mapped) == []
+INVENTORY = os.path.join(ROOT, "docs", "spec", "TEST_INVENTORY.md")
+
+
+def _inventory():
+    with open(INVENTORY, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_every_id_in_the_test_inventory_exists():
+    defined = {rid for rid, _ in _rules(_wiki())}
+    assert sorted(set(_ANY_ID.findall(_inventory())) - defined) == []
+
+
+def test_every_test_the_inventory_names_exists():
+    """The inventory went stale once (2026-07 → 2026-11) with a third of its tests gone: a renamed
+    or deleted test must fail here, not leave a rule looking covered."""
+    defs, files = set(), set()
+    for top in ("unit", "api", "e2e", "live"):
+        for folder, dirs, names in os.walk(os.path.join(ROOT, "tests", top)):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for name in names:
+                if not name.endswith(".py"):
+                    continue
+                files.add(name[:-3])
+                with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as fh:
+                    defs.update(re.findall(r"^\s*(?:def|class) (Test\w+|test_\w+)", fh.read(), re.M))
+    named = set(re.findall(r"`((?:test_|Test)\w+)(?:\.py)?`", _inventory()))
+    assert sorted(named - defs - files) == []
 
 
 def test_every_reference_from_the_repo_exists():

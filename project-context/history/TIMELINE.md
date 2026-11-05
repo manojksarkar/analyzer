@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-05c | TEST_INVENTORY lists the tests by SWE3_WIKI rule id; the wiki's old-id table is dropped | [16](16-2026-10-30.md) |
 | 2026-11-05b | SWE3_WIKI is the one numbered rule list (135 rules, ids DOC … FX, one table per section); SWE3_SPEC folded in and retired | [16](16-2026-10-30.md) |
 | 2026-11-05 | The open next-work items move to their areas: NW-2 → RA-5, NW-8 → LG-3, NW-1 → SG-8 | [16](16-2026-10-30.md) |
 | 2026-11-04d | `fix/review-issues` and `feat/next-work` are in develop (fast-forward); each database runs `analyzer.py setup` once (0019) | [16](16-2026-10-30.md) |

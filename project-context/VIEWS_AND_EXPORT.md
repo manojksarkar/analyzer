@@ -167,7 +167,7 @@ Full logic and layout rules: `docs/spec/SWE3_WIKI.md` — UD rules (unit archite
 #### Edge-label spacing — the ELK options are a no-op here (2026-08-08)
 
 Reported: *"function mapping is difficult to read in the Static Diagram, there is less
-space between the lines/labels."* REQ-UD-05 (now SWE3_WIKI UD-06) puts every interface id for a unit pair on ONE
+space between the lines/labels."* SWE3_WIKI UD-06 puts every interface id for a unit pair on ONE
 arrow, so a busy edge stacks 10+ ids in a single label; joined with a bare `<br/>` they
 render as contiguous rows with no leading.
 
