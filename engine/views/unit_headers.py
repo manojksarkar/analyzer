@@ -474,7 +474,7 @@ def build_rows(
     # NOT filtered on visibility, unlike the interface table. This table says what the
     # unit DECLARES AND USES, not what it publishes -- a private global still appears in
     # the unit's own flowcharts and descriptions, so leaving it out left the reader with a
-    # name the document never explains. Client decision, 2026-09-22; see SWE3_WIKI N.1.4.
+    # name the document never explains. Review decision, 2026-09-22; see SWE3-UH-01.
     _gids = list(unit_info.get("globalVariableIds", []) or [])
 
     # A global declared in an ORPHAN header belongs to no unit, so it used to appear

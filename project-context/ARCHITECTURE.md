@@ -202,7 +202,7 @@ Group and component IDS are layer-qualified, so the two `My Sample` groups are
 
 ### Key docs
 
-- `docs/spec/SWE3_WIKI.md` — the SWE.3 rules, one numbered table per document section (DOC, INT, SD, UH, UI, FD, DB, FX). Update first before changing any view logic. `SWE3_SPEC.md` was folded into it 2026-11-05.
+- `docs/spec/SWE3_WIKI.md` — the SWE.3 rules, one table per document section (DOC, SD, UH, UI, FD, DB, FX), 28 rules; the details it leaves out are in `project-context/SWE3_RULE_DETAILS.md`. Update first before changing any view logic. `SWE3_SPEC.md` was folded into it 2026-11-05.
 - `docs/spec/TEST_INVENTORY.md` — which test checks which SWE3_WIKI rule, by rule id. Update after adding/changing tests.
 - `.coveragerc` — single `.coverage` file written per run.
 

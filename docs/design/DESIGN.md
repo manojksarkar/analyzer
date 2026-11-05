@@ -562,7 +562,7 @@ the DOCX Dynamic Behaviour section for that function.
 First match wins: the name has the word **Set** → **In**, **Get** → **Out**; a non-void return →
 **Out**; otherwise writes a global (itself or through a callee) → **In**, else **Out**. A class's static
 data member is a global however it is named (`Foo::s_x`, `this->s_x`, `obj.s_x`). Full rule:
-[SWE3_WIKI Column 6](../spec/SWE3_WIKI.md#column-6--directioninout).
+[SWE3_WIKI, SWE3-UI-05](../spec/SWE3_WIKI.md#ui--unit-interface).
 
 - `_propagate_global_access` walks the call graph to add transitive read/write sets —
   outer functions inherit inner globals so direction is accurate even for wrappers.

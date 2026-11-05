@@ -79,16 +79,16 @@ _RULE_EXTRA = ("every function with a spec should appear in the detailed design 
                "gets a spec'); a spec for something the design does not publish is a test for "
                "an interface nobody is told about" % WIKI4)
 _RULE_NAMES = ("the design keeps the class in front of a method because that is what tells "
-               "two same-named methods apart (%s, 'Names'); a specification that drops it "
+               "two same-named methods apart (%s, SWE3-UI-03); a specification that drops it "
                "cannot tell them apart" % WIKI3)
 _RULE_HEADING = ("a spec is headed as the design entry it tests: `<Unit>-<Function>` for a "
                  "function, the behaviour diagram's own heading for an interaction (%s, 'What "
-                 "is produced'; %s, 'Names')" % (WIKI4, WIKI3))
+                 "is produced'; %s, SWE3-UI-03)" % (WIKI4, WIKI3))
 _RULE_ROW = ("every function in the detailed design gets a spec (%s, 'Who gets a spec'); the "
              "interface table is the design's list of public functions, so each Function row "
              "is a spec owed -- except a public function defined in a header" % WIKI4)
 _RULE_ROW_ONLY = ("a public function is a row in the interface table AND a flowchart entry "
-                  "(%s, 'N.1.5', 'N.1.6'); this one is a row only, so the design is at odds "
+                  "(%s, SWE3-UI-01, SWE3-FD-01); this one is a row only, so the design is at odds "
                   "with itself -- see the design's own check" % WIKI3)
 _RULE_CALLS = ("an interaction spec executes every unit the diagram shows, and its Expected "
                "Results name one entry per cross-unit call (%s, 'Dynamic Behaviour test specs', "

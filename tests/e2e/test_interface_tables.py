@@ -182,7 +182,7 @@ def test_interface_id_segments_uppercase(all_entries):
 
 # ---------------------------------------------------------------------------
 # Caller / callee units (spec: callerUnits/calleesUnits include same-module;
-# sourceDest lists every calling unit except the function's own unit — SWE3-UI-31)
+# sourceDest lists every calling unit except the function's own unit — SWE3-UI-06)
 # ---------------------------------------------------------------------------
 
 def test_required_fields_present(all_entries):
@@ -213,7 +213,7 @@ def test_global_entries_have_empty_caller_callee(all_entries):
 
 def test_sourcedest_includes_cross_unit_callers(util_entries):
     # utilCompute and utilScale are called by the Core unit (a different unit, same group).
-    # Per SWE3-UI-31 the sourceDest lists every calling unit except the function's own
+    # Per SWE3-UI-06 the sourceDest lists every calling unit except the function's own
     # unit, so the Core caller appears even though it is inside the group. The component-name
     # prefix varies with config ("Core/Core" vs "Sample-Core/Core"), so match the ".../Core" tail.
     for name in ("utilCompute", "utilScale"):

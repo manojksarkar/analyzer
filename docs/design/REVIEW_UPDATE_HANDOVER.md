@@ -859,22 +859,21 @@ where it had to pick, the pick is reversible. Tracked as `RU-1`…`RU-6` in
 
 ### 8.1 Interface ids of units whose ids start the same — `RU-1`
 
-SWE3-UI-13 counts `<NN>` **within the unit**; SWE3-UI-14 requires the id to be
-**unique**. They disagree only when two units' ids start the same: `Map` and `Map2` in one group both
+SWE3-UI-02 counts `<NN>` **within the unit** and requires the id to be **unique**. They disagree only when two units' ids start the same: `Map` and `Map2` in one group both
 give `IF_<L>_<G>_MAP_…`, and develop numbers each from `_01`, so the document prints
 `IF_…_MAP_01` twice. This branch (`15df7c5`, `model_deriver._iface_scope_key`) numbers by what the id
-encodes — `Map` gets `_01`, `_02`, `Map2` continues at `_03` — and says so under the wiki's existing
-⚠ To confirm. On `SampleCppProject` no two units collide: all 229 ids are identical to develop's.
+encodes — `Map` gets `_01`, `_02`, `Map2` continues at `_03` — and says so in the wiki (SWE3-UI-02.4).
+Decided 2026-11-05: two names that shorten alike are to be avoided, BACKLOG S3-16. On `SampleCppProject` no two units collide: all 229 ids are identical to develop's.
 
 - **Keep:** add a `Map` / `Map2` pair to `SampleCppProject` (the Definition of done asks for a
-  fixture), extend `tests/unit/test_interface_id_uniqueness.py` with it, move the wiki sentence out of
-  the ⚠ To confirm.
+  fixture), extend `tests/unit/test_interface_id_uniqueness.py` with it, and build the planned change
+  (BACKLOG S3-16).
 - **Revert to per-unit counting:** key `_build_interface_index`'s buckets by unit again and delete
-  the wiki sentence — and accept duplicate ids until the client decides how names are shortened.
+  the wiki sentence — and accept duplicate ids until S3-16 decides how names are shortened.
 
 ### 8.2 Most corrections in a group run print nowhere — `RU-2`
 
-develop's rule (470d15c, `SWE3_WIKI` Public vs. private): a function is public only if a function in
+develop's rule (470d15c, SWE3-UI-01): a function is public only if a function in
 another file calls it. In a group or layer run the parse is the layer, so a caller in another layer is
 invisible and its callee reads as private — the trap develop's S3-7 note names. On the sample layer
 run, 25 of 229 descriptions are printed. Reviewers are offered every slot; R11's `shownIn` says which

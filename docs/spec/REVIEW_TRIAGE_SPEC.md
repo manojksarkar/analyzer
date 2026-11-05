@@ -2,15 +2,15 @@
 
 How a review of a generated SWE.3 document is triaged, and how its per-section scores are recomputed.
 The reviewers score each section and count every comment against it; many comments ask for something
-the document does on purpose. A verdict on every issue separates the two, and the summary shows what
+the document does on purpose. A verdict on every comment separates the two, and the summary shows what
 the score is when only the real problems count.
 
 The rules the document follows: [SWE3_WIKI.md](SWE3_WIKI.md). Open work: [BACKLOG](../BACKLOG.md) S3-12.
 
 | Step | When | What |
 |---|---|---|
-| 1 | **now** | every issue gets a section and a verdict; the summary per section |
-| 2 | later, when the rules are agreed | every issue gets the rule id it is about; a summary by rule |
+| 1 | **now** | every comment gets a section and a verdict; the summary per section |
+| 2 | later, when the rules are agreed | every comment gets the rule id it is about; a summary by rule |
 
 ---
 
@@ -24,21 +24,35 @@ The rules the document follows: [SWE3_WIKI.md](SWE3_WIKI.md). Open work: [BACKLO
 
 ---
 
-## The issues list
+## Comments and issues
 
-One row per issue. An issue groups the comments that have one cause. **A row has one section and one
-verdict**: an issue whose comments sit in two sections, or need two verdicts, is split into two rows.
-Every comment is in exactly one row.
+The **comments** are what is counted. An **issue** groups similar comments, so each is looked at and
+fixed once. Every comment is in exactly one issue.
+
+**A comment has one section, one verdict and at most one rule**, so nothing is counted twice. The
+comments of one issue may differ in any of the three: an issue can hold comments of several rules,
+and one rule can collect several issues.
+
+**Comments**
+
+| Column | Values | Note |
+|---|---|---|
+| Comment | its number in the review sheet | |
+| Section | one of the five [sections](#sections) | where the reviewers made it |
+| Issue | `R-01`, `R-02`, … | the issue it is grouped in |
+| Verdict | one of the six [verdicts](#verdicts) | the issue's, unless this comment differs |
+| Rule | **empty in step 1**; in step 2 one rule id, `SWE3-UI-05` | the issue's, unless this comment differs; a `gap` has none |
+
+**Issues**
 
 | Column | Values | Note |
 |---|---|---|
 | Issue | `R-01`, `R-02`, … | |
-| Section | one of the five [sections](#sections) | where the reviewers made the comments |
-| Comments | the comment numbers, and their count | the score counts comments, not issues |
-| Verdict | one of the six [verdicts](#verdicts) | |
+| Comments | the comment numbers, and their count | |
+| Verdict | one of the six [verdicts](#verdicts) | set once here; it applies to every comment of the issue that has none of its own |
+| Rule | **empty in step 1**; in step 2 one rule id | the same: set here, changed on a comment that differs |
 | Known defect | the defect's number in the known list, or `new` | |
-| Confirmed | empty, or who checked it | a verdict is a proposal until confirmed; the summary counts confirmed rows only |
-| Rule | **empty in step 1**; in step 2 the rule id, `SWE3-UI-27` | a `gap` has none |
+| Confirmed | empty, or who checked it | a verdict is a proposal until confirmed; the summary counts the comments of confirmed issues only |
 
 ---
 
@@ -55,7 +69,7 @@ The five sections the reviewers score. They are SWE3_WIKI's rule tables of the s
 | Dynamic behaviour | DB | Dynamic Behaviour: each entry's table and sequence diagram |
 
 A comment counts in the section where it was made, even when the rule it is about is a general one
-(DOC, INT or FX in SWE3_WIKI).
+(DOC or FX in SWE3_WIKI).
 
 ---
 
@@ -104,18 +118,18 @@ request. share = 38 ÷ 30 = 1.27. Adjusted = 62 + 1.27 × 24 = **92.4%**. Defect
 the tool alone is answerable for. If the reviewers weighted their comments (major, minor, points), use
 each comment's weight instead of an equal share.
 
-Under the table, one line in total: comments → issues; how many defects, and how many of them were
-already known.
+Under the table, one line in total: comments → issues; how many issues hold a defect, and how many of
+them were already known.
 
 ---
 
 ## Step 2 — by rule (later)
 
-When the rules are agreed, every row gets its rule id from [SWE3_WIKI.md](SWE3_WIKI.md):
+When the rules are agreed, every comment gets its rule id from [SWE3_WIKI.md](SWE3_WIKI.md):
 `SWE3-<code>-NN`, for example `SWE3-UH-03`. Then:
 
-- a second summary, by rule, most comments first: `Rule | Comments | Verdict | Next step`; this is the
-  agenda for the next talk with the reviewers;
+- a second summary, by rule, most comments first: `Rule | Comments | Issues | Verdicts (count of each)
+  | Next step`; this is the agenda for the next talk with the reviewers;
 - every **as per rule** names the rule that says so;
 - every **gap** becomes a new rule, with the next free number of its section;
 - a rule marked ⚠ in SWE3_WIKI is still open: comments on it are a question for the reviewers.

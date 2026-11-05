@@ -92,14 +92,13 @@ newer entry and the code win.
 - **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, on `refactor/config-separation`): LLM
   lanes, parse ahead, picture batches, each in ONE config.local.json block, `speedups` — empty = develop
   (2026-10-14d); a Claude API provider (2026-10-14f). [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md).
-- **Review issues** (2026-10-14g … 2026-10-30b, branch `fix/review-issues`, in develop 2026-11-04): one
-  publication rule (use from another unit), overloads print and draw apart (`engine/core/function_names.py`),
-  a `case` from a missing header keeps its branch. Interface ids after a newly published function move.
 - **Next work** (2026-10-31 … 2026-11-04c, branch `feat/next-work`, in develop 2026-11-04): delete a project
   whole (migration **0019** -- each database runs `analyzer.py setup` once), movable workspaces and one API per
   database, edit on the compare page, a function's code beside its flowchart, Cancel in edit mode, Fresh run,
   Pause and Resume. Left, in [BACKLOG](docs/BACKLOG.md): RA-5 approve after the base document, LG-3 the
   speed-ups as the default, SG-8 the rest of Pause (once NW-2, NW-8, NW-1).
+- **SWE3_WIKI rewritten** (2026-11-05i…k, `docs/swe3-rule-tables`, not committed): 28 rules for three teams; details in
+  [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md); decisions BACKLOG S3-10, S3-14…19; assumes `fix/file-extension-case`.
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -112,7 +111,7 @@ newer entry and the code win.
   and type, and writes ASPICE documents from it, normally one per component: SWE.3 Software Detailed
   Design (`software_detailed_design_<group>.docx`) and SWE.4 Software Unit Test Specification
   (`software_unit_test_specification_<group>.docx`). The LLM writes only wording — descriptions, names,
-  flowchart labels ([SWE3_WIKI](docs/spec/SWE3_WIKI.md#descriptions-the-only-llm-written-content)); ids,
+  flowchart labels ([SWE3_WIKI](docs/spec/SWE3_WIKI.md#reference), Reference); ids,
   rows, arrows and every flowchart's shape come from the code.
 - **Front door.** `python analyzer.py <command>`: `setup`, `onboard`, `grant`, `generate`, `export`, `reexport`, `resume`, `progress`, `components`, `register`, `user`,
   `status`, `check`, `report`, `runs`, `doctor`, `check-llm`, `check-datadict`, `llm-stats`, `verify`. Human
@@ -168,7 +167,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   a row and protected counted as private (2026-09-20); a function is published only when another UNIT
   calls it (2026-09-22b), a global only when another unit reads or writes it (2026-09-24c); a static
   member used through an object (`this->s_x`, `obj.s_x`) is a global use, for publication and direction
-  alike (2026-09-25b). The client-facing rules: [SWE3_WIKI](docs/spec/SWE3_WIKI.md).
+  alike (2026-09-25b). The rules the reviewers judge by: [SWE3_WIKI](docs/spec/SWE3_WIKI.md).
 - **Names.** Two functions of one unit never print alike (2026-10-14h): overloads carry their
   parameter types, one name in two namespaces its scope, and each overload has a flowchart of its
   own — `engine/core/function_names.py`. A `case` whose constant comes from a header libclang cannot
@@ -220,6 +219,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 | [ARCHITECTURE.md](project-context/ARCHITECTURE.md) | §1 What this project does · §2 Top-level layout · §3 The 4-phase pipeline · §15 Test fixture — `SampleCppProject/` · §20 Dependencies · §21 End-to-end code flow — single command, full pipeline |
 | [PARSE_AND_DERIVE.md](project-context/PARSE_AND_DERIVE.md) | §10 Phase 1 — `engine/parser.py` · §11 Phase 2 — `engine/model_deriver.py` |
 | [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md) | §12 Phase 3 — `engine/run_views.py` + `engine/views/` · §13 The flowchart engine — `engine/flowchart/` · §14 Phase 4 — `engine/docx_exporter.py` |
+| [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md) | the details of each SWE3_WIKI section that the rule book leaves out, by section |
 | [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md) | §5 CLI — `run.py` · §6 Config — `engine/config/config.defaults.json` |
 | [CORE_AND_LLM.md](project-context/CORE_AND_LLM.md) | §7 `engine/core/` — infrastructure layer · §8 `engine/llm_core/` — unified LLM client + token-budget toolkit · §9 `engine/utils.py` — analyzer-specific helpers |
 | [INCREMENTAL.md](project-context/INCREMENTAL.md) | §23 version4 — Incremental Changes feature (this session, 2026-06-18) |

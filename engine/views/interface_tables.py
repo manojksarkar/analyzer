@@ -118,7 +118,7 @@ def _build_interface_tables(
             # Include every caller/callee unit except this function's own unit — mirrors the
             # static diagram (unit_diagrams), which only skips same-unit self-loops, so the
             # table's Source/Destination stays consistent with it. Same-component (different-
-            # unit) and same-group peer units are now kept instead of dropped (3.5, SWE3-UI-31).
+            # unit) and same-group peer units are now kept instead of dropped (3.5, SWE3-UI-06).
             def _keep_unit(u: str) -> bool:
                 return u != unit_key
 

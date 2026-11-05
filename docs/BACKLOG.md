@@ -50,9 +50,15 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | S3-4 | Dynamic-behaviour issue | issue | — | — | a repro (3.10) | blocked | `behaviour_diagram/` |
 | S3-5 | A header inline function with a sibling `.cpp` has a row but no flowchart | issue | — | — | — | open | — |
 | S3-6 | The flowchart Layer-2 test counts Mermaid shapes; the output is DOT | debt | — | S | — | open | `tests/unit/test_cfg_topo.py` |
-| S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3-UH-03 |
+| S3-10 | Unit header: list a unit's own symbol only when a unit of its own component uses it; another component's use does not count (decided 2026-11-05) | enhance | — | M | — | open | SWE3-UH-01, `views/unit_headers.py` |
 | S3-11 | A Dynamic Behaviour row carries the wrong caller | issue | — | — | — | open | `views/behaviour_diagram.py`, `behaviour_diagram/selector.py` |
-| S3-12 | A review's comments judged against the numbered rules (SWE3-UH-01, SWE3-UI-27, …), with a score per section; the rule tables are done (2026-11-05) | enhance | — | S | the review's sheet (stays with the team) | open | SWE3_WIKI |
+| S3-12 | A review's comments judged against the numbered rules (SWE3-UH-01, SWE3-UI-05, …), with a score per section; the rule tables are done (2026-11-05) | enhance | — | S | the review's sheet (stays with the team) | open | SWE3_WIKI |
+| S3-14 | File dependency diagram: `#include "…"` is looked up only from the including file's folder, so a header reached through an include path is not drawn | issue | P2 | S | — | open | `model_deriver._read_local_includes` |
+| S3-15 | Read `.c` files, parsed as C (decided 2026-11-05): the source-file list, the parser and the flowchart engine stop forcing C++ for them (SWE3-DOC-04) | enhance | P1 | M | `fix/file-extension-case` merged | open | `core/component_files.py`, `parser.py`, `flowchart/` |
+| S3-16 | Interface IDs: two names that shorten alike (`Map`, `Map2` both give `MAP`) must not share an ID part (decided 2026-11-05). Simplest: keep the digits in every part (`MAP2`); `Ftl_Map` / `FtlMap` would still meet. The IDs of those units change once | enhance | P3 | S | how: digits kept, or an agreed list of codes | decide | SWE3-UI-02, `model_deriver` interface ids |
+| S3-17 | Direction: `isSet` / `hasGet` match the word `set` / `get`; a function that returns a value **and** writes a global is `Out`. Kept as is (2026-11-05): no review comment yet | enhance | P3 | S | a review comment on it | parked | SWE3-UI-05 |
+| S3-18 | Flowcharts: a private function called only by another private function gets none -- print it under its caller's caller too? Kept as is (2026-11-05) | enhance | P3 | S | a review comment on it | parked | SWE3-FD-01 |
+| S3-19 | Fixed values to settle later (2026-11-05): Note; links to requirement IDs (SWE.1 / Polarion); the Introduction wording and the abbreviation list; Code Metrics and the Appendix; whether LLM text is part of the acceptance check | input | P3 | — | the teams | parked | SWE3-FX-01 |
 
 ## SWE.3 — review round 1 (received 2026-09-23; in develop)
 
@@ -243,7 +249,10 @@ narrowed parse: Main.cpp's call is not re-resolved. Repro: `v1.1` vs `v1.1-full`
 `p9d1d0c4f`.
 
 **S3-10** A symbol declared in a unit's own files is listed whether or not the unit uses it; the usage
-test applies only to orphan-header symbols. The review said "of the unit AND used by the unit".
+test applies only to orphan-header symbols. The review said "of the unit AND used by the unit"; decided
+2026-11-05: listed when a unit of its component uses it. Build: the shared-header use test
+(`_orphan_uses`: a function's macro / type / global use, the name in the source outside comments and
+quotes) run over the component's units, not counting the symbol's own declaration line.
 
 **S3-11** `views/behaviour_diagram.py` pairs the diagrams with the DIRECT external callers by position,
 but the selector also counts callers of callers: row `coreAdd <- Cross|Hub|hubCompute` carries
@@ -251,11 +260,11 @@ runNestedFolderTests's diagram. Fix: return the caller each diagram was drawn fo
 
 **S3-12** (noted 2026-11-05) A review scores each section and counts every comment as an issue; many
 follow our rules. To answer with data:
-1. Done 2026-11-05: each SWE3_WIKI section has a rule table, `ID | Rule | Example | Looks wrong, but is
-   expected`, ids DOC, INT, SD, UH, UI, FD, DB, FX; the drift fixed on the way.
+1. Done 2026-11-05: each SWE3_WIKI section has one rule table, `ID | Rule | Details`, ids DOC, SD, UH,
+   UI, FD, DB, FX; 135 rules merged to 28, the drift fixed on the way.
 2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; TEST_INVENTORY lists the tests by the new rule ids.
-3. Each issue gets a section and one verdict (defect, gap, wording, as per rule, change request, not an
-   issue), and later its rule id -- [REVIEW_TRIAGE_SPEC](spec/REVIEW_TRIAGE_SPEC.md) (2026-11-05).
+3. Each comment gets a section and one verdict (defect, gap, wording, as per rule, change request, not
+   an issue), and later its rule id -- [REVIEW_TRIAGE_SPEC](spec/REVIEW_TRIAGE_SPEC.md) (2026-11-05).
 4. Per section: the review's score, the count per verdict, and the score with the comments that are not
    counted against given back -- the formula is in the same spec.
 Steps 3–4 are done with the review's sheet, which stays with the team; a triage tool is being built.
@@ -263,7 +272,7 @@ Steps 3–4 are done with the review's sheet, which stays with the team; a triag
 **RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
 listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
 has ONE owner unit that lists every used symbol. RV-5: the companion header belongs to its unit. RV-6:
-the unit's published globals as boxes inside the component, no edges (SWE3-SD-21). RV-7: struct, class and
+the unit's published globals as boxes inside the component, no edges (SWE3-SD-04). RV-7: struct, class and
 union listed, nested types inside their parent.
 
 **S4-3** Table B's Generation Method today is `Analysis of Requirements` only; Equivalence Class and

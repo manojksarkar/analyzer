@@ -492,7 +492,7 @@ def _glb_is_private(vid: str, g: dict, used_outside: set) -> bool:
       else's table, so publishing it as OpsClient's interface claims a relationship that
       runs the other way. The defining unit still publishes it. Nothing is lost from the
       document: the unit header table is not filtered, so the `extern` line is still
-      listed there and explained (SWE3_WIKI N.1.4).
+      listed there and explained (SWE3-UH-01).
     * no function in another unit reads or writes it (`_glb_used_outside`). A file-scope
       `static` falls here by construction: nothing outside its file can name it.
 

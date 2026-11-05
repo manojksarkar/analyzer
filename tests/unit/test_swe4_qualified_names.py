@@ -1,6 +1,6 @@
 """Two methods of different classes in one unit must not share a heading.
 
-`SWE3_WIKI` 'Names' keeps the class in front of a method precisely so that
+`SWE3_WIKI` SWE3-UI-03 keeps the class in front of a method precisely so that
 `AddOperation::apply` and `MultiplyOperation::apply` stay apart. SWE.4 printed the
 bare `name`, so both took the heading `Dispatch-apply` and both opened with
 "Issue function apply with inputs a, b." -- two specifications a tester cannot

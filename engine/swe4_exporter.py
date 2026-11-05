@@ -49,7 +49,7 @@ def _spec_name(spec: dict) -> str:
     `name` is the bare method name, so two methods of different classes in one
     unit -- `AddOperation::apply` and `MultiplyOperation::apply` -- both print as
     `apply` and take the same heading. SWE.3 prints the qualified name for exactly
-    that reason (docs/spec/SWE3_WIKI.md, 'Names'), and the two documents have to
+    that reason (SWE3-UI-03), and the two documents have to
     agree on what a function is called or they cannot be read side by side.
 
     Falls back to `name`: for a plain function the two are the same string.

@@ -27,7 +27,7 @@ Appendix A  Reference
 ## Who gets a spec
 
 - Every function that appears in the SWE.3 detailed design gets a spec. That is every function
-  something in another unit uses, whatever it is marked — see SWE3_WIKI, "Public vs. private".
+  something in another unit uses, whatever it is marked — see SWE3_WIKI, SWE3-UI-01.
 - A function is named by its qualified name. Overloads share one, so each carries its parameter
   types in its heading — `Unit-FtlRead(Lba_t)`, `Unit-FtlRead(Lba_t, uint32_t)` — as in SWE.3.
 - **Except public functions defined in a header.** The criterion is where the definition sits, not the
@@ -108,7 +108,7 @@ unchanged input read identically.
 - Every `return` is its own step, so Expected Results can point at it. The transcription ends where the
   function exits — no closing "verify the result" step.
 - A `case X:` whose `X` comes from a header that could not be found keeps its steps, under `case X`
-  like any other case: the label is read from the source text (SWE3_WIKI, "How a flowchart is built").
+  like any other case: the label is read from the source text (SWE3_WIKI, SWE3-FD-02).
 
 **Jumps**
 

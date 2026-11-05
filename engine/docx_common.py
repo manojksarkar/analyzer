@@ -17,7 +17,7 @@ MODEL_DIR = _p.model_dir
 
 
 # ---------------------------------------------------------------------------
-# Which flowcharts the SWE.3 document prints (SWE3_WIKI N.1.6) -- one rule, read by the exporter
+# Which flowcharts the SWE.3 document prints (SWE3-FD-01) -- one rule, read by the exporter
 # that prints them and by the flowcharts view that draws their pictures.
 # ---------------------------------------------------------------------------
 def flowchart_section(iface: dict, hidden=frozenset()) -> bool:
