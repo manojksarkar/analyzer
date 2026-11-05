@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-05f | REVIEW_TRIAGE_SPEC: a verdict per review issue and the section scores recomputed | [16](16-2026-10-30.md) |
 | 2026-11-05e | SWE3_WIKI's sections are the five the review scores: SD, UH, UI, FD, DB (DOC, INT, FX not scored) | [16](16-2026-10-30.md) |
 | 2026-11-05d | Every SWE3_WIKI rule id starts `SWE3-` (`SWE3-UI-14`), so it names its document | [16](16-2026-10-30.md) |
 | 2026-11-05c | TEST_INVENTORY lists the tests by SWE3_WIKI rule id; the wiki's old-id table is dropped | [16](16-2026-10-30.md) |

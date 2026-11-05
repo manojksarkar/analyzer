@@ -33,7 +33,8 @@ all of them are listed again in [Open questions](#open-questions). The short not
 why a rule is the way it is. **An id never changes:** a new rule takes the next number of its section,
 and a rule that goes stays in its table, struck through, so its number is never used again.
 
-A review comment is one of five things:
+A review comment is one of six things (how a review is triaged and scored with them:
+[REVIEW_TRIAGE_SPEC.md](REVIEW_TRIAGE_SPEC.md)):
 
 | The comment says | It is | What happens |
 |---|---|---|
@@ -42,6 +43,7 @@ A review comment is one of five things:
 | the rule should be different | a **change request** | the rule is agreed again, then the tool changes |
 | no rule covers the case | a **gap** | a rule is written |
 | an LLM-written text is badly worded | a **wording** fix | the reviewer corrects the text in the app ([SWE3-DOC-15](#doc--the-document-as-a-whole)) |
+| a duplicate, a misread or a question | **not an issue** | it is answered; nothing changes |
 
 Further down: [Worked example](#worked-example) · [Open questions](#open-questions).
 

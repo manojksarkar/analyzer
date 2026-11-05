@@ -254,12 +254,11 @@ follow our rules. To answer with data:
 1. Done 2026-11-05: each SWE3_WIKI section has a rule table, `ID | Rule | Example | Looks wrong, but is
    expected`, ids DOC, INT, SD, UH, UI, FD, DB, FX; the drift fixed on the way.
 2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; TEST_INVENTORY lists the tests by the new rule ids.
-3. Each review comment gets a rule id and one verdict: **Defect** (breaks a rule: we fix it) · **As per
-   rule** (expected: reply with the id) · **Change request** (wants the rule changed: decide) · **Gap**
-   (no rule: write one) · **Wording** (LLM text: corrected in the app). Only Defect counts against us.
-4. Per section: items reviewed, comments, the review's score, the count per verdict, and the score by
-   rule, worked out the way the review works out its own.
-Steps 3–4 are done with the review's sheet, which stays with the team.
+3. Each issue gets a section and one verdict (defect, gap, wording, as per rule, change request, not an
+   issue), and later its rule id -- [REVIEW_TRIAGE_SPEC](spec/REVIEW_TRIAGE_SPEC.md) (2026-11-05).
+4. Per section: the review's score, the count per verdict, and the score with the comments that are not
+   counted against given back -- the formula is in the same spec.
+Steps 3–4 are done with the review's sheet, which stays with the team; a triage tool is being built.
 
 **RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
 listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
