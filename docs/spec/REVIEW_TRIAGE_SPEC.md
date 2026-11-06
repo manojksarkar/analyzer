@@ -30,7 +30,7 @@ One row per comment.
 | No. | the comment's number in the review sheet |
 | Section | where the reviewers made it: SD, UH, UI, FD or DB (below) |
 | Comment | the reviewer's text |
-| Verdict | one of the four [verdicts](#verdict) |
+| Verdict | one of the three [verdicts](#verdict) |
 | Reference | one ID, by the verdict: see [Reference](#reference) |
 
 The five sections the reviewers score are SWE3_WIKI's rule tables of the same names:
@@ -54,10 +54,11 @@ A comment counts in the section where it was made, even when the rule it is abou
 |---|---|---|
 | **Defect** | the document is wrong, its LLM wording included | the tool is fixed, or the text is corrected in the app |
 | **Gap** | no rule covers the case | a rule is written, then the tool follows it |
-| **Change** | the document is as designed, but the reviewers want another design | the rule is agreed again, then the tool changes |
 | **As per rule** | the document is right; the reader expected something else | the answer names the rule |
 
 - A misread or a question the rules answer is **As per rule**; a question they do not answer is a **Gap**.
+- A request for another design, where the document follows its rule, is **As per rule** too: the rule is
+  talked about again with the reviewers (the agenda, under [Summary](#summary)).
 - A duplicate takes the verdict and reference of the comment it repeats.
 
 ---
@@ -70,8 +71,7 @@ A comment counts in the section where it was made, even when the rule it is abou
 |---|---|---|
 | Defect | the issue's ID in the issue list | yes |
 | Gap | the issue's ID in the issue list | yes |
-| Change | the rule ID they want changed, `SWE3-<code>-NN` | no |
-| As per rule | the rule ID that answers the comment | no |
+| As per rule | the rule ID that answers the comment, `SWE3-<code>-NN` | no |
 
 - The issue list holds only what counts against the document: Defects and Gaps.
 - One ID per comment. A comment touching several rules takes the one that decides it.
@@ -85,19 +85,19 @@ A comment counts in the section where it was made, even when the rule it is abou
 
 One row per section:
 
-| Section | Review % | Comments | Defect | Gap | Change | As per rule | Adjusted % | Defects only % |
-|---|---|---|---|---|---|---|---|---|
+| Section | Review % | Comments | Defect | Gap | As per rule | Adjusted % | Defects only % |
+|---|---|---|---|---|---|---|---|
 
 Each comment took the same share of the section's lost score, so the comments that are not counted
 against are given back:
 
 ```
 share          = (100 − review %) ÷ comments
-adjusted %     = review % + share × (change + as per rule)
+adjusted %     = review % + share × as per rule
 defects only % = review % + share × (comments − defect)
 ```
 
-*Example:* Unit header, review 62%, 30 comments: 4 defect, 2 gap, 6 change, 18 as per rule.
+*Example:* Unit header, review 62%, 30 comments: 4 defect, 2 gap, 24 as per rule.
 share = 38 ÷ 30 = 1.27. Adjusted = 62 + 1.27 × 24 = **92.4%**. Defects only = 62 + 1.27 × 26 = **94.9%**.
 
 **Adjusted %** is the number to stand behind: what a reader really ran into. **Defects only %** is what
@@ -107,4 +107,5 @@ each comment's weight instead of an equal share.
 Under the table, one line: comments → issues, and how many of the issues are new in this review.
 
 A second table, by reference, most comments first — `Reference | Comments | Verdict` — is the agenda
-for the next talk with the reviewers: its Change rows are the rules they want changed.
+for the next talk with the reviewers: a rule that collects many As per rule comments is one they may
+want changed.
