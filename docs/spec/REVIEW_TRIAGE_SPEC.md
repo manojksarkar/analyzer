@@ -7,129 +7,99 @@ the score is when only the real problems count.
 
 The rules the document follows: [SWE3_WIKI.md](SWE3_WIKI.md). Open work: [BACKLOG](../BACKLOG.md) S3-12.
 
-| Step | When | What |
-|---|---|---|
-| 1 | **now** | every comment gets a section and a verdict; the summary per section |
-| 2 | later, when the rules are agreed | every comment gets the rule id it is about; a summary by rule |
+Inputs: the review sheet (every comment, its section, each section's score in %), the issue list (the
+known issues, each with its ID) and the generated documents (what the document shows where a comment
+points).
 
 ---
 
-## Input
+## The review file
 
-| Input | What is taken from it |
+One row per comment.
+
+| No. | Section | Comment | Verdict | Reference |
+|---|---|---|---|---|
+| 12 | UI | Private functions missing | As per rule | SWE3-UI-01 |
+| 13 | FD | Inline function, no flowchart | Defect | R-04 |
+| 14 | UH | Macro off, function missing | Gap | R-07 |
+| 15 | UI | Description is vague | Defect | R-09 |
+| 16 | UI | Same as 12 | As per rule | SWE3-UI-01 |
+
+| Column | Values |
 |---|---|
-| the review sheet | every comment, its section, each section's score (%) |
-| the known defect list | to mark an issue as already known |
-| the generated documents | what the document shows where the comment points |
+| No. | the comment's number in the review sheet |
+| Section | where the reviewers made it: SD, UH, UI, FD or DB (below) |
+| Comment | the reviewer's text |
+| Verdict | one of the four [verdicts](#verdict) |
+| Reference | one ID, by the verdict: see [Reference](#reference) |
 
----
+The five sections the reviewers score are SWE3_WIKI's rule tables of the same names:
 
-## Comments and issues
-
-The **comments** are what is counted. An **issue** groups similar comments, so each is looked at and
-fixed once. Every comment is in exactly one issue.
-
-**A comment has one section, one verdict and at most one rule**, so nothing is counted twice. The
-comments of one issue may differ in any of the three: an issue can hold comments of several rules,
-and one rule can collect several issues.
-
-**Comments**
-
-| Column | Values | Note |
-|---|---|---|
-| Comment | its number in the review sheet | |
-| Section | one of the five [sections](#sections) | where the reviewers made it |
-| Issue | `R-01`, `R-02`, … | the issue it is grouped in |
-| Verdict | one of the six [verdicts](#verdicts) | the issue's, unless this comment differs |
-| Rule | **empty in step 1**; in step 2 one rule id, `SWE3-UI-05` | the issue's, unless this comment differs; a `gap` has none |
-
-**Issues**
-
-| Column | Values | Note |
-|---|---|---|
-| Issue | `R-01`, `R-02`, … | |
-| Comments | the comment numbers, and their count | |
-| Verdict | one of the six [verdicts](#verdicts) | set once here; it applies to every comment of the issue that has none of its own |
-| Rule | **empty in step 1**; in step 2 one rule id | the same: set here, changed on a comment that differs |
-| Known defect | the defect's number in the known list, or `new` | |
-| Confirmed | empty, or who checked it | a verdict is a proposal until confirmed; the summary counts the comments of confirmed issues only |
-
----
-
-## Sections
-
-The five sections the reviewers score. They are SWE3_WIKI's rule tables of the same names.
-
-| Section | Code | Covers, in the document |
-|---|---|---|
-| Static diagram | SD | the component's container and file dependency diagrams, the Component/Unit table, each unit's architecture diagram |
-| Unit header | UH | the unit header table |
-| Unit interface | UI | the unit interface table |
-| Flow diagram | FD | each public function's entry: its table and flowchart(s) |
-| Dynamic behaviour | DB | Dynamic Behaviour: each entry's table and sequence diagram |
+| Section | Covers, in the document |
+|---|---|
+| SD | Static diagram: the component's container and file dependency diagrams, the Component/Unit table, each unit's architecture diagram |
+| UH | Unit header: the unit header table |
+| UI | Unit interface: the unit interface table |
+| FD | Flow diagram: each public function's entry, its table and flowchart(s) |
+| DB | Dynamic behaviour: each entry's table and sequence diagram |
 
 A comment counts in the section where it was made, even when the rule it is about is a general one
 (DOC or FX in SWE3_WIKI).
 
 ---
 
-## Verdicts
+## Verdict
 
 | Verdict | Means | What happens | Counted against |
 |---|---|---|---|
-| **defect** | the document is wrong: it breaks a rule | the tool is fixed | yes |
-| **gap** | no rule covers the case | a rule is written, then the tool follows it | yes |
-| **wording** | an LLM-written text is badly worded | the text is corrected in the app; no code change | yes |
-| **as per rule** | the document does this on purpose; the reader expected something else | the answer names the rule | no |
-| **change request** | the output is as designed, but the reviewers want another design | the rule is agreed again, then the tool changes | no |
-| **not an issue** | a duplicate, a misread, or a question | answered; nothing changes | no |
+| **Defect** | the document is wrong, its LLM wording included | the tool is fixed, or the text is corrected in the app | yes |
+| **Gap** | no rule covers the case | a rule is written, then the tool follows it | yes |
+| **Change** | the document is as designed, but the reviewers want another design | the rule is agreed again, then the tool changes | no |
+| **As per rule** | the document is right; the reader expected something else | the answer names the rule | no |
 
-| Example comment | Verdict |
-|---|---|
-| "a function another unit calls has no row in the interface table" | defect |
-| "a private global is listed in the unit header" | as per rule (the table lists everything the unit declares) |
-| "show the macro value worked out, `64`, not `(1<<6)`" | change request |
-| "the description of `FtlRead` is vague" | wording |
-| a case the rules do not mention | gap |
+- A misread or a question the rules answer is **As per rule**; a question they do not answer is a **Gap**.
+- A duplicate takes the verdict and reference of the comment it repeats.
 
 ---
 
-## The summary
+## Reference
+
+| Verdict | Reference |
+|---|---|
+| Defect, Gap, Change | the issue's ID in the issue list: something will be done |
+| As per rule | the rule ID in SWE3_WIKI, `SWE3-<code>-NN`: the rule answers the comment |
+
+- One ID per comment. A comment touching several rules takes the one that decides it.
+- Similar comments share one issue, so they share its ID. A problem not in the list is added to it
+  first, with the next free ID; the issue entry names the rule it is about.
+- The prefix tells the two apart: `SWE3-…` is a rule, anything else an issue.
+
+---
+
+## Summary
 
 One row per section:
 
-| Section | Review % | Comments | Defect | Gap | Wording | As per rule | Change request | Not an issue | Adjusted % | Defects only % |
-|---|---|---|---|---|---|---|---|---|---|---|
+| Section | Review % | Comments | Defect | Gap | Change | As per rule | Adjusted % | Defects only % |
+|---|---|---|---|---|---|---|---|---|
 
 Each comment took the same share of the section's lost score, so the comments that are not counted
 against are given back:
 
 ```
-share         = (100 − review %) ÷ comments
-adjusted %    = review % + share × (as per rule + change request + not an issue)
-defects only %= review % + share × (comments − defect)
+share          = (100 − review %) ÷ comments
+adjusted %     = review % + share × (change + as per rule)
+defects only % = review % + share × (comments − defect)
 ```
 
-*Example:* Unit header, review 62%, 30 comments: 4 defect, 2 gap, 0 wording, 18 as per rule, 6 change
-request. share = 38 ÷ 30 = 1.27. Adjusted = 62 + 1.27 × 24 = **92.4%**. Defects only = 62 + 1.27 × 26
-= **94.9%**.
+*Example:* Unit header, review 62%, 30 comments: 4 defect, 2 gap, 6 change, 18 as per rule.
+share = 38 ÷ 30 = 1.27. Adjusted = 62 + 1.27 × 24 = **92.4%**. Defects only = 62 + 1.27 × 26 = **94.9%**.
 
 **Adjusted %** is the number to stand behind: what a reader really ran into. **Defects only %** is what
 the tool alone is answerable for. If the reviewers weighted their comments (major, minor, points), use
 each comment's weight instead of an equal share.
 
-Under the table, one line in total: comments → issues; how many issues hold a defect, and how many of
-them were already known.
+Under the table, one line: comments → issues, and how many of the issues are new in this review.
 
----
-
-## Step 2 — by rule (later)
-
-When the rules are agreed, every comment gets its rule id from [SWE3_WIKI.md](SWE3_WIKI.md):
-`SWE3-<code>-NN`, for example `SWE3-UH-03`. Then:
-
-- a second summary, by rule, most comments first: `Rule | Comments | Issues | Verdicts (count of each)
-  | Next step`; this is the agenda for the next talk with the reviewers;
-- every **as per rule** names the rule that says so;
-- every **gap** becomes a new rule, with the next free number of its section;
-- a rule marked ⚠ in SWE3_WIKI is still open: comments on it are a question for the reviewers.
+A second table, by reference, most comments first — `Reference | Comments | Verdict` — is the agenda
+for the next talk with the reviewers.

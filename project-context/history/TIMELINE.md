@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-06 | Review triage: four verdicts (Defect, Gap, Change, As per rule) and one reference per comment, an issue ID or a rule ID | [16](16-2026-10-30.md) |
 | 2026-11-05k | SWE3_WIKI for every team: where each section is, plain words, planned changes, inputs, version | [16](16-2026-10-30.md) |
 | 2026-11-05j | SWE3_WIKI open questions answered: no same-named units; `.c` read as C (S3-15); unit header lists used symbols (S3-10); macro values as written | [16](16-2026-10-30.md) |
 | 2026-11-05i | SWE3_WIKI rewritten lean: 135 rules → 28, one merged-ID table per section; details to SWE3_RULE_DETAILS | [16](16-2026-10-30.md) |
