@@ -90,7 +90,7 @@ class TestEscapeLabel:
 # ---------------------------------------------------------------------------
 
 class TestEdgeLabel:
-    """One arrow carries every interface id for a unit pair (REQ-UD-05), and ELK lays every
+    """One arrow carries every interface id for a unit pair (SWE3-SD-03), and ELK lays every
     edge's label out in ONE column — so with a bare <br/> join the ids of two DIFFERENT
     edges run together and you cannot see where one arrow's group ends.
 
@@ -206,6 +206,13 @@ class TestBuildUnitDiagram:
 
     def test_cpp_unit_returns_string(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
+        result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert isinstance(result, str)
+
+    @pytest.mark.parametrize("filename", ["core.cc", "core.cxx", "Core.CPP"])
+    def test_a_unit_of_any_source_extension_returns_string(self, filename):
+        # Only a lower-case `.cpp` once got a diagram.
+        unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context(filename=filename)
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert isinstance(result, str)
 

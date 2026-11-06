@@ -15,6 +15,7 @@ import json
 import os
 
 from .registry import register
+from core.component_files import is_source_file
 from utils import get_range, log, short_name, KEY_SEP
 
 # The wiki fixes the generation method as a code constant, not a config key.
@@ -106,7 +107,7 @@ def _spec_function_ids(units_data, functions_data, allowed_components):
         if allowed_components and KEY_SEP in unit_key:
             if unit_key.split(KEY_SEP, 1)[0].lower() not in allowed_components:
                 continue
-        if not (unit_info.get("fileName") or "").endswith(".cpp"):
+        if not is_source_file(unit_info.get("fileName") or ""):
             continue
         for fid in unit_info.get("functionIds", []) or []:
             f = functions_data.get(fid)

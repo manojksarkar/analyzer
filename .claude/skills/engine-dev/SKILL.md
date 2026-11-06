@@ -25,7 +25,7 @@ Start context (read as needed, don't duplicate here):
 - **Everything — pipeline, schema, flags, views, DOCX, LLM, risks, decisions** → root
   [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), the index into [project-context/](project-context/) (agent-facing
   source of truth; CLAUDE.md loads the index — then read the topic file for your area).
-- **Doc contracts** → [docs/spec/SWE3_SPEC.md](docs/spec/SWE3_SPEC.md), [docs/spec/SWE4_WIKI.md](docs/spec/SWE4_WIKI.md).
+- **Doc contracts** → [docs/spec/SWE3_WIKI.md](docs/spec/SWE3_WIKI.md) (rule ids per section), [docs/spec/SWE4_WIKI.md](docs/spec/SWE4_WIKI.md).
 - **Carved-out areas** → `engine-flowchart` (flowchart/CFG + incremental), `engine-behaviour`.
 
 ## 1. Pipeline & orchestration
@@ -210,8 +210,12 @@ The list the user should not have to retype. A rule change is not done until all
    until `plan_runs` matched the layer's groups by their qualified ids). Reading a `.docx` back:
    `tools/dump_docx.py`, but it flattens cell line breaks to ` // `, so check a real cell with
    `python-docx` before believing a cell is ugly.
-5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md` (client-facing; tables, prose only where
-   rationale needs it; an undecided rule goes in as a `⚠ To confirm`, never as a rule). Mechanism, gaps
+5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md`: a numbered point of the rule it belongs to
+   (`ID | Rule | Details`), or a new rule with the next free id, never a renumbering — reviews count
+   comments by id. Plain words and general examples: the reviewing teams do not know our code. A detail a
+   reviewer does not judge → `project-context/SWE3_RULE_DETAILS.md`. Agreed but not built → "(a change is
+   planned)" and a row in Planned changes; undecided → `⚠` and an Open questions section (docs-maintainer). The new test →
+   `docs/spec/TEST_INVENTORY.md`, under the rule's id. Mechanism, gaps
    and the matrix → the `project-context/` topic file + a dated entry in the newest `project-context/history/`
    file.
 6. **Every consumer** — an output rule has more than one implementation:

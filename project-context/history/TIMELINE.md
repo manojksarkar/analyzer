@@ -10,6 +10,18 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-06b | Review triage: Change dropped; three verdicts, Defect, Gap, As per rule | [16](16-2026-10-30.md) |
+| 2026-11-06 | Review triage: four verdicts (Defect, Gap, Change, As per rule) and one reference per comment: an issue ID counts against, a rule ID does not | [16](16-2026-10-30.md) |
+| 2026-11-05k | SWE3_WIKI for every team: where each section is, plain words, planned changes, inputs, version | [16](16-2026-10-30.md) |
+| 2026-11-05j | SWE3_WIKI open questions answered: no same-named units; `.c` read as C (S3-15); unit header lists used symbols (S3-10); macro values as written | [16](16-2026-10-30.md) |
+| 2026-11-05i | SWE3_WIKI rewritten lean: 135 rules → 28, one merged-ID table per section; details to SWE3_RULE_DETAILS | [16](16-2026-10-30.md) |
+| 2026-11-05h | File extensions are tested in any case, and a `.cc` / `.cxx` unit gets its section | [16](16-2026-10-30.md) |
+| 2026-11-05g | REVIEW_TRIAGE_SPEC: section, verdict and rule per comment; an issue only groups similar comments | [16](16-2026-10-30.md) |
+| 2026-11-05f | REVIEW_TRIAGE_SPEC: a verdict per review issue and the section scores recomputed | [16](16-2026-10-30.md) |
+| 2026-11-05e | SWE3_WIKI's sections are the five the review scores: SD, UH, UI, FD, DB (DOC, INT, FX not scored) | [16](16-2026-10-30.md) |
+| 2026-11-05d | Every SWE3_WIKI rule id starts `SWE3-` (`SWE3-UI-02`), so it names its document | [16](16-2026-10-30.md) |
+| 2026-11-05c | TEST_INVENTORY lists the tests by SWE3_WIKI rule id; the wiki's old-id table is dropped | [16](16-2026-10-30.md) |
+| 2026-11-05b | SWE3_WIKI is the one numbered rule list (135 rules, ids DOC … FX, one table per section); SWE3_SPEC folded in and retired | [16](16-2026-10-30.md) |
 | 2026-11-05 | The open next-work items move to their areas: NW-2 → RA-5, NW-8 → LG-3, NW-1 → SG-8 | [16](16-2026-10-30.md) |
 | 2026-11-04d | `fix/review-issues` and `feat/next-work` are in develop (fast-forward); each database runs `analyzer.py setup` once (0019) | [16](16-2026-10-30.md) |
 | 2026-11-04c | Resume after a pause in a run's first seconds starts it again (NW-1 check pass) | [16](16-2026-10-30.md) |

@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from .registry import register
+from core.component_files import is_source_file
 from utils import (KEY_SEP, display_name, log, safe_filename, os_type,
                    render_mermaid_cached, render_mermaid_many, scoped_name)
 
@@ -123,7 +124,7 @@ def _escape_label(text):
     return t
 
 
-# One arrow carries every interface id for a unit pair (REQ-UD-05), so a busy edge stacks
+# One arrow carries every interface id for a unit pair (SWE3-SD-03), so a busy edge stacks
 # 10+ ids in a single label. ELK lays every edge's label out in ONE column, so with a bare
 # <br/> join the ids of two DIFFERENT edges run together into a single wall of text and you
 # cannot see where one arrow's group ends and the next begins.
@@ -184,7 +185,7 @@ def _build_unit_diagram(
     """Build Mermaid flowchart for one unit: one box per unit, edges labeled with interfaceIds.
     If allowed_components is provided, "internal" means: units whose module is in allowed_components.
     The unit's published globals are drawn as grey boxes inside the component box, no edges."""
-    if not (unit_info.get("fileName") or "").endswith(".cpp"):
+    if not is_source_file(unit_info.get("fileName") or ""):
         return None
 
     this_id = _unit_part_id(unit_key)
@@ -404,7 +405,7 @@ def run(model, output_dir, model_dir, config):
     # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
     project_root = _project_root()
 
-    cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
+    cpp_units = [uk for uk, u in units_data.items() if is_source_file(u.get("fileName") or "")]
     if allowed_components:
         cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_components]
     # --selected-unit. Unit keys are "Component|Unit" and the flag carries the short

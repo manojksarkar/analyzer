@@ -6,6 +6,7 @@ import json
 
 from utils import (load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP,
                    resolve_group, short_name, display_name, scoped_name, described_record_keys)
+from core.component_files import HEADER_EXTS, is_header_file, is_source_file
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
 from core.run_context import apply_cli_run_context
@@ -215,11 +216,11 @@ def _read_local_includes(fp: str, base_path: str, defined_macros: set = None) ->
     except OSError:
         pass
 
-    # Implicit companion header: foo.cpp always depends on foo.h / foo.hpp
+    # Implicit companion header: foo.cpp always depends on foo.h / foo.hpp / foo.hxx
     # even when the developer omits the explicit #include.
     stem, ext = os.path.splitext(fp)
-    if ext.lower() in (".cpp", ".cc", ".cxx"):
-        for h_ext in (".h", ".hpp"):
+    if is_source_file(fp):
+        for h_ext in HEADER_EXTS:
             companion = stem + h_ext
             if os.path.isfile(companion):
                 try:
@@ -282,7 +283,7 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
     units_data = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
-        if not base.lower().endswith((".cpp", ".cc", ".cxx", ".h", ".hpp")):
+        if not (is_source_file(base) or is_header_file(base)):
             continue
         try:
             rel = os.path.relpath(fp, base_path).replace("\\", "/")
@@ -337,7 +338,7 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
     component_source_dirs: dict = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
-        if not base.lower().endswith((".cpp", ".cc", ".cxx")):
+        if not is_source_file(base):
             continue
         try:
             rel = os.path.relpath(fp, base_path).replace("\\", "/")
@@ -353,7 +354,7 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
         for d in dirs:
             try:
                 for fname in os.listdir(d):
-                    if fname.lower().endswith((".h", ".hpp")):
+                    if is_header_file(fname):
                         abs_h = os.path.join(d, fname)
                         try:
                             rel_h = os.path.relpath(abs_h, base_path).replace("\\", "/")
@@ -492,7 +493,7 @@ def _glb_is_private(vid: str, g: dict, used_outside: set) -> bool:
       else's table, so publishing it as OpsClient's interface claims a relationship that
       runs the other way. The defining unit still publishes it. Nothing is lost from the
       document: the unit header table is not filtered, so the `extern` line is still
-      listed there and explained (SWE3_WIKI N.1.4).
+      listed there and explained (SWE3-UH-01).
     * no function in another unit reads or writes it (`_glb_used_outside`). A file-scope
       `static` falls here by construction: nothing outside its file can name it.
 

@@ -51,7 +51,7 @@ see the last row.
 | `PROJECT_CONTEXT.md` (repo root) + `project-context/` | **Agent-facing** source of truth (you/other agents) | **Descriptive & deep, no polish.** `PROJECT_CONTEXT.md` is the **index** — current state, reading guide, the file map — and CLAUDE.md imports it, so it stays short (≤ 300 lines). The detail lives once, in `project-context/`: topic files (the current truth per area) and `history/` (the dated `> Updated:` log). Keep it current after every meaningful change. |
 | `CLAUDE.md`, `AGENTS.md` (root) | **Agent operating instructions** | **Directive.** How agents work in this repo; edit deliberately, they steer every session. |
 | `docs/BACKLOG.md` | Engineering — **the one list of open work** (issues, enhancements, forward plans) | **Tables.** One table per area, one short line per cell, open items only; longer text in its Details section, by id. A done item leaves the table. |
-| `docs/spec/` (`SWE3_SPEC`, `SWE4_WIKI`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
+| `docs/spec/` (`SWE3_WIKI`, `SWE4_WIKI`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
 | `docs/design/` (`DESIGN.md`) | Engineering — how/why | **Descriptive.** Prose + diagrams, explains rationale + the DOCX export walkthrough. |
 | `docs/planning/*_PLAN.md` (`SWE2_PLAN`, `SYS2_PLAN`, …) | Leadership + eng — per-doc-type plan | **Pointed.** Only what's specific to that doc type; point back to the playbook for the shared method. |
 | `docs/production-redesign/NN-*.md` | Eng — ordered study/runbook series | **Descriptive**, numbered sequence. |
@@ -77,6 +77,30 @@ Rules that fall out of this:
   keep their shape. The review & update set is REQUIREMENTS (`docs/`) → SPEC + API_SPEC (`docs/spec/`) →
   DESIGN + HANDOVER (`docs/design/`); the HANDOVER is what a merger reads first. The project context's file
   sizes, the index's links and CLAUDE.md's import of it: `tests/unit/test_project_context_fits.py`.
+- **SWE3_WIKI is the rule book three teams agree on** — the team that builds the tool, the reviewers, the
+  team building the review tool. Its master copy is the team wiki, pasted from this file's preview, so it
+  holds only what a reader of the document needs: no links into the repo, no maintenance notes. Those live
+  here: rules are agreed first and the output is judged against them; an id starts with `SWE3-` so a review
+  sheet that mixes documents stays clear (SWE.4's would be `SWE4-…`); the partner document is
+  `docs/spec/SWE4_WIKI.md`; how a comment is given a verdict and counted is
+  `docs/spec/REVIEW_TRIAGE_SPEC.md`.
+- **SWE3_WIKI's rule ids are stable** — a review's comments are counted by them (BACKLOG S3-12). They are
+  fixed from the version the three teams agree (v1); until then the sections are being merged and
+  renumbered. Each section is one HTML table, `ID | Rule | Details`: the ID (`nowrap`, bold) and the
+  rule's bold name merged down its rows (`rowspan`, vertically centred), one row per numbered point; every table `width:100%; table-layout:fixed`, ID 130px, Rule 200px, so all sections line up -- HTML
+  because markdown cannot merge cells. Examples are general: the reviewing teams do not know the sample project or
+  our names. Keep rules lean: what a reviewer judges; the rest goes to the
+  project context (`project-context/SWE3_RULE_DETAILS.md`, by section). A new rule takes the next free number
+  of its section, after the last one; a rule that goes is struck through in place
+  (its ID as `<b><s>SWE3-UH-03</s></b>`, one details row "removed YYYY-MM-DD: why"), never renumbered or
+  reused; the `Rules` column of the code table at the top counts it no more. A ⚠
+  point needs an `## Open questions` section (before `## Reference`) naming its rule, and the ⚠ line back in
+  the legend at the top (both removed 2026-11-05, when none was left). An agreed change not built yet: the rule
+  says today's behaviour "(a change is planned)", and one row in ; built, the row goes. A
+  change of rules: a line under  (the version). The code table says where each section is in the
+  document, by the outline's numbers. Readers are the reviewers, the testers, the review-tool team and
+  managers, not only us: plain words, terms in . `tests/unit/test_swe3_wiki_rules.py` checks ids, order and open questions.
+  `docs/spec/TEST_INVENTORY.md` lists the tests by the same ids: a new test goes under its rule.
 - **One list of open work.** Every open item — defect, enhancement, a subsystem's forward work — is a row
   in `docs/BACKLOG.md`. There are no subsystem `PLAN.md` files (the ones in `engine/`, `api/` and `web-app/`
   were folded into BACKLOG on 2026-10-30): a second list drifts. `docs/planning/*_PLAN.md` stay: they are
@@ -85,7 +109,7 @@ Rules that fall out of this:
 
 ## 3. File & folder naming
 
-- **`UPPER_SNAKE_CASE.md`** for specs, plans, and root/context docs: `SWE3_SPEC.md`, `SWE2_PLAN.md`,
+- **`UPPER_SNAKE_CASE.md`** for specs, plans, and root/context docs: `SWE3_WIKI.md`, `SWE2_PLAN.md`,
   `PROJECT_CONTEXT.md`, `BACKLOG.md`, `ROADMAP.md`.
 - **`NN-kebab-title.md`** (zero-padded numeric prefix) for an *ordered* series meant to be read in sequence:
   `01-technology-selection-study.md`, `02-database-design-study.md`.
@@ -153,7 +177,7 @@ Update this doc first when changing <PROC> logic, then code + tests. Companion: 
 ## Open items    (optional — client/blocked)
 ```
 
-REQ IDs: `REQ-<2–3-letter feature>-NN` (e.g. `REQ-IT-04`, `REQ-TC-02`). One requirement per `###`, each with a
+REQ IDs: `REQ-<2–3-letter feature>-NN` (e.g. `REQ-TC-02`). One requirement per `###`, each with a
 **Verification** line, sections separated by `---`.
 
 ## 7. Before you finish

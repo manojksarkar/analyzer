@@ -65,7 +65,7 @@ def _swe3(f, li, ri):
         if unit is not None and not unit.of_kind("interface") and not unit.of_kind("function"):
             return ("their section has no interface table and no functions, which is what a "
                     "header-only unit looks like; we give a section only to a unit that has a "
-                    "source file (%s, 'Which units get a section')" % WIKI), POSSIBLE
+                    "source file (%s, SWE3-DOC-03)" % WIKI), POSSIBLE
 
     if f.kind == "missing" and f.entity == "interface":
         gone = li["interfaces"].get(unit_key, {}).get(leaf)
@@ -74,40 +74,40 @@ def _swe3(f, li, ri):
         # rule (the marking alone) lists every non-private global.
         if gone is not None and (gone.fields.get("interfaceType") or "").casefold().startswith("global"):
             return ("a global gets a row only when a function in another unit reads or "
-                    "writes it; one its own unit alone uses is left out (%s, 'Public vs. "
-                    "private')" % WIKI), POSSIBLE
+                    "writes it; one its own unit alone uses is left out (%s, "
+                    "SWE3-UI-01)" % WIKI), POSSIBLE
         if leaf in ri["functions"].get(unit_key, set()):
             return ("the name is a heading in their document but not a row, so the two "
-                    "documents disagree about public vs private (%s, 'Public vs. private')"
+                    "documents disagree about public vs private (%s, SWE3-UI-01)"
                     % WIKI), POSSIBLE
         return ("we leave private items out of the table entirely -- no row, no arrow, "
-                "no heading (%s, 'Interface ID')" % WIKI), POSSIBLE
+                "no heading (%s, SWE3-UI-01)" % WIKI), POSSIBLE
 
     if f.kind == "missing" and f.entity == "function":
         return ("a private or hidden function gets no flowchart entry and no interface row "
-                "(%s, 'Public vs. private', 'Hidden functions')" % WIKI), POSSIBLE
+                "(%s, SWE3-UI-01, SWE3-DOC-06)" % WIKI), POSSIBLE
 
     if f.kind == "differs" and f.field == "sourceDest":
         a = {normalise_key(x) for x in (f.left or [])}
         b = {normalise_key(x) for x in (f.right or [])}
         if a and a < b:
             return ("Source/Destination lists the units that *call* this function and nothing "
-                    "else; names only they have may be callees (%s, 'Column 7')" % WIKI), POSSIBLE
+                    "else; names only they have may be callees (%s, SWE3-UI-06)" % WIKI), POSSIBLE
         if not a and b:
             return ("an empty Source/Destination means nothing in the documented scope calls "
-                    "it; code outside the group is not counted (%s, 'Which units get a "
-                    "section')" % WIKI), POSSIBLE
+                    "it; code outside the group is not counted (%s, "
+                    "SWE3-UI-06)" % WIKI), POSSIBLE
 
     if f.kind == "differs" and f.field in ("dataRangeParams", "dataRangeReturn", "variableRange"):
         if is_placeholder(f.left) or is_placeholder(f.right):
             return ("a range is looked up by type name and is NA when nothing in the data "
                     "dictionary answers; a supplied CSV (--data-dictionary) beats every other "
-                    "source (%s, 'Data Range')" % WIKI), POSSIBLE
+                    "source (%s, SWE3-UI-04)" % WIKI), POSSIBLE
 
     if f.kind == "differs" and f.field == "direction":
         iface = li["interfaces"].get(unit_key, {}).get(leaf)
         if iface is not None and (iface.fields.get("interfaceType") or "").casefold().startswith("global"):
-            return "a global variable is always In/Out (%s, 'Column 6')" % WIKI, POSSIBLE
+            return "a global variable is always In/Out (%s, SWE3-UI-05)" % WIKI, POSSIBLE
 
     if f.kind in ("missing", "extra") and f.entity == "headerdef":
         # RV-4: an orphan header's symbols are listed ONCE, in the header's owner unit.
@@ -117,7 +117,7 @@ def _swe3(f, li, ri):
         if where:
             side = "we list" if f.kind == "missing" else "they list"
             return ("a symbol from a header with no source file of its own is listed once, in "
-                    "one owner unit; %s it under %s (%s, 'Orphan-header symbols')"
+                    "one owner unit; %s it under %s (%s, SWE3-UH-04)"
                     % (side, where, WIKI)), EXPLAINED
         if f.kind == "extra":
             # A header row only WE have. Since 2026-09-23 this table is not filtered by
@@ -128,23 +128,23 @@ def _swe3(f, li, ri):
             if "PRIVATE" in decl or "PROTECTED" in decl or "STATIC" in decl or "::" in decl:
                 return ("the unit header table lists what a unit declares and uses, not what it "
                         "publishes, so a private or file-local declaration belongs in it; a "
-                        "document written to the older rule leaves these out (%s, 'N.1.4 unit "
-                        "header table')" % WIKI), EXPLAINED
+                        "document written to the older rule leaves these out (%s, "
+                        "SWE3-UH-01)" % WIKI), EXPLAINED
         # A header row THEY have and we do not carries no rule. It used to: a `union` or a
         # `using` alias never reached our data dictionary. Both are recorded since 147c4cd
-        # (client answer Q16), and the rule would now explain away a row that is missing.
+        # (review answer Q16), and the rule would now explain away a row that is missing.
 
     if f.kind == "differs" and f.field in ("risk", "capacity"):
         return ("Risk is fixed at Medium and Capacity at Common; neither is worked out from "
-                "the code (%s, 'Fixed and placeholder values')" % WIKI), EXPLAINED
+                "the code (%s, SWE3-FX-01)" % WIKI), EXPLAINED
 
     if f.kind == "differs" and f.field == "interfaceId":
         return ("the interface id is derived by this tool and its number is ours; it is not "
-                "expected to agree across documents (%s, 'Interface ID')" % WIKI), EXPLAINED
+                "expected to agree across documents (%s, SWE3-UI-02)" % WIKI), EXPLAINED
 
     if f.kind == "extra" and f.field == "otherHeading":
         return ("a heading the wiki does not name; we do not write this section (%s, "
-                "'What is produced')" % WIKI), POSSIBLE
+                "SWE3-DOC-02)" % WIKI), POSSIBLE
     return None
 
 

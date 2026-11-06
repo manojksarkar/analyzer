@@ -70,7 +70,7 @@ The four view modules are imported at the bottom of `__init__.py` so their
 ### View 1: `interfaceTables` — [engine/views/interface_tables.py](../engine/views/interface_tables.py)
 
 Output: `output/interface_tables.json` (or `output/<group>/interface_tables.json`).
-Full logic and column definitions: `docs/spec/SWE3_SPEC.md` — Interface Tables.
+Full logic and column definitions: `docs/spec/SWE3_WIKI.md` — SWE3-UI-01…06 (unit interface).
 
 - Iterates `.cpp` units only; header-only units skipped.
 - Filters by `_analyzerAllowedComponents` if set.
@@ -135,7 +135,7 @@ Full logic and column definitions: `docs/spec/SWE3_SPEC.md` — Interface Tables
 
 One Mermaid `.mmd` (and optionally `.png`) per unit into
 `output/unit_diagrams/`.
-Full logic and layout rules: `docs/spec/SWE3_SPEC.md` — Unit Diagrams (REQ-UD-XX).
+Full logic and layout rules: `docs/spec/SWE3_WIKI.md` — SWE3-SD-03, SWE3-SD-04 (unit diagram).
 
 - `.cpp` units only; filtered by `allowed_modules` when set.
 - Layout: partners on the left / right of the **yellow** module box in the centre,
@@ -167,7 +167,7 @@ Full logic and layout rules: `docs/spec/SWE3_SPEC.md` — Unit Diagrams (REQ-UD-
 #### Edge-label spacing — the ELK options are a no-op here (2026-08-08)
 
 Reported: *"function mapping is difficult to read in the Static Diagram, there is less
-space between the lines/labels."* REQ-UD-05 puts every interface id for a unit pair on ONE
+space between the lines/labels."* SWE3-SD-03 puts every interface id for a unit pair on ONE
 arrow, so a busy edge stacks 10+ ids in a single label; joined with a bare `<br/>` they
 render as contiguous rows with no leading.
 
@@ -198,7 +198,7 @@ both rendered byte-identically to none, because once labels are tall the label c
 not the node — sets the height. Only an absurd 36 lines moved it, and that draws the unit
 as a grotesque tall bar.
 
-Not changed, per the user: no label splitting (REQ-UD-05 mandates the shared arrow), no id
+Not changed, per the user: no label splitting (SWE3-SD-03 mandates the shared arrow), no id
 capping (the diagram stays complete), no DOCX width change, and diagram height is
 explicitly not a concern. A `to <partner>` header on each block was tried and **reverted**
 (`76fa866` / `fb281cb`) — the ask was spacing, not relabelling.
@@ -796,8 +796,10 @@ Rows from:
   (`#define __FILE_NAME_H__` — empty value, name matches
   `^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$`) are skipped.
 
-Struct/class entries are NOT shown directly — only via `typedef struct {…}
-Name;`. Deduplicates by declaration text, preferring richer `name=value` info.
+Struct, class and union entries are listed in their own right (since 2026-09-23b), and through a
+`typedef struct {…} Name;` too. Deduplicates by declaration text, preferring richer `name=value` info.
+
+Details of this output that SWE3_WIKI leaves out: [SWE3_RULE_DETAILS.md](SWE3_RULE_DETAILS.md).
 
 ### Interface table (`_add_interface_table`)
 

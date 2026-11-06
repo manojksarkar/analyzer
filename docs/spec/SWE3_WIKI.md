@@ -1,52 +1,42 @@
-# SWE.3 Software Detailed Design — how it is generated (V1)
+# SWE.3 Software Detailed Design — rules (V1)
 
-This document explains how every part of the generated design document is produced, so the rules can be
-agreed before anyone judges the output. Its partner is [SWE4_WIKI.md](SWE4_WIKI.md) (unit test
-specifications, built from this design). [SWE3_SPEC.md](SWE3_SPEC.md) is the short internal requirement
-list; this document is the reasoning behind it.
+Each part of the document follows a rule below. A review comment names the rule it is about, by its
+id: `SWE3-<section>-NN`, for example `SWE3-UI-02`.
 
-## Contents
+| Code | Section | In the document | Rules |
+|---|---|---|---|
+| DOC | General | the whole document; 1 Introduction | 7 |
+| SD | Static diagram | 2.1: the two component diagrams, the Component/Unit table; 2.1.1: each unit's diagram | 4 |
+| UH | Unit header | 2.1.1.1 | 4 |
+| UI | Unit interface | 2.1.1.2 | 6 |
+| FD | Flow diagram | 2.1.1.3 onwards: one entry per public function | 3 |
+| DB | Dynamic behaviour | 2.2 | 3 |
+| FX | Fixed values, Code Metrics, Appendix | values the code does not decide; the last two chapters | 1 |
 
-- [What is produced](#what-is-produced)
-- [What lands in one document](#what-lands-in-one-document) — [the four levels of identity](#the-four-levels-of-identity) · [which units get a section](#which-units-get-a-section)
-- [Cross-cutting rules](#cross-cutting-rules) — [public vs. private](#public-vs-private) · [names](#names) · [interface ID](#interface-id) · [data range](#data-range) · [descriptions](#descriptions-the-only-llm-written-content) · [hidden functions](#hidden-functions)
-- [1 Introduction](#1-introduction)
-- [N.1 Static Design](#n1-static-design)
-  - [N.1.1 Component diagrams](#n11--component-diagrams)
-  - [N.1.2 Component/Unit table](#n12--componentunit-table)
-  - [N.1.3 Unit architecture diagram](#n13--unit-architecture-diagram) — [which edges](#which-edges-are-drawn) · [global variables](#global-variables) · [arrow direction](#arrow-direction) · [layout](#layout)
-  - [N.1.4 Unit header table](#n14--unit-header-table) — [what is listed](#what-is-listed) · [access specifier](#access-specifier) · [column 1 declaration](#column-1--declaration) · [orphan-header symbols](#orphan-header-symbols) · [cleanup](#cleanup-and-de-duplication) · [exclusions](#exclusions)
-  - [N.1.5 Unit interface table](#n15--unit-interface-table) — [which rows, in what order](#which-rows-and-in-what-order) · [1 Interface ID](#column-1--interface-id) · [2 Interface Name](#column-2--interface-name) · [3 Information](#column-3--information) · [4 Data Type](#column-4--data-type) · [5 Data Range](#column-5--data-range) · [6 Direction](#column-6--directioninout) · [7 Source/Destination](#column-7--sourcedestination) · [8 Interface Type](#column-8--interface-type)
-  - [N.1.6 Per-function flowchart entry](#n16--per-function-flowchart-entry) — [which flowcharts](#which-flowcharts-appear-under-the-entry) · [how one is built](#how-a-flowchart-is-built) · [Input/Output Name](#input-name--output-name)
-- [N.2 Dynamic Behaviour](#n2-dynamic-behaviour) — [which interactions qualify](#which-interactions-get-an-entry) · [the diagram](#the-diagram) · [the description table](#the-description-table)
-- [Code Metrics and Appendix](#code-metrics-and-appendix)
-- [Fixed and placeholder values](#fixed-and-placeholder-values)
-- [Worked example](#worked-example)
-- [Open items](#open-items)
+Section numbers are those of the outline below: the first component, the first unit.
 
 ---
 
-## What is produced
+## DOC — General
 
-One `Software Detailed Design` document per **group**. It is built from the C++ source code and the
-project settings. Nothing else is needed — no requirement database, and no design notes written by hand.
+The document as a whole: its outline, what a unit is, which files are read, and what the LLM writes.
 
 ```
 1  Introduction
    1.1  Purpose
    1.2  Scope
    1.3  Terms, Abbreviations and Definitions
-2  <Component>                              ← one top-level section per component, in A-Z order
+2  <Component>                              ← one per component in the document, A-Z
    2.1  Static Design
         · component container diagram
         · file dependency diagram
         · Component / Unit / Description / Note table
         2.1.1  <Unit>                       ← one per unit that has a source file
                · unit architecture diagram
-               2.1.1.1  unit header         ← globals / typedef / enum / define table
+               2.1.1.1  unit header         ← globals / typedef / enum / define / records
                2.1.1.2  unit interface      ← Interface ID / Name / Information / Data Type /
                                               Data Range / Direction / Source-Destination / Type
-               2.1.1.3  <Unit>-<Function>   ← one per public function: flowchart + table
+               2.1.1.3  <Unit>-<Function>   ← one per public function: table + flowchart(s)
                2.1.1.4  <Unit>-<Function>
    2.2  Dynamic Behaviour
         2.2.1  <Unit> - <Function> (<CallerUnit> - <CallerFunction>)
@@ -56,827 +46,253 @@ N  Code Metrics, Coding Rule, Test Coverage
 Appendix A  Design Guideline
 ```
 
-The numbers follow the position in the document. Components start at `2`. Code Metrics is always the
-section after the last component.
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-01</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>One document per component</b></td><td>1. File name <code>software_detailed_design_&lt;component&gt;.docx</code></td></tr>
+<tr><td>2. Components generated together share one document, each as its own top-level section</td></tr>
+<tr><td rowspan="1" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-02</b></td><td rowspan="1" valign="middle" style="vertical-align:middle"><b>Outline</b></td><td>1. The document follows the outline above</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-03</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>What a unit is</b></td><td>1. A source file and the header of the same name, as one: <code>Foo.cpp</code> + <code>Foo.h</code> = unit <code>Foo</code></td></tr>
+<tr><td>2. Only a unit with a source file (<code>.cpp</code>, <code>.cc</code>, <code>.cxx</code>) gets a section</td></tr>
+<tr><td>3. A header with no source file of its own is listed inside one unit that uses it (SWE3-UH-04)</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-04</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Which files are read</b></td><td>1. <code>.cpp</code> <code>.cc</code> <code>.cxx</code> <code>.h</code> <code>.hpp</code> <code>.hxx</code> under the component's folders, in any case</td></tr>
+<tr><td>2. A <code>.c</code> file is not read (a change is planned)</td></tr>
+<tr><td>3. A file with <code>emul</code> in its name is skipped; the settings can name other patterns</td></tr>
+<tr><td>4. A file that two components list belongs to the first one in the settings</td></tr>
+<tr><td>5. Code outside the document's components appears only as a name (a diagram box, a Source/Destination unit), never as a section</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-05</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>What comes from the code, what the LLM writes</b></td><td>1. Built only from the C++ source and the project settings: no requirement database, no hand-written notes</td></tr>
+<tr><td>2. The LLM writes only wording (see Reference, at the end); IDs, rows, directions, ranges, arrows and flowchart shapes come from the code</td></tr>
+<tr><td>3. The same code gives the same document: LLM answers are reused, and the LLM is told the project's domain</td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-06</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Changes made in the app</b></td><td>1. A text a reviewer corrected in the app is printed instead of the LLM's; it stays in later versions while the code it describes is unchanged</td></tr>
+<tr><td>2. A function marked hidden is left out of the interface table, the function entries and Dynamic Behaviour; hiding applies to that exact function</td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-07</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Introduction</b></td><td>1. 1.1 Purpose and 1.2 Scope: standard text from the settings, Scope with one bullet per component of this document; 1.3 Terms: every abbreviation in the project's abbreviations file, A–Z</td></tr>
+<tr><td>2. Only the component bullets come from the code; the rest is standard text (SWE3-FX-01)</td></tr>
+</table>
 
 ---
 
-## What lands in one document
+## SD — Static diagram
 
-### The four levels of identity
+2.1 Static Design: at the top of every component, its two diagrams and the Component/Unit table; in every unit (2.1.1), its diagram, where boxes are units and arrows are interfaces.
 
-| Level | What it is | Where it comes from |
-|---|---|---|
-| **Layer** | Top folder of the delivery (for example `FTL`, `HIL`, `FIL`) | `layers` in the settings |
-| **Group** | What one document covers — **one document per group** | `layers.<layer>.groups` |
-| **Component** | A named set of folders inside a group. Each one becomes a top-level section | the group's `{name: path}` map |
-| **Unit** | One source file plus its header of the same name | worked out from the file path: `<component>\|<file stem>` |
-
-A **unit** is `Foo.cpp` **plus** `Foo.h` treated as one thing. The file extension is dropped, so both
-halves share one identity and their interfaces are numbered in a single list.
-
-If two files in different folders of the same component share a file name, they end up with the same
-identity and are merged into one unit. The run prints a warning when this happens. It is not repaired
-automatically, because that identity is used everywhere in the stored data, and changing it would break
-everything that refers to it. **⚠ To confirm:** whether this happens at all in the client's code.
-
-### Which units get a section
-
-- Only units that **have a source file**. A unit that is only a header gets no section, no interface table
-  and no diagram. Its content is listed once, inside one unit that *uses* it — see the
-  [unit header table](#n14--unit-header-table).
-- Only components of the selected group. Code outside the group can still appear as a *name* on a diagram
-  or in the Source/Destination column, but it gets no section of its own.
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-01</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Component diagrams</b></td><td>1. Container diagram: the component as a yellow box, with one blue box inside it per unit; no arrows</td></tr>
+<tr><td>2. File dependency diagram: an arrow from each source file to each header of this component it includes</td></tr>
+<tr><td>3. An include inside <code>#if</code> counts only when its branch is active</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-02</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Component/Unit table</b></td><td>1. One row per unit that has a source file: Component (without its layer), Unit (the file name), Description, Note</td></tr>
+<tr><td>2. Description: one line written by the LLM summing up the unit's public functions and globals; with the LLM off, their descriptions joined and cut at 120 characters</td></tr>
+<tr><td>3. Note: always <code>N/A</code> (SWE3-FX-01)</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-03</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Unit diagram: arrows</b></td><td>1. One diagram per unit: boxes are units; for each public function of this unit, an arrow between it and each unit that calls it, labelled with the interface IDs</td></tr>
+<tr><td>2. So each link between two units is drawn once, in the diagram of the unit that provides the function</td></tr>
+<tr><td>3. The arrow follows the function's Direction (Unit interface): <code>In</code> points caller → provider, <code>Out</code> points provider → caller</td></tr>
+<tr><td>4. Calls between the same two units in the same direction share one arrow</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-04</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Unit diagram: boxes</b></td><td>1. This unit sits in a yellow box of its component, with the document's units it shares an arrow with; units of other components are outside the box</td></tr>
+<tr><td>2. A unit it shares no arrow with is not drawn</td></tr>
+<tr><td>3. A unit whose arrow points into this unit is on its left, one it points to on its right; a unit with arrows both ways is drawn twice</td></tr>
+<tr><td>4. The unit's own public globals are boxes above it, without arrows; other globals are not drawn</td></tr>
+</table>
 
 ---
 
-## Cross-cutting rules
+## UH — Unit header
 
-These rules decide what appears anywhere in the document, so they are worth agreeing first.
+2.1.1.1 unit header: two columns, declaration and information. It lists what the unit's own files declare; functions are in the interface table.
 
-### Public vs. private
-
-Everything the document publishes is *public*. **One rule decides it: something in another unit uses
-it.** A unit is a `.cpp` with its header, so a call from the companion header is a call from the same unit.
-
-| | Public when | Private when |
-|---|---|---|
-| **Function** | a function in **another unit** calls it — or its address sits in a file-level table (`static const fp_t table[] = { fn, … };`): it is reachable through that table even though no call names it | nothing outside its unit uses it |
-| **Global** | a function in **another unit** reads or writes it | nothing outside its unit uses it — or it is only declared here (`extern`), not defined: the unit that defines it decides |
-
-**No marking is consulted.** `PRIVATE`, `PROTECTED` and `PUBLIC`, and the C++ access of a member
-(`private:`, `protected:`, `public:`, or the default of a member with no label), decide nothing:
-
-- a `PUBLIC` function that nobody outside its unit calls has **no** row;
-- a `PRIVATE` or `protected` one that another unit does call — a friend, a derived class in another
-  file — **has** a row. Until 2026-10-13 a marking could restrict, and such a function had none.
-
-The markings are still read from the source and kept with the function, as a fact about the code. Nothing
-in a document depends on them.
-
-A use through an `extern` declaration counts for the variable it declares: `Lib` reading `g_sharedTick`
-through `SharedDefs.h` publishes `Core`'s `int g_sharedTick = 0;`. So does a use of a class's static
-member through an object (`obj.s_count`, `p->s_count`). Calling a function of the owning unit that
-touches the global does not count; that is a use of the function, not the global. A file-scope `static`
-variable can never be public, because nothing outside its file can name it.
-
-**None of this applies to the [unit header table](#n14--unit-header-table)**, which lists what a unit
-declares and uses, whatever its visibility.
-
-**⚠ To confirm.** The rule's answer depends on what was parsed:
-
-- An entry point nothing calls by name — an ISR, a driver-registered callback — is private unless a
-  dispatch table holds its address.
-- A run narrowed to one layer cannot see the layer above calling in, so that layer's own front door
-  reads as uncalled.
-
-On the sample, 42 of 91 `PUBLIC`-marked functions have no row, `main` among them, and 15 of 19
-globals none. With no marking consulted, 14 functions and 1 global of the sample that are marked private or protected gain a row, each used from another unit — `coreGetCount` (`PROTECTED`, called by `App/Main`), `MtxStruct::guarded` (protected, called from a derived class in another file), `MtxStruct::sealed` (private, called by a friend), `ViaCounters::s_mark` (a protected static member) among them — and none loses one. An interface id is a position in its unit's public sequence, so a function that joins it renumbers the ones after it: 11 rows that were already there got a new `IF_` number.
-
-Private functions are not lost. When a public function calls a private one, the private function's
-flowchart is added under that public function (see [flowcharts](#n16--per-function-flowchart-entry)). It is
-labelled with its **signature**, never with an id.
-
-### Names
-
-| Where | Form | Why |
-|---|---|---|
-| Interface Name, headings | short name with the class in front — `MapCache::insert`, `FtlLookup` | the namespace is dropped because it only makes the cell longer. The class is kept because it is what tells two same-named methods apart |
-| …of two functions of one unit that would print alike | what tells them apart is added. **Overloads** get their parameter types — `FtlRead(Lba_t)`, `FtlRead(Lba_t, uint32_t)`. **One name in two namespaces** gets its scope — `fast::init`, `slow::init` | two sections must not read the same. A name nobody in its unit shares is printed as before, and the choice is made among all functions of the unit, so a name does not change when another function gains or loses a caller |
-| Diagram boxes | `Component/Unit` | the layer prefix is dropped. The box is there to be read, not looked up |
-| Internal keys and file names | layer included (`Ftl.Map\|FtlMap`) | two layers are allowed to have a component with the same name |
-
-### Interface ID
-
-```
-IF_<LAYER>_<GROUP>_<UNIT>_<NN>          public   — printed in the document
-PIF_<LAYER>_<GROUP>_<UNIT>_<NN>         private  — internal only, NEVER printed
-```
-
-> **The `PIF_` form never appears anywhere in the document.** Private items get no table row, no diagram
-> arrow and no heading of their own, and the private flowcharts that *are* shown are labelled with the
-> function signature. The id exists only inside the tool: in the stored data and the logs, where it keeps
-> private items addressable and keeps their numbering apart from the published ones. It is written here
-> only so the client team knows what it is if it shows up in a log file.
-
-- Each part of the id is the name in capitals with everything that is not a letter removed. `Sample Core`
-  becomes `SAMPLECORE`, `Ftl_Map` becomes `FTLMAP`. The **layer** part keeps digits too (`Layer1` becomes
-  `LAYER1`); the group and unit parts do not.
-- The `<GROUP>` part is left out when the component belongs to no group.
-- `<NN>` is a two-digit number counted **within the unit**. Functions are numbered first, then globals.
-  Each set is ordered by file name, then line number, which puts `.cpp` before `.h`. So adding public
-  functions in the header adds numbers at the end instead of renumbering what is already there.
-- Public and private ids are counted in **separate** lists inside the tool, so `IF_…_01` and `PIF_…_01` can
-  both exist and the published numbering never has a gap.
-
-**⚠ To confirm:** the way names are shortened. It is repeatable but it loses information — `Map` and `Map2`
-both give `MAP`. If the client wants fixed-width codes, or a list of agreed component codes, this is the
-one place to decide it. Until then, units whose ids would start the same — `Map` and `Map2` in one group —
-**share one count**, so no id is printed twice (the id must be unique, SWE3_SPEC REQ-IT-04): `Map`'s
-functions take `_01`, `_02` and `Map2`'s continue at `_03`.
-
-### Data Range
-
-A range is never made up for one call. It is looked up **by type name** in a single data dictionary that
-is built while the code is parsed. The lookup happens in two steps.
-
-**Step 1 — who is allowed to answer.** Only entries from the layer being documented, plus the shared
-entries (built-in types, the primitive table, a project-wide CSV). A type with the same name in a
-different layer is never used.
-
-**Step 2 — the order among those entries.** The first one that has an answer wins:
-
-1. a CSV supplied from outside (`--data-dictionary`) — this beats everything else;
-2. what libclang measured for the build target — `long` is 4 bytes on Windows and 8 on Linux, which a
-   fixed table cannot express;
-3. the built-in table of primitives (`uint8_t` → `0-0xFF`, `bool` → `0-1`, and so on);
-4. a lookup by name, for types that came from a CSV or were never parsed;
-5. `NA`.
-
-A typedef with no range of its own is followed to the type it stands for, up to 10 steps, so
-`Lba_t → uint32_t` gives `0-0xFFFFFFFF`. Structs, unions, pointers and floats are `NA` on purpose.
-The match is **case-sensitive**, because C++ is: `Size_t` (a struct) is not `size_t`.
-
-Every run prints how much it managed to fill in — `data ranges: 64/65 resolved, 1 NA (int[6] x1)`. That
-line is the quickest way to see what a client-supplied CSV would still need to cover.
-
-### Descriptions (the only LLM-written content)
-
-| Field | Without the LLM | With the LLM |
-|---|---|---|
-| Interface **Information** | `-` | one line describing the function or global |
-| Component/Unit **Description** | the unit's own descriptions joined together, cut at 120 characters | one line summarising the unit |
-| Unit header **information** for a `typedef struct` | a phrase built from the type name | one line built from the type name **and** its fields |
-| Flowchart node labels | the node's own source text | a short label per node |
-| Behaviour bullets | `A calls B` | `A calls B to …` (20 words at most) |
-| **Input/Output Name** | worked out from the code (see [below](#n16--per-function-flowchart-entry)) | asked for only when the worked-out name was a placeholder |
-
-Everything else in the document — ids, directions, ranges, arrows, table rows and the *shape* of every
-flowchart — comes from the code alone. The same code always produces the same result. LLM answers are
-cached, and the model is told what the project's domain is so the wording stays in that domain.
-
-### Hidden functions
-
-A function marked `hidden` is removed from the interface table, from the flowchart sub-sections and from
-Dynamic Behaviour. Hiding works on the exact function, not on its name, so hiding one of two same-named
-methods leaves the other one in place.
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-01</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>What is listed</b></td><td>1. Every symbol declared in the unit's own <code>.cpp</code> and <code>.h</code>: globals (<code>extern</code> too), <code>#define</code>s, enums, typedefs, structs, classes, unions; no functions</td></tr>
+<tr><td>2. Listed whatever its access or marking (<code>PRIVATE</code>, <code>static</code>)</td></tr>
+<tr><td>3. Listed whether or not it is used (a change is planned)</td></tr>
+<tr><td>4. Not listed: include guards, local variables, a type declared inside a class (the class row shows it)</td></tr>
+<tr><td>5. A static member's definition in the <code>.cpp</code> is not listed: the class row declares the member, without its starting value</td></tr>
+<tr><td>6. A symbol declared twice is listed once: an enum and its typedef; an <code>extern</code> and its definition (the one with the value)</td></tr>
+<tr><td>7. Rows are sorted by declaration text</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-02</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Declaration column</b></td><td>1. Exactly as written in the source, markings and keywords kept, in full over as many lines as it takes</td></tr>
+<tr><td>2. Comments are removed</td></tr>
+<tr><td>3. A struct or class shows its members; a method only as its declaration; its body is in the flowchart</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-03</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Information column</b></td><td>1. Global: its starting value; <code>N/A</code> if none</td></tr>
+<tr><td>2. <code>#define</code>: its value as written, not worked out (<code>(1&lt;&lt;6)</code>, not <code>64</code>)</td></tr>
+<tr><td>3. Enum, or a typedef of one: <code>NAME=value, …</code></td></tr>
+<tr><td>4. struct, class, union, or a typedef of one: one line written by the LLM (without the LLM: <code>Structure for …</code>)</td></tr>
+<tr><td>5. Any other typedef: <code>N/A</code></td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-04</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Shared headers (a header with no source file of its own)</b></td><td>1. Listed once, in one unit: the first unit by name, in the header's component, that uses it; the same unit in every document</td></tr>
+<tr><td>2. Only the symbols some unit uses</td></tr>
+</table>
 
 ---
 
-## 1 Introduction
+## UI — Unit interface
 
-| Sub-section | What it contains | Where it comes from |
-|---|---|---|
-| 1.1 Purpose | a paragraph from the settings, with `{project_name}` filled in | `docx.introduction.purpose` |
-| 1.2 Scope | a paragraph from the settings, then **one bullet per component** in this document, then optional extra text and bullets | `docx.introduction.scopeIntro` / `scopeBody` / `scopeItems`, plus the component list |
-| 1.3 Terms | a `Term \| Description` table of every abbreviation in the settings, in A-Z order | the project's abbreviations file |
-
-Only the component bullets come from the code. The rest is standard text the client supplies.
-**⚠ To confirm:** the wording of Purpose and Scope, and the abbreviation list.
-
----
-
-## N.1 Static Design
-
-### N.1.1 — Component diagrams
-
-Every component section opens with two pictures.
-
-**Container diagram** — the component as a yellow box with one blue box per unit inside it, and no arrows.
-It answers "what is in this component". The units are listed in sorted order, so the same code always
-gives the same picture on any machine.
-
-**File dependency diagram** — drawn bottom to top: a blue box per `.cpp`, a dark box per header, and an
-arrow `source → header` for every header the source includes.
-- Only headers **belonging to this component** are drawn. An include of another component's header, or of
-  a system header, is ignored.
-- Includes are read from the file text, and `#ifdef` / `#ifndef` / `#if` / `#elif` / `#else` blocks are
-  taken into account. Only the branch that is active for this build contributes arrows. If a condition
-  cannot be worked out, it is treated as active, so an include is never quietly lost.
-- The header with the same name as the source is always included, even if the source does not say
-  `#include` for it.
-
-### N.1.2 — Component/Unit table
-
-One row per unit of the component that has a source file. Four columns:
-
-| Column | What it shows | If there is nothing |
-|---|---|---|
-| **Component** | the component name for reading: layer prefix removed, hyphens turned back into spaces (`Layer1.Sample-Core` → `Sample Core`). Written once, in the first row, then merged down the whole column | `N/A` |
-| **Unit** | the unit name (the file name without its extension) | `N/A` |
-| **Description** | one line describing the unit, built from the descriptions of its **own functions and globals**, never from raw source | see below |
-| **Note** | always `N/A` | — |
-
-**How Description is filled, in order:**
-1. The LLM summarises the unit from the names and descriptions of its functions and its globals. Functions
-   and globals are kept as two separate lists, so a unit that is mostly data reads differently from one
-   that is mostly logic. Empty descriptions and duplicates are removed first.
-2. If the LLM is off, unreachable, or fails: the same descriptions joined together with duplicates removed,
-   cut at 120 characters.
-3. If none of the unit's items have a description: `N/A`.
-
-**⚠ To confirm:** what should go in **Note**. It is always `N/A` today.
-
-### N.1.3 — Unit architecture diagram
-
-One diagram per unit, drawn left to right. **Boxes are units. Arrows are interfaces**, labelled with
-interface IDs.
-
-#### Which edges are drawn
-
-Only the unit's **own** interfaces: for every public function of the unit, one arrow per unit that calls
-it. Arrows for functions this unit *calls* are not drawn here. They are drawn in the diagram of the unit
-that owns them.
-
-This is the rule to agree on: **every relationship between two units appears exactly once in the
-document, in the diagram of the unit that provides the function.**
-
-Private functions are left out here, just as they are in the interface table, so an arrow can never carry
-an id that the reader cannot find in a table.
-
-#### Global variables
-
-A global's direction is always `In/Out`, so it has no arrow. It is drawn as a box instead:
-
-| | |
-|---|---|
-| Which globals | the unit's own globals that have a row in its interface table. A private global, and an `extern` declaration of another unit's global, have no row and no box |
-| Where | inside the component box, stacked above the unit in interface-ID order, sharing an untitled panel with it |
-| Label | the variable's name, with its class for a class static member (`Owner::s_count`) |
-| Look | white/grey box, thin black border, **no edges** |
-
-Other units' globals are not drawn, not even the ones this unit reads or writes.
-
-#### Arrow direction
-
-The direction comes from the **owner's** In/Out. The owner is the unit of the function being called. The
-caller's own direction does not matter:
-
-| Owner's Direction | Arrow |
-|---|---|
-| `Out` | owner → partner (data leaves the owner) |
-| `In` | partner → owner (data comes into the owner) |
-
-Because the direction is fixed by the owner and not by "this unit", the same interface is drawn as the
-**same** arrow in both units' diagrams.
-
-#### Layout
-
-- The unit's own component is a yellow box in the middle. The current unit sits inside it with a thick
-  border. Units from the same component sit beside it in a lighter style.
-- Units with an arrow pointing **into** this unit are placed on the **left**.
-- Units with an arrow pointing **out of** this unit are placed on the **right**.
-- A unit with arrows in **both** directions is drawn **twice**, once on each side. Each box carries only
-  the interface IDs of the arrow on that side.
-- Several interfaces between the same two units, in the same direction, share one arrow. The label lists
-  all their ids, with blank space above and below so two labels never run together.
-- A unit never draws an arrow to itself.
-- If a function is published only through a table of function pointers, its arrow goes to the unit that
-  registers it.
-
-When the document covers a whole group, every unit in that group counts as internal. Anything outside the
-group is external.
-
-### N.1.4 — Unit header table
-
-Two columns: `declaration` | `information`. One row per symbol the unit declares.
-
-#### What is listed
-
-"The unit's own files" means **both** halves of the unit: its source file **and** its header.
-
-| Kind | Listed when | Column 2 — information |
-|---|---|---|
-| Global variable | in the unit's own files, or in an orphan header this unit owns | the starting value: everything right of the first `=`, brackets counted; `N/A` if none |
-| `#define` | in the unit's own files | the macro value; `N/A` if none |
-| `enum` | in the unit's own files | `NAME=value, NAME=value, …` |
-| `typedef` → enum | in the unit's own files | the enum's values |
-| `typedef` → struct | in the unit's own files | a one-line description, from the name and its fields (name alone when the LLM is off) |
-| `typedef` → anything else | in the unit's own files | `N/A` |
-| `using T = …;` | in the unit's own files | as a `typedef` — the two declare the same thing |
-| `struct` / `class` / `union` | in the unit's own files | a one-line description: `Structure for …`, `Class for …`, `Union for …` |
-
-#### A record type: what the cell holds
-
-The declaration **as written**, including method signatures and the access labels, so the
-reader sees the type the way the source declares it.
-
-| | |
-|---|---|
-| Methods | listed, as **declarations**. An inline body is reduced to its declaration: `int status() { return 1; }` is listed as `int status();`. The body is the unit's implementation, and the flowchart section documents that |
-| Data members | listed, static and non-static alike |
-| Access labels | kept — `public:`, `protected:`, `private:` |
-| Base classes | kept — `class MtxDerived : public MtxStruct` |
-| A type declared **inside** the record | shown there, and **nowhere else** — a nested `enum`, `typedef`, `struct`, `union` or `using` gets no row of its own, because this cell already declares it |
-| A static member's own definition | **not** listed. `int Foo::s_count = 0;` in the `.cpp` would repeat what `static int s_count;` in the class already said. The cost is the initial value, which lives only in the definition |
-
-#### Access specifier
-
-**None.** `public:`, `protected:` and `private:` change nothing here. This table says what the unit
-**declares and uses**, not what it publishes — a private global or type still appears in the unit's own
-flowcharts and descriptions, so leaving it out left the reader with a name the document never explains.
-
-Access decides the [interface table](#n15--unit-interface-table) only.
-
-#### Column 1 — declaration
-
-The declaration **exactly as it is written in the source**, never rebuilt from the parsed data.
-
-| | |
-|---|---|
-| Source | read back from the file at the recorded line |
-| Several lines | brackets are counted, so a long array, class or `typedef struct { … } Name;` is captured to its end, however long. A bracket inside a comment or a string does not count. A declaration still open after 2000 lines is cut there, and the run logs a warning |
-| `#define` | the macro text the parser captured, including lines joined with `\` |
-| Nothing readable | falls back to the symbol's name — a row is never blank |
-| `} one_s, *one_s_2;` | the extra alias line is dropped; the real `typedef` line already shows the full declaration |
-
-#### Orphan-header symbols
-
-An **orphan header** is a header with no source file of the same name. It is not a unit, so on its own it
-would never appear in the document.
-
-| | |
-|---|---|
-| Where its symbols go | into **one** unit, the header's **owner**, and nowhere else |
-| The owner | the first unit, by name, in the header's **own component** that uses anything from it. If no unit in that component uses it: the first using unit, by name, anywhere |
-| What the owner lists | every symbol of the header that **any** unit uses, including the ones only other units use. A symbol nobody uses is not listed |
-| Other units that use it | list none of it |
-| Not applied to | a header that *does* have a source file of the same name |
-| "Uses" — either source counts | the usage index built during parsing, or a text search of the unit's own source with comments and quoted text removed |
-| Enum used only through its values | matched on the value names |
-| Globals | follow the same rule. A global counts as used when a function of the unit reads or writes it; including the header is not enough |
-
-The owner is chosen over the whole project, not only the group being documented, so a header is listed in
-the same unit in every document. A reader of another group's document may therefore find a shared enum
-declared in a different document.
-
-#### Cleanup and de-duplication
-
-Applied to **both** columns, in this order:
-
-| | Step | |
-|---|---|---|
-| 1 | comments removed | `//` and `/* */`, including ones spanning several lines; text inside quotes is kept. A comment is never part of a declaration or a value |
-| 2 | duplicates removed | matched on the declaration text — the same declaration arrives once as an `enum` and once as the `typedef` naming it; the row with the more useful `name=value` information is kept |
-| 3 | sorted | by declaration text, ignoring upper/lower case |
-
-One variable declared twice — `extern int g_x;` in one file and `int g_x = 0;` in another — is listed
-**once** in any unit both reach: the one carrying an initial value, because the bare declaration says
-strictly less about the same storage. Two same-named statics with no initial value stay separate; they are
-different objects, not two views of one.
-
-#### Exclusions
-
-| Never listed | |
-|---|---|
-| include guards | a `#define FILE_H` with no value |
-| local variables | |
-| a type declared inside a `struct`/`class`/`union` | the record's own cell declares it already |
-| a class static's out-of-line definition | `int Foo::s_count = 0;` — same reason |
-| an anonymous record | the `typedef … {…} S;` that names it carries the declaration |
-
-**Defines inside `#if` blocks:** a macro defined once in each branch is listed **once**. libclang keeps
-only the branch that is active for this build, and the text search is limited to the lines it kept. If
-libclang has no answer, every branch is kept, so the macro is never lost.
-
-**Known gap:** a macro value is shown as written (`(1<<6)`), not worked out (`64`).
-
-**The declaration is shown exactly as written — markings included.** `PUBLIC int g_result = 0;` is listed
-as written, not as `int g_result = 0;`. The markings are project macros that expand to nothing, so the
-document could drop them without losing anything the compiler sees, but the source states intent with them
-and a reviewer holds the code next to the document. Client decision, 2026-09-23.
-
-Real C++ keywords are kept for a stronger reason: `extern` says the unit uses a global it does not own, and
-`static`, `const`, `volatile` and `inline` change what the declaration means. None of this reaches the
-[interface table](#n15--unit-interface-table), which shows a short name and a type — so no marking and no
-storage class appears there at all.
-
-### N.1.5 — Unit interface table
-
-Eight columns. Here they are at a glance; each one is then explained in full below.
+2.1.1.2 unit interface: one row per public function and public global of the unit, in eight columns:
 
 | # | Column | Function row | Global variable row |
 |---|---|---|---|
 | 1 | **Interface ID** | `IF_<LAYER>_<GROUP>_<UNIT>_<NN>` | same |
 | 2 | **Interface Name** | short name with the class in front | short name |
 | 3 | **Information** | description, or `-` | description, or `-` |
-| 4 | **Data Type** | the parameter types, plus a `return:` line | the declared type |
+| 4 | **Data Type** | the parameters, plus a `return:` line | the declared type |
 | 5 | **Data Range** | one range per parameter, plus a `return:` line | the type's range |
 | 6 | **Direction(In/Out)** | `In` or `Out` | always `In/Out` |
-| 7 | **Source/Destination** | the units that **call** this function | the unit's own path |
+| 7 | **Source/Destination** | the units that **call** it | the unit's own `Component/Unit` |
 | 8 | **Interface Type** | `Function` | `Global Variable` |
 
-#### Which rows, and in what order
-
-**Which rows exist**
-
-| | |
-|---|---|
-| One row per | public **function** and public **global** of the unit, across **both** halves — a public inline function in `Foo.h` sits in the same table as the functions in `Foo.cpp` |
-| Private items | **no row at all**. They carry a `PIF_…` id inside the tool, never printed: not here, not on a diagram, not in a heading (see [Interface ID](#interface-id)) |
-| Hidden functions | removed when the document is written. This works on the exact function, so hiding one of two same-named methods leaves the other in place |
-| Types and macros | never appear here — they belong to the [unit header table](#n14--unit-header-table) |
-| A unit with no source file | no table at all |
-
-**By how it is declared.** "Earned" = for a function, a caller in another unit or an address in a pointer
-table; for a global, a function in another unit that reads or writes it — see
-[Public vs. private](#public-vs-private). The access label makes no difference.
-
-| Declared under | Function / method | Global variable |
-|---|---|---|
-| `public:`, `protected:`, `private:`, or no label — in a `class` or a `struct` | row, if earned | row, if earned |
-| `PUBLIC`, `PROTECTED`, `PRIVATE`, or no marking — at file scope | row, if earned | row, if earned |
-| file scope, `static` | row, if earned | no row — nothing outside its file can use it |
-| `extern` — a declaration, no definition | n/a | **no row** — the defining unit publishes it |
-
-A `static` function or variable is left out without any special rule: every user is necessarily in its own
-unit, so it never earns a row.
-
-**A declaration is not an interface.** `extern const OpsFn g_opsTable[];` in `OpsClient.cpp` is a promise
-that the storage exists somewhere else. OpsClient owns nothing and only reads someone else's table, so
-publishing it as OpsClient's interface states a relationship that runs the other way. The unit that
-**defines** the variable publishes it; every other unit shows the `extern` line in its
-[unit header table](#n14--unit-header-table) instead, where it is explained without being claimed.
-
-**Order**
-
-| | |
-|---|---|
-| 1 | rows are collected functions first (by line number), then globals (by line number) |
-| 2 | then sorted by the **number at the end of the interface ID**, compared as a number, so `_99` comes before `_100`. Sorting by line number would go wrong as soon as a unit spans `.cpp` and `.h`, because the two files have their own line numbers |
-| 3 | ids are given out functions first and globals second, so that grouping survives the sort: all functions, then all globals, each in id order. A row with no readable number sorts last |
-
-The result: the ID column always reads `01, 02, 03…` with no gaps, and the order of the table is the
-numbering itself.
-
-#### Column 1 — Interface ID
-
-```
-IF_<LAYER>_<GROUP>_<UNIT>_<NN>          public   — this column
-PIF_<LAYER>_<GROUP>_<UNIT>_<NN>         private  — internal only, never printed anywhere
-```
-
-| | |
-|---|---|
-| The parts | each name is put in capitals and everything that is not a letter is removed: `Sample Core` → `SAMPLECORE`, `Ftl_Map` → `FTLMAP`. The **layer** part keeps digits as well (`Layer1` → `LAYER1`); the group and unit parts do not |
-| If there is no layer | a component that belongs to no layer uses the **project name** in that slot |
-| If there is no group | the group part is left out completely, giving `IF_<LAYER>_<UNIT>_<NN>` |
-| The unit part | the file name without its extension, not the folder path |
-| `<NN>` | a two-digit number counted **per unit**, not per file. That is what keeps `Foo.h` and `Foo.cpp` on one list instead of both starting again at `01` and clashing |
-| Numbering order | inside a unit: functions first (by file name, then line, which puts `.cpp` before `.h`), then globals the same way. So adding public functions in the header adds numbers at the end instead of renumbering the ones already in use |
-| Public and private | counted separately inside the tool, so `IF_…_01` and `PIF_…_01` can both exist, and the published `01, 02, 03…` never skips a number where a private function sits in the source |
-
-**⚠ To confirm:** the shortening rule. It is repeatable but it loses information: `Map` and `Map2` both
-give `MAP`, and `Sample Core` gives `SAMPLECORE`. If the client wants fixed-width codes, or an agreed list
-of component codes, this is the one place to decide it.
-
-#### Column 2 — Interface Name
-
-| Row | Shows |
-|---|---|
-| Function | the short name with its class in front — `MapCache::insert` for a method, `FtlLookup` for a plain function. The namespace is **dropped**; the class is kept because it is the only thing that tells two same-named methods in one unit apart |
-| Function, no class recorded | the plain short name |
-| Global | the short name — everything after the last `::` |
-
-The class comes from what the parser recorded, not from splitting the full name, which cannot be split back
-into "namespace" and "class" reliably. Inside the tool a separate short name is kept for lookups (flowchart
-file names, behaviour rows), so changing what this column shows does not break them.
-
-#### Column 3 — Information
-
-| | |
-|---|---|
-| Content | one line describing the function or global, or `-` when there is none |
-| Source | the LLM only. With descriptions turned off, **every** Information cell is `-`, and the rest of the document is unaffected — no other column depends on this one |
-| How it is written | from the item's own source, the descriptions of what it calls, and a map of the repository; improved by a second pass that adds the callers' context, and by a review pass for longer functions. Answers are cached, so a function that has not changed is not asked about again |
-| Globals | described separately, from the declaration and the code around it |
-
-**⚠ To confirm:** whether the text in this column is part of what the client checks, or whether `-` is
-acceptable for V1.
-
-#### Column 4 — Data Type
-
-**Function rows** — two lines:
-
-```
-<type> <name>; <type> <name>; …
-return: <type>
-```
-
-| | |
-|---|---|
-| Parameters | one entry per parameter, **in the order they are declared**, separated by `; `. Each entry is `type name`; if the parameter has no recorded name, only the type is shown |
-| No parameters | the cell reads `VOID`, not an empty cell |
-| The `return:` line | added **only when a return type was recorded**. A `void` return is shown as `VOID`, to match the no-parameter case |
-| Qualifiers | `const`, `volatile`, `*` and `&` are kept exactly as written in the source |
-| **Global rows** | the declared type, as written |
-
-#### Column 5 — Data Range
-
-Lines up with Column 4 line for line, so the *n*-th range belongs to the *n*-th type:
-
-```
-<range>; <range>; …
-return: <range>
-```
-
-| | |
-|---|---|
-| Parameters | one range per parameter, in the same order, separated by `; ` |
-| No parameters | the whole cell is `NA` |
-| The `return:` line | the return type's range, or `NA` for `void` and for anything that could not be worked out |
-| **Global rows** | the range of the declared type |
-| Looked up | **by type name** in the shared data dictionary, using the rules in [Data Range](#data-range). Never worked out per call, and never fixed onto the parameter while parsing — that is what lets a client-supplied CSV override them later |
-| Typedefs | followed to the type they stand for, up to 10 steps, so `Lba_t → uint32_t` gives `0-0xFFFFFFFF` |
-| `NA` on purpose | structs, unions, pointers and floats — not by failure |
-| Coverage | printed every run — `data ranges: 64/65 resolved, 1 NA (int[6] x1)` — naming the types that came back `NA`. Exactly the list a client-supplied CSV would need to cover |
-
-#### Column 6 — Direction(In/Out)
-
-**Function rows** — the first rule that matches wins:
-
-| # | Rule | Result | Notes |
-|---|---|---|---|
-| 1 | the name contains the whole word `set` | **In** | checked before `get`: writing wins |
-| 1 | the name contains the whole word `get` | **Out** | |
-| 2 | it has a return type that is not `void` | **Out** | `void *` counts as a value |
-| 3 | it writes a global, itself **or** through a function it calls | **In** | |
-| 3 | it reads a global and writes none | **Out** | |
-| 3 | it touches no global | **Out** | a pure function |
-
-| | |
-|---|---|
-| Whole words, not letters | the name is split into words across `camelCase` and `snake_case`. So `SetX`, `setX`, `Module_SetX`, `SET_X` and `coreSetResult` all match, while `Setup`, `Settings`, `Setter`, `Reset`, `offset` and `target` do not |
-| Rule 3 follows the call chain | before direction is decided, every function's global reads and writes are extended with everything the functions it calls read and write, all the way down. So a function that changes state only through a helper is `In`, not `Out` |
-| Static members are globals | a class's `static` data member counts for rule 3 however it is written: `Foo::s_x`, a bare `s_x` inside the class, or through an object — `this->s_x`, `obj.s_x`, `p->s_x`. Its access (`public`, `protected`, `private`) makes no difference here. The object used to reach it is neither read nor written |
-| Each decision is recorded in words | `In: function name 'FtlSetEntry' contains 'Set' (writes/updates state).`, `Out: returns a value (int).`, `In: writes global(s) gState (via cacheFlush).` Any row can be checked without reading the code. This text is not printed in the document today |
-| **Global rows** | always `In/Out` — a global can be read and written, so it is both |
-
-**⚠ To confirm:** rule 1 also matches names like `isSet` or `hasGet`. A list of exceptions is easy to add
-if the client wants one.
-
-**⚠ To confirm:** a function that returns a value **and** writes a global is `Out`, because rule 2 is
-checked before rule 3 — `int bump() { s_count++; return s_count; }` reads `Out: returns a value (int).`
-Letting a write decide first would turn every status-returning function that changes state into `In`.
-
-#### Column 7 — Source/Destination
-
-**Function rows** list **the callers only**:
-
-| | |
-|---|---|
-| Listed | every **other** unit that calls this function, written `Component/Unit`, in A-Z order, separated by `, ` |
-| Left out | the function's **own unit**. Units in the same component and the same group **are** included, so this cell matches the [unit diagram](#n13--unit-architecture-diagram) |
-| Published through a pointer table | the **unit that registers it** is named instead — no function calls it by name, and otherwise the cell would read `-` for a real relationship |
-| Nothing qualifies | `-` |
-| Not printed | the list of units this function *calls*. It is worked out and kept in the intermediate data, but each relationship between two units is written down once, on the side that provides the function, and this function's calls appear in those other units' rows |
-| **Global rows** | the unit's own path, `Component/Unit` |
-
-**⚠ Two things to confirm here:**
-1. **Callers only.** This is the "write each relationship down once, on the provider's side" reading, and
-   it is the biggest interpretation choice in this table.
-2. **How the component name is written.** The layer prefix is removed, so the cell reads
-   `Sample-Core/Core`, not `Layer1.Sample-Core/Core`. The layer is stated once at the front of the
-   document, so repeating it in every cell only adds noise. One small difference remains: this cell keeps
-   the hyphens (`Sample-Core`), while section headings turn them back into spaces (`Sample Core`).
-
-#### Column 8 — Interface Type
-
-One of exactly two values: `Function` or `Global Variable`. It comes from what the row *is*, so the table
-can be filtered on it.
-
-### N.1.6 — Per-function flowchart entry
-
-One heading, `N.1.u.k <Unit>-<Function>`, per public function of the unit, the function named as in the
-interface table (see [Names](#names): overloads carry their parameter types). Globals get no entry. Each
-heading holds a table of five rows:
-
-| Row | What it holds |
-|---|---|
-| **Requirements** | the function's description (or its name, if it has none), then the flowchart picture(s), each with the signature it belongs to above it |
-| **Risk** | `Medium` — fixed |
-| **Capacity(Density)** | `Common` — fixed |
-| **Input Name** | worked out, see below |
-| **Output Name** | worked out, see below |
-
-#### Which flowcharts appear under the entry
-
-The function's own flowchart first, then one for each **private** function it calls directly. A private
-function has no heading of its own, so this is where its logic is published. Each private function is
-drawn at most once per unit, under the first public function that calls it. Hidden ones are skipped. Every
-picture has its signature above it, so a stack of flowcharts in one cell stays readable. Each overload has
-a flowchart of its own.
-
-#### How a flowchart is built
-
-The shape comes from the code; only the wording comes from the LLM.
-
-1. libclang reads the function and builds its control-flow graph. The node kinds are `START`, `END`,
-   `ACTION`, `DECISION`, `LOOP_HEAD`, `SWITCH_HEAD`, `CASE`, `DEFAULT_CASE`, `RETURN`, `BREAK`,
-   `CONTINUE`, `TRY_HEAD` and `CATCH`. Arrows carry Yes/No labels.
-
-   **A header that cannot be found does not remove a branch.** The code is compiled with the target's
-   own compiler and read here with libclang, so a toolchain header (`stdio.h`) or a project header
-   outside the include paths may be missing. The parse goes on past it, and a statement that uses one of
-   its names — `printf(...)`, `p == NULL` — stays in the graph as written. A `case X:` whose `X` is an
-   enum value or a macro of the missing header is read back from the source text, with the statements
-   that follow it. What is still lost: a `#if` / `#ifdef` branch that depends on a macro of the missing
-   header, because the preprocessor never sees it defined. Phase 1's summary in the run's log names every
-   header not found, with how many files asked for it — the folders to add.
-2. Each node is given extra context: the calls it makes, the comments in it, and what the enums, macros
-   and typedefs it uses actually mean.
-3. A local LLM writes a short label for each node, with context about callers and callees. A second pass
-   makes the wording consistent across the whole function. After that, a fixed step **puts the call names
-   back**: every call in a node is written as `Name()`, and any call the label dropped is added as
-   `Calls: X()`. A call can never be lost to rewording.
-4. The labelled graph is drawn with Graphviz: an oval for Start and End, a diamond for a decision, a box
-   for everything else. A separate step finds the loops and (a) pushes `Return` and `End` **below** the
-   loop body and (b) routes the loop's back-arrow and its exit in separate lanes. That is what keeps
-   **Return/End at the bottom and stops lines crossing** — both asked for by the client.
-5. The picture is placed 4 inches wide. A flowchart too tall for one Word page is **split across pages**
-   at blank rows, rather than shrunk until it cannot be read.
-
-#### Input Name / Output Name
-
-Worked out from the code first. The LLM is asked only when the result was a placeholder.
-
-**Input Name** — the first of these that gives a name:
-1. the first parameter's name;
-2. the name of the first global it **writes**;
-3. the name of the first global it **reads**;
-4. `<Function> input` (the placeholder).
-
-**Output Name** — the first of these that gives a name:
-1. a plain name taken from the `return` line (the first word, once brackets and operators are stripped off,
-   and only if it starts like a name);
-2. the return **type**, if it is not one of `void`, `int`, `bool`, `float`, `double`, `char`, `short`,
-   `long`;
-3. the name of the first global it **writes**;
-4. the name of the first global it **reads**;
-5. `<Function> result` (the placeholder).
-
-If the function returns `TRUE` or `FALSE`, the name becomes `TRUE/FALSE`, so it does not report whichever
-branch happened to be read first.
-
-**Tidying up**, applied to whatever came out: a leading `g_`, `s_` or `t_` is removed, underscores become
-spaces, and the first letter is capitalised. A name of 2 characters or fewer (`i`, `x`) is thrown away as
-meaningless, and the next step in the list is used instead.
-
-The global lists used above include everything reached through the functions it calls, so state the
-function touches only through a helper can still name the label. The LLM is asked for a better name **only**
-when the result was a placeholder, and it is given the source, the parameters, the globals read and
-written, the return type and the return line.
-
-**⚠ To confirm:** Risk and Capacity(Density) are fixed values today — see
-[Fixed and placeholder values](#fixed-and-placeholder-values).
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-01</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Which rows</b></td><td>1. One table per unit that has a source file; one row per public function and public global of the unit, from its <code>.cpp</code> and its <code>.h</code></td></tr>
+<tr><td>2. Public means another unit uses it: a function another unit calls, or whose address sits in a table of function pointers outside any function; a global another unit reads or writes</td></tr>
+<tr><td>3. No marking decides: <code>PUBLIC</code>, <code>PRIVATE</code>, <code>PROTECTED</code>, <code>public:</code>, <code>private:</code> are ignored</td></tr>
+<tr><td>4. No row: a file-scope <code>static</code> variable; an <code>extern</code> declaration (the defining unit's row stands for it); types and macros (they are in the unit header)</td></tr>
+<tr><td>5. An entry point nothing calls by name (an ISR, a callback) is private unless a table holds its address; a run of one layer cannot see the layer above calling in</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-02</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Order and Interface ID</b></td><td>1. Functions first, then globals; the ID column counts <code>01</code>, <code>02</code>, <code>03</code> … with no gap</td></tr>
+<tr><td>2. <code>IF_&lt;LAYER&gt;_&lt;GROUP&gt;_&lt;UNIT&gt;_&lt;NN&gt;</code>: each part is the name in capitals, letters only; the layer keeps its digits (<code>Flash Core</code> → <code>FLASHCORE</code>)</td></tr>
+<tr><td>3. <code>&lt;NN&gt;</code> counts per unit, <code>.cpp</code> and <code>.h</code> together: functions by file and line, then globals</td></tr>
+<tr><td>4. <code>Map</code> and <code>Map2</code> both give <code>MAP</code>: they share one count, so no ID is printed twice (a change is planned)</td></tr>
+<tr><td>5. An ID is a position: when a function becomes public, the later IDs of its unit move up by one</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-03</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Interface Name and Information</b></td><td>1. Function: its short name with its class in front, without the namespace (<code>MapCache::insert</code>); global: the name after the last <code>::</code></td></tr>
+<tr><td>2. Two functions of one unit never print alike: an overload adds its parameter types (<code>Read(int)</code>, <code>Read(int, int)</code>), one name in two namespaces adds its scope</td></tr>
+<tr><td>3. Information: one line written by the LLM describing the function or global; <code>-</code> without the LLM</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-04</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Data Type and Data Range</b></td><td>1. Function: its parameters as <code>type name; type name; …</code>, as written, then <code>return: &lt;type&gt;</code>; no parameters: <code>VOID</code>; a <code>void</code> return: <code>return: VOID</code>. Global: its declared type</td></tr>
+<tr><td>2. Data Range: one range per Data Type line, in the same order, then <code>return: range</code>; <code>NA</code> for <code>void</code> and for no parameters</td></tr>
+<tr><td>3. A range is looked up by type name, in this layer's data dictionary (see Reference); a typedef follows the type it stands for (<code>Lba_t</code> → <code>uint32_t</code> → <code>0-0xFFFFFFFF</code>)</td></tr>
+<tr><td>4. Structs, unions, pointers and floats are <code>NA</code> on purpose</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-05</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Direction(In/Out): the first that matches</b></td><td>1. The name holds the whole word <code>set</code> → <code>In</code>, even when it returns a value; else the whole word <code>get</code> → <code>Out</code> (camelCase and snake_case are split into words; <code>isSet</code> matches too)</td></tr>
+<tr><td>2. Else a return value (not <code>void</code>) → <code>Out</code>, even when it also writes a global</td></tr>
+<tr><td>3. Else: writes a global, itself or through a function it calls → <code>In</code>; otherwise <code>Out</code></td></tr>
+<tr><td>4. A global row: always <code>In/Out</code></td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-06</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Source/Destination and Interface Type</b></td><td>1. Function: every other unit that calls it (callers only, not the units it calls), as <code>Component/Unit</code>, A–Z; the same as its arrows in the unit diagram (SWE3-SD-03)</td></tr>
+<tr><td>2. Published only through a pointer table: the unit that registers it; nobody: <code>-</code></td></tr>
+<tr><td>3. Written without the layer, hyphens kept: <code>Flash-Core/Map</code>, where headings show spaces</td></tr>
+<tr><td>4. Global: the unit's own <code>Component/Unit</code></td></tr>
+<tr><td>5. Interface Type: <code>Function</code> or <code>Global Variable</code></td></tr>
+</table>
 
 ---
 
-## N.2 Dynamic Behaviour
+## FD — Flow diagram
 
-One entry per **interaction**: a call coming into this component from outside, and what that call does
-across the component's units.
+2.1.1.3 onwards: one entry per public function, a table and its flowchart(s).
 
-### Which interactions get an entry
-
-All five conditions must be true. This is the rule most worth agreeing, because it is why this section is
-short on purpose:
-
-1. The function is **public**.
-2. Following its calls **inside its own component** reaches **more than one unit**. A function that only
-   calls into its own unit is not an interaction.
-3. It is called by at least one function in a **different component**. Exactly **one** entry is produced
-   per function, using the **first** such caller.
-4. The traced calls contain at least one arrow **between two units of the component**. A picture that is
-   just `outside → function → return` is dropped.
-5. The function is not hidden.
-
-### The diagram
-
-A sequence diagram with one participant per unit, grouped and coloured by component.
-
-- The outside caller enters the target function.
-- Calls are followed forward from the target, but only **within the target's own component**. Calls that
-  leave the component, including calls back into the caller's component, are not drawn.
-- **Calls within a single unit are skipped.** The chain is joined up across the skip, so a later
-  cross-unit call is attached to the nearest function that is actually on the picture. No arrow ever
-  starts from a function the reader cannot see.
-- Returns are drawn back along the same chain.
-
-### The description table
-
-The same five rows as a flowchart entry:
-
-| Row | What it holds |
-|---|---|
-| **Requirements** | `Behavior Description`, then one bullet per arrow, in the order of the diagram |
-| **Risk** | `Medium` — fixed |
-| **Capacity** | `Common` — fixed |
-| **Input Name** | the function's Input Name |
-| **Output Name** | the function's Output Name |
-
-A call bullet reads `A calls B to <reason>` with the LLM on, and `A calls B` with it off. A return bullet
-is always `B returns to A`. The heading is `<Unit> - <Function> (<CallerUnit> - <CallerFunction>)`.
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="6" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-01</b></td><td rowspan="6" valign="middle" style="vertical-align:middle"><b>The entry</b></td><td>1. One heading <code>&lt;Unit&gt;-&lt;Function&gt;</code> per public function, named as in the interface table; each overload its own; globals get none</td></tr>
+<tr><td>2. Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name</td></tr>
+<tr><td>3. Requirements: the function's description, then its flowchart(s), each with its signature above it</td></tr>
+<tr><td>4. After its own flowchart, one for each private function it calls directly, drawn once per unit, under the first public function that calls it</td></tr>
+<tr><td>5. A private function called only by another private function has no flowchart</td></tr>
+<tr><td>6. Risk <code>Medium</code>, Capacity(Density) <code>Common</code> (SWE3-FX-01)</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-02</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>The flowchart</b></td><td>1. The shape comes from the code: an oval for Start and End, a diamond for a decision with Yes/No, a box for everything else</td></tr>
+<tr><td>2. The LLM writes only the box labels; without the LLM a box shows its own source text</td></tr>
+<tr><td>3. Every call in a box is written <code>Name()</code>; a call the label dropped is added as <code>Calls: X()</code></td></tr>
+<tr><td>4. A header that cannot be found removes no branch, except an <code>#if</code> on one of its macros</td></tr>
+<tr><td>5. Too tall for a page: split across pages, not shrunk</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-03</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Input Name and Output Name</b></td><td>1. Input Name: the first parameter's name; with no named parameter, the first global it writes, else reads; nothing: <code>&lt;Function&gt; input</code></td></tr>
+<tr><td>2. Output Name: a plain name on the <code>return</code> line; else the return type, unless a basic one (<code>int</code>, <code>bool</code>, …); else the first global it writes, then reads; else <code>&lt;Function&gt; result</code>. <code>TRUE</code>/<code>FALSE</code> returns give <code>TRUE/FALSE</code></td></tr>
+<tr><td>3. Tidied: <code>g_</code>, <code>s_</code>, <code>t_</code> dropped, underscores to spaces, a capital first (<code>g_entry_count</code> → <code>Entry count</code>)</td></tr>
+<tr><td>4. Only the stand-in names, <code>&lt;Function&gt; input</code> and <code>&lt;Function&gt; result</code>, are sent to the LLM for a better name</td></tr>
+</table>
 
 ---
 
-## Code Metrics and Appendix
+## DB — Dynamic behaviour
 
-`N Code Metrics, Coding Rule, Test Coverage` and `Appendix A. Design Guideline` are written as headings
-with placeholder text. Neither is worked out from the code today.
+2.2 Dynamic Behaviour: one entry per call coming into the component from outside, and what it does across the component's units.
 
-**⚠ To confirm:** whether metrics such as complexity, lines of code and coverage should be produced here,
-or come from the client's own tools. The control-flow graphs behind the flowcharts already hold what a
-complexity metric needs.
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-01</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Which functions get an entry</b></td><td>1. A public function that a function in another component calls, whose calls reach another unit of its own component; not hidden</td></tr>
+<tr><td>2. One entry per function, for its first caller from another component</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-02</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Heading and sequence diagram</b></td><td>1. Heading: <code>&lt;Unit&gt; - &lt;Function&gt; (&lt;CallerUnit&gt; - &lt;CallerFunction&gt;)</code></td></tr>
+<tr><td>2. One participant per unit, grouped and coloured by component; the outside caller enters the function</td></tr>
+<tr><td>3. Calls are followed only inside the function's component</td></tr>
+<tr><td>4. Calls within one unit are skipped and the chain joined across them</td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-03</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>The table</b></td><td>1. Requirements: <code>Behavior Description</code>, then one bullet per arrow, in diagram order; Risk and Capacity fixed (SWE3-FX-01); Input and Output Name as the function's (SWE3-FD-03)</td></tr>
+<tr><td>2. A call bullet: <code>A calls B to &lt;reason&gt;</code> with the LLM (20 words at most), <code>A calls B</code> without; a return bullet: <code>B returns to A</code></td></tr>
+</table>
 
 ---
 
-## Fixed and placeholder values
+## FX — Fixed values, Code Metrics, Appendix
 
-Everything the document states without working it out from the code, in one place. This is the agreement
-list.
+The values the document states without working them out from the code, and its last two chapters.
 
-| Field | Value today | Why | What is needed |
-|---|---|---|---|
-| Risk | `Medium` | there is no risk information to read | a rule from the client, or a source |
-| Capacity / Capacity(Density) | `Common` | the same | what the scale is meant to mean |
-| Note (component/unit table) | `N/A` | the column's purpose is not defined | what belongs there |
-| Requirements row | the description, or the behaviour bullets | there is no requirements source (SWE.1 / Polarion) yet | requirement ids to link to |
-| Introduction text | from the settings | client boilerplate | the final wording |
-| Code Metrics, Appendix A | placeholder text | not produced from the code | a source, or a decision to drop them |
-| Information / Description cells | `-` or `N/A` when the LLM is off | the LLM is optional | whether this text is part of the acceptance check |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FX-01</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>Fixed values</b></td><td>1. Risk, in the function and behaviour tables: <code>Medium</code>, an agreed fixed value</td></tr>
+<tr><td>2. Capacity, Capacity(Density): <code>Common</code>, an agreed fixed value</td></tr>
+<tr><td>3. Note, in the Component/Unit table: <code>N/A</code> for now</td></tr>
+<tr><td>4. Requirements row: the description, or the behaviour bullets, for now; links to requirement IDs (SWE.1 / Polarion) come later</td></tr>
+<tr><td>5. Introduction text: from the settings; its final wording comes later</td></tr>
+<tr><td>6. <code>Code Metrics, Coding Rule, Test Coverage</code> and <code>Appendix A Design Guideline</code>: headings with a standard text for now</td></tr>
+<tr><td>7. LLM-written cells with the LLM off: <code>-</code> or <code>N/A</code></td></tr>
+</table>
 
 ---
 
 ## Worked example
 
-A component with two units, in a flash-storage layer. `FtlMap` is the unit being documented. `FtlCache` is
-another unit of the same component. `HilQueue` is in a different component.
+A component `FtlCore` with two units, in layer `Ftl`, group `Map`. `FtlMap` is the unit documented;
+`FtlCache` is another unit of the component; `HilQueue` is in another component, `HilCore`.
 
 ```c
-// ---- layer Ftl · group Map · component FtlCore · unit FtlMap.h ----
+// ---- unit FtlMap.h ----
 #define MAP_ENTRY_MAX  (1024)            // used by FtlMap.cpp outside any function
 typedef uint32_t Lba_t;
 
 // ---- unit FtlMap.cpp ----
-uint16_t        gEntryCount = 64;        // read by another unit -> published
-PRIVATE uint8_t gErrCount   = 0;         // used only in this unit -> not published
+uint16_t        gEntryCount = 64;        // read by FtlCache -> public
+PRIVATE uint8_t gErrCount   = 0;         // used only in this unit -> not public
 
-PRIVATE bool isValidLba(Lba_t lba);      // called only in this unit -> no table row; flowchart shown under its caller
-PUBLIC  int  FtlSetEntry(Lba_t lba, uint32_t ppn);   // calls FtlCacheInsert in unit FtlCache
-PUBLIC  int  FtlGetPpn(Lba_t lba, uint32_t* ppnOut);
+PRIVATE bool isValidLba(Lba_t lba);      // called only in this unit -> no row; flowchart under its caller
+PUBLIC  int  FtlSetEntry(Lba_t lba, uint32_t ppn);   // called by HilQueue; calls isValidLba, FtlCacheInsert
+PUBLIC  int  FtlGetPpn(Lba_t lba, uint32_t* ppnOut); // called by FtlCache
 ```
-
-`HilQueue::hilFlush` calls `FtlSetEntry`, and `FtlSetEntry` calls `FtlCacheInsert` in unit `FtlCache`.
 
 ### 2.1.1.1 unit header (FtlMap)
 
-| global variables / typedef / enum / define | information |
+| declaration | information |
 |---|---|
 | `#define MAP_ENTRY_MAX (1024)` | `(1024)` |
+| `PRIVATE uint8_t gErrCount = 0;` | `0` |
 | `typedef uint32_t Lba_t;` | `N/A` |
 | `uint16_t gEntryCount = 64;` | `64` |
 
-`gErrCount` is missing because it is private. `MAP_ENTRY_MAX` and `Lba_t` come from the unit's own header.
-If they had been in a shared definitions header with no source file, they would appear here only because
-this unit uses them, and in no other unit's table.
+- `gErrCount` is listed though it is private, with its marking; rows are sorted by their text; the
+  functions are in the interface table, not here (SWE3-UH-01).
+- Comments are gone (SWE3-UH-02).
 
 ### 2.1.1.2 unit interface (FtlMap)
 
 | Interface ID | Interface Name | Information | Data Type | Data Range | Direction(In/Out) | Source/Destination | Interface Type |
 |---|---|---|---|---|---|---|---|
 | `IF_FTL_MAP_FTLMAP_01` | `FtlSetEntry` | Stores a mapping entry for a logical block. | `Lba_t lba; uint32_t ppn`<br>`return: int` | `0-0xFFFFFFFF; 0-0xFFFFFFFF`<br>`return: -0x80000000-0x7FFFFFFF` | `In` | `HilCore/HilQueue` | Function |
-| `IF_FTL_MAP_FTLMAP_02` | `FtlGetPpn` | Returns the physical page for a logical block. | `Lba_t lba; uint32_t* ppnOut`<br>`return: int` | `0-0xFFFFFFFF; NA`<br>`return: -0x80000000-0x7FFFFFFF` | `Out` | `-` | Function |
+| `IF_FTL_MAP_FTLMAP_02` | `FtlGetPpn` | Returns the physical page for a logical block. | `Lba_t lba; uint32_t* ppnOut`<br>`return: int` | `0-0xFFFFFFFF; NA`<br>`return: -0x80000000-0x7FFFFFFF` | `Out` | `FtlCore/FtlCache` | Function |
 | `IF_FTL_MAP_FTLMAP_03` | `gEntryCount` | Number of populated map entries. | `uint16_t` | `0-0xFFFF` | `In/Out` | `FtlCore/FtlMap` | Global Variable |
 
-Reading the rules off the rows:
-- `FtlSetEntry` is `In` because of **rule 1** (the whole word `Set`), even though it returns `int`. The
-  name is checked before the return value.
-- `FtlGetPpn` is `Out` because of **rule 1** (`Get`). Rule 2 would have given the same answer.
-- `Lba_t` gives `0-0xFFFFFFFF` by following the typedef. `uint32_t*` is a pointer, so `NA`.
-- `FtlGetPpn` shows `-` because no *other* unit calls it. This column lists callers only.
-- Source/Destination drops the layer, so it reads `HilCore/HilQueue` and not `Hil.HilCore/HilQueue` —
-  see [column 7](#column-7--sourcedestination).
-- `isValidLba` has no row. Its flowchart appears under whichever public function calls it, labelled
-  `bool isValidLba(Lba_t lba)`. Its internal id is never printed.
+- `FtlSetEntry` and `FtlGetPpn` have rows because another unit calls them; `PUBLIC` did not decide it.
+  `isValidLba` and `gErrCount` have none (SWE3-UI-01).
+- `FtlSetEntry` is `In` by SWE3-UI-05 (the word `Set`), though it returns `int`: the name is checked first.
+  `FtlGetPpn` is `Out` by SWE3-UI-05 (`Get`).
+- Functions take `_01`, `_02`, the global `_03` (SWE3-UI-02).
+- `Lba_t` gives `0-0xFFFFFFFF` through the typedef; `uint32_t*` is a pointer, so `NA` (SWE3-UI-04).
+- Source/Destination names the callers, without the layer (SWE3-UI-06).
 
 ### 2.1.1.3 FtlMap-FtlSetEntry
 
 | | |
 |---|---|
-| Requirements | Stores a mapping entry for a logical block.<br>`int FtlSetEntry(Lba_t lba, uint32_t ppn)` + flowchart<br>`bool isValidLba(Lba_t lba)` + flowchart *(private function it calls)* |
+| Requirements | Stores a mapping entry for a logical block.<br>`int FtlSetEntry(Lba_t lba, uint32_t ppn)` + flowchart<br>`bool isValidLba(Lba_t lba)` + flowchart *(the private function it calls, SWE3-FD-01)* |
 | Risk | Medium |
 | Capacity(Density) | Common |
 | Input Name | `Lba` |
 | Output Name | `Entry count` |
 
-`Input Name` is the first parameter, tidied up. `Output Name` falls through to the first global the
-function writes, because the return line is not a plain name.
+Input Name is the first parameter, tidied. Output Name falls through to the first global the function
+writes, `gEntryCount`, because the return line is not a plain name and `int` is skipped (SWE3-FD-03).
 
 ### 2.2.1 FtlMap - FtlSetEntry (HilQueue - hilFlush)
 
-It qualifies: public ✓, its calls reach `FtlMap` and `FtlCache` ✓, a caller in `HilCore` ✓, and there is a
-cross-unit arrow inside `FtlCore` ✓.
+It qualifies (SWE3-DB-01): public ✓, its calls reach `FtlMap` and `FtlCache` ✓, a caller in `HilCore` ✓, a
+cross-unit arrow inside `FtlCore` ✓. `FtlGetPpn` does not: its only caller is in its own component.
 
 | | |
 |---|---|
@@ -886,23 +302,75 @@ cross-unit arrow inside `FtlCore` ✓.
 | Input Name | `Lba` |
 | Output Name | `Entry count` |
 
-The call to `isValidLba` is not shown. It is inside the same unit, so it is skipped and the chain is
-joined straight to the `FtlCache` arrow.
+The call to `isValidLba` is not drawn: it stays inside `FtlMap`, so it is skipped and the chain joins
+straight to the `FtlCache` arrow (SWE3-DB-02).
 
 ---
 
-## Open items
+## Planned changes
 
-- [ ] The way names are shortened for interface ids (capital letters only) — confirm or replace.
-- [ ] Direction rule 1 also matches names like `isSet` — accept it, or agree a list of exceptions.
-- [ ] Direction: a function that returns a value and also writes a global is `Out` (rule 2 before rule 3) —
-      confirm, or let the write decide first.
-- [ ] Component names still differ slightly: Source/Destination keeps hyphens (`Sample-Core/Core`) while
-      headings show spaces (`Sample Core`). Confirm this is acceptable.
-- [ ] Source/Destination lists callers only — confirm this is the intended reading.
-- [ ] Risk, Capacity and Note — real values, or agreed constants.
-- [ ] Requirements traceability: there is nothing to link to until SWE.1 / Polarion is available.
-- [ ] Code Metrics section — produce it here, or take it from the client's tools.
-- [ ] Macro values are shown as written, not worked out (`(1<<6)`, not `64`) — confirm this is acceptable.
-- [ ] Two source files with the same name in one component merge into one unit — confirm this does not
-      happen in the client's code.
+Agreed, not built yet. Until then, the rule says what the document does today.
+
+| Rule | Today | Planned |
+|---|---|---|
+| SWE3-DOC-04 | a `.c` file is not read | read, as C |
+| SWE3-UH-01 | a unit's own symbol is listed whether or not it is used | listed only when a unit of its own component uses it; another component's use does not count |
+| SWE3-UI-02 | `Map` and `Map2` share the ID part `MAP` | two units never share an ID part |
+
+---
+
+## Reference
+
+**Words used in the rules**
+
+| Word | Means |
+|---|---|
+| public | used from another unit: a function another unit calls, a global another unit reads or writes (SWE3-UI-01) |
+| private | not public: no row in the interface table, no heading |
+| interface | a public function or global: one row of the interface table |
+| entry | a public function's sub-section, its table and flowchart(s) (SWE3-FD-01) |
+| data dictionary | the types of a layer and their value ranges, from the code and the project settings |
+| the settings | the project's configuration: layers, groups, components, macros, include paths, texts |
+
+**Layer, group, component, unit** (the examples are the worked example's)
+
+| Level | What it is | Example |
+|---|---|---|
+| Layer | a top folder of the code: one layer of the software | `Ftl` |
+| Group | a named set of components inside a layer | `Map` |
+| Component | a named set of folders inside a group; one top-level section of the document | `FtlCore` |
+| Unit | one source file and the header of the same name | `FtlMap` = `FtlMap.cpp` + `FtlMap.h` |
+
+Layers, groups and components are set in the project settings; a unit comes from its file name.
+
+**The texts the LLM writes**
+
+| Text | Without the LLM | With the LLM |
+|---|---|---|
+| Interface **Information** (SWE3-UI-03) | `-` | one line describing the function or global |
+| Component/Unit **Description** (SWE3-SD-02) | its interface rows' descriptions joined, cut at 120 characters | one line summarising the unit |
+| Unit header **information** of a struct, class or union, or a typedef of one (SWE3-UH-03) | `Structure for …`, `Class for …`, `Union for …`, from the type name | one line from the type name **and** its fields |
+| Flowchart box labels (SWE3-FD-02) | the box's own source text | a short label per box |
+| Behaviour bullets (SWE3-DB-03) | `A calls B` | `A calls B to …` (20 words at most) |
+| Input / Output Name (SWE3-FD-03) | worked out from the code | asked for only when the worked-out name is a stand-in (`<Function> input`) |
+
+**What changes the document**
+
+| Input | What it changes |
+|---|---|
+| the C++ source | everything below follows from it |
+| layers, groups, components (folders) | which documents, sections and units there are; the IDs (SWE3-DOC-01, SWE3-DOC-03, SWE3-UI-02) |
+| macros, per layer | which `#if` branches count (SWE3-SD-01, SWE3-FD-02) |
+| include paths | which headers are found (SWE3-FD-02) |
+| the data dictionary | Data Range (SWE3-UI-04) |
+| file name patterns to skip | which files are read (SWE3-DOC-04) |
+| the Introduction texts, the abbreviations file | 1 Introduction (SWE3-DOC-07) |
+| corrections and hidden functions, made in the app | SWE3-DOC-06 |
+| the LLM, on or off | the texts the LLM writes (above) |
+
+---
+
+## Changes
+
+**V1, 2026-11-05:** 28 rules. A rule changes only when the teams agree it. Its ID never changes: a new rule
+takes the next free number of its section, and a removed rule stays in its table, struck through.

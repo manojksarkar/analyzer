@@ -128,6 +128,18 @@ class TestBuildInterfaceTables:
         result = _build_interface_tables(units, {}, {})
         assert "Mod|core" in result
 
+    @pytest.mark.parametrize("file_name", ["core.cc", "Main.CPP", "x.cxx"])
+    def test_a_unit_of_any_source_extension_gets_a_table(self, file_name):
+        # Only a lower-case `.cpp` once did: a `.cc` unit had no table, so no section.
+        units = _make_units(**{"Mod|core": {"name": "core", "fileName": file_name,
+                                            "functionIds": [], "globalVariableIds": []}})
+        assert "Mod|core" in _build_interface_tables(units, {}, {})
+
+    @pytest.mark.parametrize("file_name", ["x.c", "header.h", "Types.H"])
+    def test_a_c_file_or_a_header_gets_no_table(self, file_name):
+        units = {"Mod|x": {"name": "x", "fileName": file_name, "functionIds": [], "globalVariableIds": []}}
+        assert "Mod|x" not in _build_interface_tables(units, {}, {})
+
     def test_unit_names_populated(self):
         units = _make_units()
         result = _build_interface_tables(units, {}, {})
