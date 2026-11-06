@@ -86,20 +86,21 @@ Rules that fall out of this:
   `docs/spec/REVIEW_TRIAGE_SPEC.md`.
 - **SWE3_WIKI's rule ids are stable** — a review's comments are counted by them (BACKLOG S3-12). They are
   fixed from the version the three teams agree (v1); until then the sections are being merged and
-  renumbered. Each section is one HTML table, `ID | Rule | Details`: the ID (`nowrap`, bold) and the
-  rule's bold name merged down its rows (`rowspan`, vertically centred), one row per numbered point; every table `width:100%; table-layout:fixed`, ID 130px, Rule 200px, so all sections line up -- HTML
-  because markdown cannot merge cells. Examples are general: the reviewing teams do not know the sample project or
+  renumbered. Each section is one plain markdown table, `ID | Rule | Details`, one row per numbered point:
+  the rule's first row carries its bold ID and bold name, the rows under it leave both blank (`| | | 2. … |`).
+  Markdown, not HTML (2026-11-06): the team wiki is pasted from the preview, and a plain table pastes with
+  the wiki's default lines; the merged-cell HTML pasted with none, then with double ones. Examples are general: the reviewing teams do not know the sample project or
   our names. Keep rules lean: what a reviewer judges; the rest goes to the
   project context (`project-context/SWE3_RULE_DETAILS.md`, by section). A new rule takes the next free number
   of its section, after the last one; a rule that goes is struck through in place
-  (its ID as `<b><s>SWE3-UH-03</s></b>`, one details row "removed YYYY-MM-DD: why"), never renumbered or
+  (its ID as `**~~SWE3-UH-03~~**`, one details row "removed YYYY-MM-DD: why"), never renumbered or
   reused; the `Rules` column of the code table at the top counts it no more. A ⚠
   point needs an `## Open questions` section (before `## Reference`) naming its rule, and the ⚠ line back in
   the legend at the top (both removed 2026-11-05, when none was left). An agreed change not built yet: the rule
-  says today's behaviour "(a change is planned)", and one row in ; built, the row goes. A
-  change of rules: a line under  (the version). The code table says where each section is in the
+  says today's behaviour "(a change is planned)", and one row in `## Planned changes`; built, the row goes. A
+  change of rules: a line under `## Changes` (the version). The code table says where each section is in the
   document, by the outline's numbers. Readers are the reviewers, the testers, the review-tool team and
-  managers, not only us: plain words, terms in . `tests/unit/test_swe3_wiki_rules.py` checks ids, order and open questions.
+  managers, not only us: plain words, terms in `## Reference`. `tests/unit/test_swe3_wiki_rules.py` checks ids, order and open questions.
   `docs/spec/TEST_INVENTORY.md` lists the tests by the same ids: a new test goes under its rule.
 - **One list of open work.** Every open item — defect, enhancement, a subsystem's forward work — is a row
   in `docs/BACKLOG.md`. There are no subsystem `PLAN.md` files (the ones in `engine/`, `api/` and `web-app/`

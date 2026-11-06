@@ -1,9 +1,8 @@
 """SWE3_WIKI's rule ids stay usable: a review comment names one, so each must lead to one rule.
 
-Each section is one table, `ID | Rule`. A rule `SWE3-<SECTION>-NN` is the row whose ID cell is merged
-down its rows (`<tr><td rowspan="7" …>SWE3-UH-01</td>…`) and the rows under it: its name, then its
-numbered details. A section not rewritten yet has one markdown row per rule (`| SWE3-UI-02 | … |`).
-A review's comments are counted by rule id (BACKLOG S3-12), so an id defined twice, skipped, renumbered
+Each section is one markdown table, `ID | Rule | Details`. A rule `SWE3-<SECTION>-NN` is the row that
+carries its bold ID (`| **SWE3-UH-01** | **What is listed** | 1. … |`) and the rows under it whose ID and
+Rule cells are blank (`| | | 2. … |`): its name, then its numbered details. A review's comments are counted by rule id (BACKLOG S3-12), so an id defined twice, skipped, renumbered
 or named but never defined points a comment at the wrong rule, or at none. Checked here: every id is
 defined once and numbered 01, 02, … in its section; none is written without its `SWE3-`; every rule
 marked ⚠ is in Open questions; and every id named in the wiki, the test inventory or anywhere in the
@@ -23,10 +22,10 @@ INVENTORY = os.path.join(ROOT, "docs", "spec", "TEST_INVENTORY.md")
 #: In document order -- the order of the wiki's sections.
 PREFIXES = ("DOC", "SD", "UH", "UI", "FD", "DB", "FX")
 _ID = r"SWE3-(?:%s)-\d{2}" % "|".join(PREFIXES)
-#: A removed rule stays, struck through (`>SWE3-UH-03<` as `><s>SWE3-UH-03</s><`, `| ~~SWE3-UI-01~~ |`),
-#: so no number is reused.
-_ROW = re.compile(r"^\| (?:~~)?(%s)(?:~~)? \|(.*)$" % _ID)
-_MERGED = re.compile(r'^<tr><td rowspan="\d+"[^>]*>(?:<b>)?(?:<s>)?(%s)(?:</s>)?(?:</b>)?</td>(.*)$' % _ID)
+#: A removed rule stays, struck through (`| **~~SWE3-UI-01~~** |`), so no number is reused.
+_ROW = re.compile(r"^\| (?:\*\*)?(?:~~)?(%s)(?:~~)?(?:\*\*)? \|(.*)$" % _ID)
+#: A further point of the rule above: ID and Rule cells blank.
+_MORE = re.compile(r"^\|\s*\|\s*\|")
 _ANY_ID = re.compile(r"\b%s\b" % _ID)
 #: An id without its `SWE3-` -- `IT-14` -- which a review sheet could not tell from another document's.
 _BARE = re.compile(r"(?<![\w-])(?:%s)-\d{2}\b" % "|".join(PREFIXES))
@@ -54,14 +53,11 @@ def _rules(text):
     whose own tables quote ids without defining them. A ⚠ in a rule's details marks it open."""
     rules, current = [], None
     for line in text[:text.index("## Worked example")].splitlines():
-        row, merged = _ROW.match(line), _MERGED.match(line)
+        row = _ROW.match(line)
         if row:
-            rules.append([row.group(1), row.group(2)])
-            current = None
-        elif merged:
-            current = [merged.group(1), merged.group(2)]
+            current = [row.group(1), row.group(2)]
             rules.append(current)
-        elif current is not None and line.startswith("<tr><td>"):
+        elif current is not None and _MORE.match(line):
             current[1] += line
         else:
             current = None
@@ -75,10 +71,10 @@ def test_every_section_has_rules():
 
 def test_the_code_table_counts_the_rules():
     """The `Rules` column of the code table at the top counts each section's rules; a struck-through
-    one (`<b><s>SWE3-UH-03</s></b>`) is no longer counted."""
+    one (`| **~~SWE3-UH-03~~** |`) is no longer counted."""
     text = _wiki()
-    live = Counter(sec for sec in re.findall(r"<b>SWE3-([A-Z]+)-\d{2}</b></td>",
-                                             text[:text.index("## Worked example")]))
+    live = Counter(re.findall(r"^\| \*\*SWE3-([A-Z]+)-\d{2}\*\* \|",
+                              text[:text.index("## Worked example")], re.M))
     stated = {code: int(n) for code, n in re.findall(r"^\| ([A-Z]+) \|[^\n]*\| (\d+) \|$", text, re.M)
               if code in PREFIXES}
     assert stated == dict(live)

@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-06c | SWE3_WIKI rule tables are plain markdown, one row per point; they paste into the team wiki with its default lines | [16](16-2026-10-30.md) |
 | 2026-11-06b | Review triage: Change dropped; three verdicts, Defect, Gap, As per rule | [16](16-2026-10-30.md) |
 | 2026-11-06 | Review triage: four verdicts (Defect, Gap, Change, As per rule) and one reference per comment: an issue ID counts against, a rule ID does not | [16](16-2026-10-30.md) |
 | 2026-11-05k | SWE3_WIKI for every team: where each section is, plain words, planned changes, inputs, version | [16](16-2026-10-30.md) |
