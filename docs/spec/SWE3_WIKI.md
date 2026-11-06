@@ -46,26 +46,27 @@ N  Code Metrics, Coding Rule, Test Coverage
 Appendix A  Design Guideline
 ```
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-DOC-01** | **One document per component** | 1. File name `software_detailed_design_<component>.docx` |
-| | | 2. Components generated together share one document, each as its own top-level section |
-| **SWE3-DOC-02** | **Outline** | 1. The document follows the outline above |
-| **SWE3-DOC-03** | **What a unit is** | 1. A source file and the header of the same name, as one: `Foo.cpp` + `Foo.h` = unit `Foo` |
-| | | 2. Only a unit with a source file (`.cpp`, `.cc`, `.cxx`) gets a section |
-| | | 3. A header with no source file of its own is listed inside one unit that uses it (SWE3-UH-04) |
-| **SWE3-DOC-04** | **Which files are read** | 1. `.cpp` `.cc` `.cxx` `.h` `.hpp` `.hxx` under the component's folders, in any case |
-| | | 2. A `.c` file is not read (a change is planned) |
-| | | 3. A file with `emul` in its name is skipped; the settings can name other patterns |
-| | | 4. A file that two components list belongs to the first one in the settings |
-| | | 5. Code outside the document's components appears only as a name (a diagram box, a Source/Destination unit), never as a section |
-| **SWE3-DOC-05** | **What comes from the code, what the LLM writes** | 1. Built only from the C++ source and the project settings: no requirement database, no hand-written notes |
-| | | 2. The LLM writes only wording (see Reference, at the end); IDs, rows, directions, ranges, arrows and flowchart shapes come from the code |
-| | | 3. The same code gives the same document: LLM answers are reused, and the LLM is told the project's domain |
-| **SWE3-DOC-06** | **Changes made in the app** | 1. A text a reviewer corrected in the app is printed instead of the LLM's; it stays in later versions while the code it describes is unchanged |
-| | | 2. A function marked hidden is left out of the interface table, the function entries and Dynamic Behaviour; hiding applies to that exact function |
-| **SWE3-DOC-07** | **Introduction** | 1. 1.1 Purpose and 1.2 Scope: standard text from the settings, Scope with one bullet per component of this document; 1.3 Terms: every abbreviation in the project's abbreviations file, A–Z |
-| | | 2. Only the component bullets come from the code; the rest is standard text (SWE3-FX-01) |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-01</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>One document per component</b></td><td>1. File name <code>software_detailed_design_&lt;component&gt;.docx</code></td></tr>
+<tr><td>2. Components generated together share one document, each as its own top-level section</td></tr>
+<tr><td rowspan="1" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-02</b></td><td rowspan="1" valign="middle" style="vertical-align:middle"><b>Outline</b></td><td>1. The document follows the outline above</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-03</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>What a unit is</b></td><td>1. A source file and the header of the same name, as one: <code>Foo.cpp</code> + <code>Foo.h</code> = unit <code>Foo</code></td></tr>
+<tr><td>2. Only a unit with a source file (<code>.cpp</code>, <code>.cc</code>, <code>.cxx</code>) gets a section</td></tr>
+<tr><td>3. A header with no source file of its own is listed inside one unit that uses it (SWE3-UH-04)</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-04</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Which files are read</b></td><td>1. <code>.cpp</code> <code>.cc</code> <code>.cxx</code> <code>.h</code> <code>.hpp</code> <code>.hxx</code> under the component's folders, in any case</td></tr>
+<tr><td>2. A <code>.c</code> file is not read (a change is planned)</td></tr>
+<tr><td>3. A file with <code>emul</code> in its name is skipped; the settings can name other patterns</td></tr>
+<tr><td>4. A file that two components list belongs to the first one in the settings</td></tr>
+<tr><td>5. Code outside the document's components appears only as a name (a diagram box, a Source/Destination unit), never as a section</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-05</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>What comes from the code, what the LLM writes</b></td><td>1. Built only from the C++ source and the project settings: no requirement database, no hand-written notes</td></tr>
+<tr><td>2. The LLM writes only wording (see Reference, at the end); IDs, rows, directions, ranges, arrows and flowchart shapes come from the code</td></tr>
+<tr><td>3. The same code gives the same document: LLM answers are reused, and the LLM is told the project's domain</td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-06</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Changes made in the app</b></td><td>1. A text a reviewer corrected in the app is printed instead of the LLM's; it stays in later versions while the code it describes is unchanged</td></tr>
+<tr><td>2. A function marked hidden is left out of the interface table, the function entries and Dynamic Behaviour; hiding applies to that exact function</td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-07</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Introduction</b></td><td>1. 1.1 Purpose and 1.2 Scope: standard text from the settings, Scope with one bullet per component of this document; 1.3 Terms: every abbreviation in the project's abbreviations file, A–Z</td></tr>
+<tr><td>2. Only the component bullets come from the code; the rest is standard text (SWE3-FX-01)</td></tr>
+</table>
 
 ---
 
@@ -73,22 +74,23 @@ Appendix A  Design Guideline
 
 2.1 Static Design: at the top of every component, its two diagrams and the Component/Unit table; in every unit (2.1.1), its diagram, where boxes are units and arrows are interfaces.
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-SD-01** | **Component diagrams** | 1. Container diagram: the component as a yellow box, with one blue box inside it per unit; no arrows |
-| | | 2. File dependency diagram: an arrow from each source file to each header of this component it includes |
-| | | 3. An include inside `#if` counts only when its branch is active |
-| **SWE3-SD-02** | **Component/Unit table** | 1. One row per unit that has a source file: Component (without its layer), Unit (the file name), Description, Note |
-| | | 2. Description: one line written by the LLM summing up the unit's public functions and globals; with the LLM off, their descriptions joined and cut at 120 characters |
-| | | 3. Note: always `N/A` (SWE3-FX-01) |
-| **SWE3-SD-03** | **Unit diagram: arrows** | 1. One diagram per unit: boxes are units; for each public function of this unit, an arrow between it and each unit that calls it, labelled with the interface IDs |
-| | | 2. So each link between two units is drawn once, in the diagram of the unit that provides the function |
-| | | 3. The arrow follows the function's Direction (Unit interface): `In` points caller → provider, `Out` points provider → caller |
-| | | 4. Calls between the same two units in the same direction share one arrow |
-| **SWE3-SD-04** | **Unit diagram: boxes** | 1. This unit sits in a yellow box of its component, with the document's units it shares an arrow with; units of other components are outside the box |
-| | | 2. A unit it shares no arrow with is not drawn |
-| | | 3. A unit whose arrow points into this unit is on its left, one it points to on its right; a unit with arrows both ways is drawn twice |
-| | | 4. The unit's own public globals are boxes above it, without arrows; other globals are not drawn |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-01</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Component diagrams</b></td><td>1. Container diagram: the component as a yellow box, with one blue box inside it per unit; no arrows</td></tr>
+<tr><td>2. File dependency diagram: an arrow from each source file to each header of this component it includes</td></tr>
+<tr><td>3. An include inside <code>#if</code> counts only when its branch is active</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-02</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Component/Unit table</b></td><td>1. One row per unit that has a source file: Component (without its layer), Unit (the file name), Description, Note</td></tr>
+<tr><td>2. Description: one line written by the LLM summing up the unit's public functions and globals; with the LLM off, their descriptions joined and cut at 120 characters</td></tr>
+<tr><td>3. Note: always <code>N/A</code> (SWE3-FX-01)</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-03</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Unit diagram: arrows</b></td><td>1. One diagram per unit: boxes are units; for each public function of this unit, an arrow between it and each unit that calls it, labelled with the interface IDs</td></tr>
+<tr><td>2. So each link between two units is drawn once, in the diagram of the unit that provides the function</td></tr>
+<tr><td>3. The arrow follows the function's Direction (Unit interface): <code>In</code> points caller → provider, <code>Out</code> points provider → caller</td></tr>
+<tr><td>4. Calls between the same two units in the same direction share one arrow</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-04</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Unit diagram: boxes</b></td><td>1. This unit sits in a yellow box of its component, with the document's units it shares an arrow with; units of other components are outside the box</td></tr>
+<tr><td>2. A unit it shares no arrow with is not drawn</td></tr>
+<tr><td>3. A unit whose arrow points into this unit is on its left, one it points to on its right; a unit with arrows both ways is drawn twice</td></tr>
+<tr><td>4. The unit's own public globals are boxes above it, without arrows; other globals are not drawn</td></tr>
+</table>
 
 ---
 
@@ -96,25 +98,26 @@ Appendix A  Design Guideline
 
 2.1.1.1 unit header: two columns, declaration and information. It lists what the unit's own files declare; functions are in the interface table.
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-UH-01** | **What is listed** | 1. Every symbol declared in the unit's own `.cpp` and `.h`: globals (`extern` too), `#define`s, enums, typedefs, structs, classes, unions; no functions |
-| | | 2. Listed whatever its access or marking (`PRIVATE`, `static`) |
-| | | 3. Listed whether or not it is used (a change is planned) |
-| | | 4. Not listed: include guards, local variables, a type declared inside a class (the class row shows it) |
-| | | 5. A static member's definition in the `.cpp` is not listed: the class row declares the member, without its starting value |
-| | | 6. A symbol declared twice is listed once: an enum and its typedef; an `extern` and its definition (the one with the value) |
-| | | 7. Rows are sorted by declaration text |
-| **SWE3-UH-02** | **Declaration column** | 1. Exactly as written in the source, markings and keywords kept, in full over as many lines as it takes |
-| | | 2. Comments are removed |
-| | | 3. A struct or class shows its members; a method only as its declaration; its body is in the flowchart |
-| **SWE3-UH-03** | **Information column** | 1. Global: its starting value; `N/A` if none |
-| | | 2. `#define`: its value as written, not worked out (`(1<<6)`, not `64`) |
-| | | 3. Enum, or a typedef of one: `NAME=value, …` |
-| | | 4. struct, class, union, or a typedef of one: one line written by the LLM (without the LLM: `Structure for …`) |
-| | | 5. Any other typedef: `N/A` |
-| **SWE3-UH-04** | **Shared headers (a header with no source file of its own)** | 1. Listed once, in one unit: the first unit by name, in the header's component, that uses it; the same unit in every document |
-| | | 2. Only the symbols some unit uses |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-01</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>What is listed</b></td><td>1. Every symbol declared in the unit's own <code>.cpp</code> and <code>.h</code>: globals (<code>extern</code> too), <code>#define</code>s, enums, typedefs, structs, classes, unions; no functions</td></tr>
+<tr><td>2. Listed whatever its access or marking (<code>PRIVATE</code>, <code>static</code>)</td></tr>
+<tr><td>3. Listed whether or not it is used (a change is planned)</td></tr>
+<tr><td>4. Not listed: include guards, local variables, a type declared inside a class (the class row shows it)</td></tr>
+<tr><td>5. A static member's definition in the <code>.cpp</code> is not listed: the class row declares the member, without its starting value</td></tr>
+<tr><td>6. A symbol declared twice is listed once: an enum and its typedef; an <code>extern</code> and its definition (the one with the value)</td></tr>
+<tr><td>7. Rows are sorted by declaration text</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-02</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Declaration column</b></td><td>1. Exactly as written in the source, markings and keywords kept, in full over as many lines as it takes</td></tr>
+<tr><td>2. Comments are removed</td></tr>
+<tr><td>3. A struct or class shows its members; a method only as its declaration; its body is in the flowchart</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-03</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Information column</b></td><td>1. Global: its starting value; <code>N/A</code> if none</td></tr>
+<tr><td>2. <code>#define</code>: its value as written, not worked out (<code>(1&lt;&lt;6)</code>, not <code>64</code>)</td></tr>
+<tr><td>3. Enum, or a typedef of one: <code>NAME=value, …</code></td></tr>
+<tr><td>4. struct, class, union, or a typedef of one: one line written by the LLM (without the LLM: <code>Structure for …</code>)</td></tr>
+<tr><td>5. Any other typedef: <code>N/A</code></td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-04</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Shared headers (a header with no source file of its own)</b></td><td>1. Listed once, in one unit: the first unit by name, in the header's component, that uses it; the same unit in every document</td></tr>
+<tr><td>2. Only the symbols some unit uses</td></tr>
+</table>
 
 ---
 
@@ -133,34 +136,35 @@ Appendix A  Design Guideline
 | 7 | **Source/Destination** | the units that **call** it | the unit's own `Component/Unit` |
 | 8 | **Interface Type** | `Function` | `Global Variable` |
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-UI-01** | **Which rows** | 1. One table per unit that has a source file; one row per public function and public global of the unit, from its `.cpp` and its `.h` |
-| | | 2. Public means another unit uses it: a function another unit calls, or whose address sits in a table of function pointers outside any function; a global another unit reads or writes |
-| | | 3. No marking decides: `PUBLIC`, `PRIVATE`, `PROTECTED`, `public:`, `private:` are ignored |
-| | | 4. No row: a file-scope `static` variable; an `extern` declaration (the defining unit's row stands for it); types and macros (they are in the unit header) |
-| | | 5. An entry point nothing calls by name (an ISR, a callback) is private unless a table holds its address; a run of one layer cannot see the layer above calling in |
-| **SWE3-UI-02** | **Order and Interface ID** | 1. Functions first, then globals; the ID column counts `01`, `02`, `03` … with no gap |
-| | | 2. `IF_<LAYER>_<GROUP>_<UNIT>_<NN>`: each part is the name in capitals, letters only; the layer keeps its digits (`Flash Core` → `FLASHCORE`) |
-| | | 3. `<NN>` counts per unit, `.cpp` and `.h` together: functions by file and line, then globals |
-| | | 4. `Map` and `Map2` both give `MAP`: they share one count, so no ID is printed twice (a change is planned) |
-| | | 5. An ID is a position: when a function becomes public, the later IDs of its unit move up by one |
-| **SWE3-UI-03** | **Interface Name and Information** | 1. Function: its short name with its class in front, without the namespace (`MapCache::insert`); global: the name after the last `::` |
-| | | 2. Two functions of one unit never print alike: an overload adds its parameter types (`Read(int)`, `Read(int, int)`), one name in two namespaces adds its scope |
-| | | 3. Information: one line written by the LLM describing the function or global; `-` without the LLM |
-| **SWE3-UI-04** | **Data Type and Data Range** | 1. Function: its parameters as `type name; type name; …`, as written, then `return: <type>`; no parameters: `VOID`; a `void` return: `return: VOID`. Global: its declared type |
-| | | 2. Data Range: one range per Data Type line, in the same order, then `return: range`; `NA` for `void` and for no parameters |
-| | | 3. A range is looked up by type name, in this layer's data dictionary (see Reference); a typedef follows the type it stands for (`Lba_t` → `uint32_t` → `0-0xFFFFFFFF`) |
-| | | 4. Structs, unions, pointers and floats are `NA` on purpose |
-| **SWE3-UI-05** | **Direction(In/Out): the first that matches** | 1. The name holds the whole word `set` → `In`, even when it returns a value; else the whole word `get` → `Out` (camelCase and snake_case are split into words; `isSet` matches too) |
-| | | 2. Else a return value (not `void`) → `Out`, even when it also writes a global |
-| | | 3. Else: writes a global, itself or through a function it calls → `In`; otherwise `Out` |
-| | | 4. A global row: always `In/Out` |
-| **SWE3-UI-06** | **Source/Destination and Interface Type** | 1. Function: every other unit that calls it (callers only, not the units it calls), as `Component/Unit`, A–Z; the same as its arrows in the unit diagram (SWE3-SD-03) |
-| | | 2. Published only through a pointer table: the unit that registers it; nobody: `-` |
-| | | 3. Written without the layer, hyphens kept: `Flash-Core/Map`, where headings show spaces |
-| | | 4. Global: the unit's own `Component/Unit` |
-| | | 5. Interface Type: `Function` or `Global Variable` |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-01</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Which rows</b></td><td>1. One table per unit that has a source file; one row per public function and public global of the unit, from its <code>.cpp</code> and its <code>.h</code></td></tr>
+<tr><td>2. Public means another unit uses it: a function another unit calls, or whose address sits in a table of function pointers outside any function; a global another unit reads or writes</td></tr>
+<tr><td>3. No marking decides: <code>PUBLIC</code>, <code>PRIVATE</code>, <code>PROTECTED</code>, <code>public:</code>, <code>private:</code> are ignored</td></tr>
+<tr><td>4. No row: a file-scope <code>static</code> variable; an <code>extern</code> declaration (the defining unit's row stands for it); types and macros (they are in the unit header)</td></tr>
+<tr><td>5. An entry point nothing calls by name (an ISR, a callback) is private unless a table holds its address; a run of one layer cannot see the layer above calling in</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-02</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Order and Interface ID</b></td><td>1. Functions first, then globals; the ID column counts <code>01</code>, <code>02</code>, <code>03</code> … with no gap</td></tr>
+<tr><td>2. <code>IF_&lt;LAYER&gt;_&lt;GROUP&gt;_&lt;UNIT&gt;_&lt;NN&gt;</code>: each part is the name in capitals, letters only; the layer keeps its digits (<code>Flash Core</code> → <code>FLASHCORE</code>)</td></tr>
+<tr><td>3. <code>&lt;NN&gt;</code> counts per unit, <code>.cpp</code> and <code>.h</code> together: functions by file and line, then globals</td></tr>
+<tr><td>4. <code>Map</code> and <code>Map2</code> both give <code>MAP</code>: they share one count, so no ID is printed twice (a change is planned)</td></tr>
+<tr><td>5. An ID is a position: when a function becomes public, the later IDs of its unit move up by one</td></tr>
+<tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-03</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Interface Name and Information</b></td><td>1. Function: its short name with its class in front, without the namespace (<code>MapCache::insert</code>); global: the name after the last <code>::</code></td></tr>
+<tr><td>2. Two functions of one unit never print alike: an overload adds its parameter types (<code>Read(int)</code>, <code>Read(int, int)</code>), one name in two namespaces adds its scope</td></tr>
+<tr><td>3. Information: one line written by the LLM describing the function or global; <code>-</code> without the LLM</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-04</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Data Type and Data Range</b></td><td>1. Function: its parameters as <code>type name; type name; …</code>, as written, then <code>return: &lt;type&gt;</code>; no parameters: <code>VOID</code>; a <code>void</code> return: <code>return: VOID</code>. Global: its declared type</td></tr>
+<tr><td>2. Data Range: one range per Data Type line, in the same order, then <code>return: range</code>; <code>NA</code> for <code>void</code> and for no parameters</td></tr>
+<tr><td>3. A range is looked up by type name, in this layer's data dictionary (see Reference); a typedef follows the type it stands for (<code>Lba_t</code> → <code>uint32_t</code> → <code>0-0xFFFFFFFF</code>)</td></tr>
+<tr><td>4. Structs, unions, pointers and floats are <code>NA</code> on purpose</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-05</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Direction(In/Out): the first that matches</b></td><td>1. The name holds the whole word <code>set</code> → <code>In</code>, even when it returns a value; else the whole word <code>get</code> → <code>Out</code> (camelCase and snake_case are split into words; <code>isSet</code> matches too)</td></tr>
+<tr><td>2. Else a return value (not <code>void</code>) → <code>Out</code>, even when it also writes a global</td></tr>
+<tr><td>3. Else: writes a global, itself or through a function it calls → <code>In</code>; otherwise <code>Out</code></td></tr>
+<tr><td>4. A global row: always <code>In/Out</code></td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-06</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Source/Destination and Interface Type</b></td><td>1. Function: every other unit that calls it (callers only, not the units it calls), as <code>Component/Unit</code>, A–Z; the same as its arrows in the unit diagram (SWE3-SD-03)</td></tr>
+<tr><td>2. Published only through a pointer table: the unit that registers it; nobody: <code>-</code></td></tr>
+<tr><td>3. Written without the layer, hyphens kept: <code>Flash-Core/Map</code>, where headings show spaces</td></tr>
+<tr><td>4. Global: the unit's own <code>Component/Unit</code></td></tr>
+<tr><td>5. Interface Type: <code>Function</code> or <code>Global Variable</code></td></tr>
+</table>
 
 ---
 
@@ -168,23 +172,24 @@ Appendix A  Design Guideline
 
 2.1.1.3 onwards: one entry per public function, a table and its flowchart(s).
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-FD-01** | **The entry** | 1. One heading `<Unit>-<Function>` per public function, named as in the interface table; each overload its own; globals get none |
-| | | 2. Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name |
-| | | 3. Requirements: the function's description, then its flowchart(s), each with its signature above it |
-| | | 4. After its own flowchart, one for each private function it calls directly, drawn once per unit, under the first public function that calls it |
-| | | 5. A private function called only by another private function has no flowchart |
-| | | 6. Risk `Medium`, Capacity(Density) `Common` (SWE3-FX-01) |
-| **SWE3-FD-02** | **The flowchart** | 1. The shape comes from the code: an oval for Start and End, a diamond for a decision with Yes/No, a box for everything else |
-| | | 2. The LLM writes only the box labels; without the LLM a box shows its own source text |
-| | | 3. Every call in a box is written `Name()`; a call the label dropped is added as `Calls: X()` |
-| | | 4. A header that cannot be found removes no branch, except an `#if` on one of its macros |
-| | | 5. Too tall for a page: split across pages, not shrunk |
-| **SWE3-FD-03** | **Input Name and Output Name** | 1. Input Name: the first parameter's name; with no named parameter, the first global it writes, else reads; nothing: `<Function> input` |
-| | | 2. Output Name: a plain name on the `return` line; else the return type, unless a basic one (`int`, `bool`, …); else the first global it writes, then reads; else `<Function> result`. `TRUE`/`FALSE` returns give `TRUE/FALSE` |
-| | | 3. Tidied: `g_`, `s_`, `t_` dropped, underscores to spaces, a capital first (`g_entry_count` → `Entry count`) |
-| | | 4. Only the stand-in names, `<Function> input` and `<Function> result`, are sent to the LLM for a better name |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="6" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-01</b></td><td rowspan="6" valign="middle" style="vertical-align:middle"><b>The entry</b></td><td>1. One heading <code>&lt;Unit&gt;-&lt;Function&gt;</code> per public function, named as in the interface table; each overload its own; globals get none</td></tr>
+<tr><td>2. Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name</td></tr>
+<tr><td>3. Requirements: the function's description, then its flowchart(s), each with its signature above it</td></tr>
+<tr><td>4. After its own flowchart, one for each private function it calls directly, drawn once per unit, under the first public function that calls it</td></tr>
+<tr><td>5. A private function called only by another private function has no flowchart</td></tr>
+<tr><td>6. Risk <code>Medium</code>, Capacity(Density) <code>Common</code> (SWE3-FX-01)</td></tr>
+<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-02</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>The flowchart</b></td><td>1. The shape comes from the code: an oval for Start and End, a diamond for a decision with Yes/No, a box for everything else</td></tr>
+<tr><td>2. The LLM writes only the box labels; without the LLM a box shows its own source text</td></tr>
+<tr><td>3. Every call in a box is written <code>Name()</code>; a call the label dropped is added as <code>Calls: X()</code></td></tr>
+<tr><td>4. A header that cannot be found removes no branch, except an <code>#if</code> on one of its macros</td></tr>
+<tr><td>5. Too tall for a page: split across pages, not shrunk</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-03</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Input Name and Output Name</b></td><td>1. Input Name: the first parameter's name; with no named parameter, the first global it writes, else reads; nothing: <code>&lt;Function&gt; input</code></td></tr>
+<tr><td>2. Output Name: a plain name on the <code>return</code> line; else the return type, unless a basic one (<code>int</code>, <code>bool</code>, …); else the first global it writes, then reads; else <code>&lt;Function&gt; result</code>. <code>TRUE</code>/<code>FALSE</code> returns give <code>TRUE/FALSE</code></td></tr>
+<tr><td>3. Tidied: <code>g_</code>, <code>s_</code>, <code>t_</code> dropped, underscores to spaces, a capital first (<code>g_entry_count</code> → <code>Entry count</code>)</td></tr>
+<tr><td>4. Only the stand-in names, <code>&lt;Function&gt; input</code> and <code>&lt;Function&gt; result</code>, are sent to the LLM for a better name</td></tr>
+</table>
 
 ---
 
@@ -192,16 +197,17 @@ Appendix A  Design Guideline
 
 2.2 Dynamic Behaviour: one entry per call coming into the component from outside, and what it does across the component's units.
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-DB-01** | **Which functions get an entry** | 1. A public function that a function in another component calls, whose calls reach another unit of its own component; not hidden |
-| | | 2. One entry per function, for its first caller from another component |
-| **SWE3-DB-02** | **Heading and sequence diagram** | 1. Heading: `<Unit> - <Function> (<CallerUnit> - <CallerFunction>)` |
-| | | 2. One participant per unit, grouped and coloured by component; the outside caller enters the function |
-| | | 3. Calls are followed only inside the function's component |
-| | | 4. Calls within one unit are skipped and the chain joined across them |
-| **SWE3-DB-03** | **The table** | 1. Requirements: `Behavior Description`, then one bullet per arrow, in diagram order; Risk and Capacity fixed (SWE3-FX-01); Input and Output Name as the function's (SWE3-FD-03) |
-| | | 2. A call bullet: `A calls B to <reason>` with the LLM (20 words at most), `A calls B` without; a return bullet: `B returns to A` |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-01</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Which functions get an entry</b></td><td>1. A public function that a function in another component calls, whose calls reach another unit of its own component; not hidden</td></tr>
+<tr><td>2. One entry per function, for its first caller from another component</td></tr>
+<tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-02</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Heading and sequence diagram</b></td><td>1. Heading: <code>&lt;Unit&gt; - &lt;Function&gt; (&lt;CallerUnit&gt; - &lt;CallerFunction&gt;)</code></td></tr>
+<tr><td>2. One participant per unit, grouped and coloured by component; the outside caller enters the function</td></tr>
+<tr><td>3. Calls are followed only inside the function's component</td></tr>
+<tr><td>4. Calls within one unit are skipped and the chain joined across them</td></tr>
+<tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-03</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>The table</b></td><td>1. Requirements: <code>Behavior Description</code>, then one bullet per arrow, in diagram order; Risk and Capacity fixed (SWE3-FX-01); Input and Output Name as the function's (SWE3-FD-03)</td></tr>
+<tr><td>2. A call bullet: <code>A calls B to &lt;reason&gt;</code> with the LLM (20 words at most), <code>A calls B</code> without; a return bullet: <code>B returns to A</code></td></tr>
+</table>
 
 ---
 
@@ -209,15 +215,16 @@ Appendix A  Design Guideline
 
 The values the document states without working them out from the code, and its last two chapters.
 
-| ID | Rule | Details |
-|---|---|---|
-| **SWE3-FX-01** | **Fixed values** | 1. Risk, in the function and behaviour tables: `Medium`, an agreed fixed value |
-| | | 2. Capacity, Capacity(Density): `Common`, an agreed fixed value |
-| | | 3. Note, in the Component/Unit table: `N/A` for now |
-| | | 4. Requirements row: the description, or the behaviour bullets, for now; links to requirement IDs (SWE.1 / Polarion) come later |
-| | | 5. Introduction text: from the settings; its final wording comes later |
-| | | 6. `Code Metrics, Coding Rule, Test Coverage` and `Appendix A Design Guideline`: headings with a standard text for now |
-| | | 7. LLM-written cells with the LLM off: `-` or `N/A` |
+<table style="width:100%; table-layout:fixed">
+<tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
+<tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FX-01</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>Fixed values</b></td><td>1. Risk, in the function and behaviour tables: <code>Medium</code>, an agreed fixed value</td></tr>
+<tr><td>2. Capacity, Capacity(Density): <code>Common</code>, an agreed fixed value</td></tr>
+<tr><td>3. Note, in the Component/Unit table: <code>N/A</code> for now</td></tr>
+<tr><td>4. Requirements row: the description, or the behaviour bullets, for now; links to requirement IDs (SWE.1 / Polarion) come later</td></tr>
+<tr><td>5. Introduction text: from the settings; its final wording comes later</td></tr>
+<tr><td>6. <code>Code Metrics, Coding Rule, Test Coverage</code> and <code>Appendix A Design Guideline</code>: headings with a standard text for now</td></tr>
+<tr><td>7. LLM-written cells with the LLM off: <code>-</code> or <code>N/A</code></td></tr>
+</table>
 
 ---
 
