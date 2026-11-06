@@ -50,12 +50,12 @@ A comment counts in the section where it was made, even when the rule it is abou
 
 ## Verdict
 
-| Verdict | Means | What happens | Counted against |
-|---|---|---|---|
-| **Defect** | the document is wrong, its LLM wording included | the tool is fixed, or the text is corrected in the app | yes |
-| **Gap** | no rule covers the case | a rule is written, then the tool follows it | yes |
-| **Change** | the document is as designed, but the reviewers want another design | the rule is agreed again, then the tool changes | no |
-| **As per rule** | the document is right; the reader expected something else | the answer names the rule | no |
+| Verdict | Means | What happens |
+|---|---|---|
+| **Defect** | the document is wrong, its LLM wording included | the tool is fixed, or the text is corrected in the app |
+| **Gap** | no rule covers the case | a rule is written, then the tool follows it |
+| **Change** | the document is as designed, but the reviewers want another design | the rule is agreed again, then the tool changes |
+| **As per rule** | the document is right; the reader expected something else | the answer names the rule |
 
 - A misread or a question the rules answer is **As per rule**; a question they do not answer is a **Gap**.
 - A duplicate takes the verdict and reference of the comment it repeats.
@@ -64,14 +64,19 @@ A comment counts in the section where it was made, even when the rule it is abou
 
 ## Reference
 
-| Verdict | Reference |
-|---|---|
-| Defect, Gap, Change | the issue's ID in the issue list: something will be done |
-| As per rule | the rule ID in SWE3_WIKI, `SWE3-<code>-NN`: the rule answers the comment |
+**The reference decides the count: an issue ID counts against the document, a rule ID does not.**
 
+| Verdict | Reference | Counted against |
+|---|---|---|
+| Defect | the issue's ID in the issue list | yes |
+| Gap | the issue's ID in the issue list | yes |
+| Change | the rule ID they want changed, `SWE3-<code>-NN` | no |
+| As per rule | the rule ID that answers the comment | no |
+
+- The issue list holds only what counts against the document: Defects and Gaps.
 - One ID per comment. A comment touching several rules takes the one that decides it.
 - Similar comments share one issue, so they share its ID. A problem not in the list is added to it
-  first, with the next free ID; the issue entry names the rule it is about.
+  first, with the next free ID; a Defect's entry names the rule it breaks.
 - The prefix tells the two apart: `SWE3-…` is a rule, anything else an issue.
 
 ---
@@ -102,4 +107,4 @@ each comment's weight instead of an equal share.
 Under the table, one line: comments → issues, and how many of the issues are new in this review.
 
 A second table, by reference, most comments first — `Reference | Comments | Verdict` — is the agenda
-for the next talk with the reviewers.
+for the next talk with the reviewers: its Change rows are the rules they want changed.
