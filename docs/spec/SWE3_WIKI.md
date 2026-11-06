@@ -46,7 +46,7 @@ N  Code Metrics, Coding Rule, Test Coverage
 Appendix A  Design Guideline
 ```
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DOC-01</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>One document per component</b></td><td>1. File name <code>software_detailed_design_&lt;component&gt;.docx</code></td></tr>
 <tr><td>2. Components generated together share one document, each as its own top-level section</td></tr>
@@ -74,7 +74,7 @@ Appendix A  Design Guideline
 
 2.1 Static Design: at the top of every component, its two diagrams and the Component/Unit table; in every unit (2.1.1), its diagram, where boxes are units and arrows are interfaces.
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="3" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-SD-01</b></td><td rowspan="3" valign="middle" style="vertical-align:middle"><b>Component diagrams</b></td><td>1. Container diagram: the component as a yellow box, with one blue box inside it per unit; no arrows</td></tr>
 <tr><td>2. File dependency diagram: an arrow from each source file to each header of this component it includes</td></tr>
@@ -98,7 +98,7 @@ Appendix A  Design Guideline
 
 2.1.1.1 unit header: two columns, declaration and information. It lists what the unit's own files declare; functions are in the interface table.
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UH-01</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>What is listed</b></td><td>1. Every symbol declared in the unit's own <code>.cpp</code> and <code>.h</code>: globals (<code>extern</code> too), <code>#define</code>s, enums, typedefs, structs, classes, unions; no functions</td></tr>
 <tr><td>2. Listed whatever its access or marking (<code>PRIVATE</code>, <code>static</code>)</td></tr>
@@ -136,7 +136,7 @@ Appendix A  Design Guideline
 | 7 | **Source/Destination** | the units that **call** it | the unit's own `Component/Unit` |
 | 8 | **Interface Type** | `Function` | `Global Variable` |
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-UI-01</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>Which rows</b></td><td>1. One table per unit that has a source file; one row per public function and public global of the unit, from its <code>.cpp</code> and its <code>.h</code></td></tr>
 <tr><td>2. Public means another unit uses it: a function another unit calls, or whose address sits in a table of function pointers outside any function; a global another unit reads or writes</td></tr>
@@ -172,7 +172,7 @@ Appendix A  Design Guideline
 
 2.1.1.3 onwards: one entry per public function, a table and its flowchart(s).
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="6" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-01</b></td><td rowspan="6" valign="middle" style="vertical-align:middle"><b>The entry</b></td><td>1. One heading <code>&lt;Unit&gt;-&lt;Function&gt;</code> per public function, named as in the interface table; each overload its own; globals get none</td></tr>
 <tr><td>2. Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name</td></tr>
@@ -197,7 +197,7 @@ Appendix A  Design Guideline
 
 2.2 Dynamic Behaviour: one entry per call coming into the component from outside, and what it does across the component's units.
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="2" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-DB-01</b></td><td rowspan="2" valign="middle" style="vertical-align:middle"><b>Which functions get an entry</b></td><td>1. A public function that a function in another component calls, whose calls reach another unit of its own component; not hidden</td></tr>
 <tr><td>2. One entry per function, for its first caller from another component</td></tr>
@@ -215,7 +215,7 @@ Appendix A  Design Guideline
 
 The values the document states without working them out from the code, and its last two chapters.
 
-<table style="width:100%; table-layout:fixed">
+<table border="1" style="width:100%; table-layout:fixed">
 <tr><th width="130" style="width:130px">ID</th><th width="200" style="width:200px">Rule</th><th>Details</th></tr>
 <tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FX-01</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>Fixed values</b></td><td>1. Risk, in the function and behaviour tables: <code>Medium</code>, an agreed fixed value</td></tr>
 <tr><td>2. Capacity, Capacity(Density): <code>Common</code>, an agreed fixed value</td></tr>
