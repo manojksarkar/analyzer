@@ -54,7 +54,8 @@ The output: [five tables](#output). A [full example](#example) is at the end.
 
 ## The issue list
 
-Every issue any review raised, one row each, As per rule included. One sheet, `Issues`:
+Every issue any review raised, one row each, As per rule included. One sheet, `Issues`. The list:
+[issue_list.xlsx](../review/issue_list.xlsx).
 
 | Issue ID | Rule ID | Issue | Verdict |
 |---|---|---|---|
