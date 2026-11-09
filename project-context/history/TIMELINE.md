@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-09 | Review triage: an Issue ID on every comment (`SWE3-V4-NN`), the verdict from the issue list, one score (Our %) | [16](16-2026-10-30.md) |
 | 2026-11-06b | Review triage: Change dropped; three verdicts, Defect, Gap, As per rule | [16](16-2026-10-30.md) |
 | 2026-11-06 | Review triage: four verdicts (Defect, Gap, Change, As per rule) and one reference per comment: an issue ID counts against, a rule ID does not | [16](16-2026-10-30.md) |
 | 2026-11-05k | SWE3_WIKI for every team: where each section is, plain words, planned changes, inputs, version | [16](16-2026-10-30.md) |
