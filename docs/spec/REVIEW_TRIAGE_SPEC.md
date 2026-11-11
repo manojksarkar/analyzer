@@ -27,7 +27,7 @@ The output: [five tables](#output). A [full example](#example) is at the end.
 |---|---|---|---|
 | Review ID | one comment, in the reviewers' sheet | `V<version>_R<row>_<subrow>_P<part>` | `V4_R1_05_P1` |
 | Issue ID | one issue, in the issue list | `SWE3-V<version>-NN` | `SWE3-V4-11` |
-| Rule ID | one rule, in SWE3_WIKI | `SWE3-<section>-NN` | `SWE3-FD-02` |
+| Rule ID | one or more rules, in SWE3_WIKI, separated by commas | `SWE3-<section>-NN` | `SWE3-FD-02` |
 
 - A review row with several points has one part per point (`P1`, `P2`); each part is one comment.
 - An Issue ID carries the version of the review that first raised it; `NN` counts up within that
@@ -54,20 +54,20 @@ The output: [five tables](#output). A [full example](#example) is at the end.
 
 ## The issue list
 
-Every issue any review raised, one row each, As per rule included. One sheet, `Issues`. The list:
-[issue_list.xlsx](../review/issue_list.xlsx).
+Every issue any review raised, one row each, As per rule included, in a CSV file:
+[issue_list.csv](../review/issue_list.csv).
 
 | Issue ID | Rule ID | Issue | Verdict |
 |---|---|---|---|
-| SWE3-V4-08 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect |
+| SWE3-V4-07 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect |
 | SWE3-V5-01 | | A function defined by a macro has no entry | Gap |
-| SWE3-V4-22 | SWE3-FD-01 | Private functions appear missing | As per rule |
+| SWE3-V4-23 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule |
 
 | Verdict | Rule ID |
 |---|---|
 | Defect | the rule it breaks |
 | Gap | empty, until its rule is written |
-| As per rule | the rule that answers it |
+| As per rule | the rules that answer it |
 
 - No status: whether an issue is fixed is the tool's [output](#output).
 - The list only grows; no row is deleted.
@@ -86,7 +86,7 @@ One per review, built from the reviewers' sheet. Two sheets.
 
 | Review ID | Document | Section | Comment | Issue ID |
 |---|---|---|---|---|
-| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-08 |
+| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-07 |
 
 `Scores`, one row per document and section:
 
@@ -164,7 +164,7 @@ equal share. Under the table, one line: comments → issues, and how many issues
 Scores are per section only: the reviewers give no total per document.
 
 **Agenda**: `Rule ID | Rule | As per rule comments`, most first; Rule is the rule's name in SWE3_WIKI.
-For the next talk with the reviewers: a rule that collects many As per rule comments is one they may
+An issue with two rules counts its comments under each. For the next talk with the reviewers: a rule that collects many As per rule comments is one they may
 want changed.
 
 ---
@@ -194,10 +194,10 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 
 | Issue ID | Rule ID | Issue | Verdict |
 |---|---|---|---|
-| SWE3-V4-08 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect |
+| SWE3-V4-07 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect |
 | SWE3-V4-11 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect |
-| SWE3-V4-21 | SWE3-UH-01 | A global is in both the unit header and the interface table | As per rule |
-| SWE3-V4-22 | SWE3-FD-01 | Private functions appear missing | As per rule |
+| SWE3-V4-22 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | As per rule |
+| SWE3-V4-23 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule |
 | SWE3-V5-01 | | A function defined by a macro has no entry | Gap |
 | SWE3-V5-02 | SWE3-UH-04 | A shared header's enum is listed in one unit only | As per rule |
 | SWE3-V5-03 | SWE3-FD-03 | Input Name shows only the first parameter | As per rule |
@@ -206,14 +206,14 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 
 | Review ID | Document | Section | Comment | Issue ID |
 |---|---|---|---|---|
-| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-08 |
-| V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-V4-08 |
-| V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-V4-21 |
+| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-07 |
+| V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-V4-07 |
+| V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-V4-22 |
 | V5_R1_03_P1 | Flash Core | UH | Enum `Mode` is listed in one unit only | SWE3-V5-02 |
 | V5_R1_04_P1 | Flash Core | UH | Same as V5_R1_03_P1 | SWE3-V5-02 |
 | V5_R2_01_P1 | Flash Core | FD | `Read()`: Return has no arrow to End | SWE3-V4-11 |
 | V5_R2_02_P1 | Flash Core | FD | `DEFINE_HANDLER(Erase)`: no entry for `Erase()` | SWE3-V5-01 |
-| V5_R2_03_P1 | Flash Core | FD | Private function `Check()` is missing | SWE3-V4-22 |
+| V5_R2_03_P1 | Flash Core | FD | Private function `Check()` is missing | SWE3-V4-23 |
 | V5_R2_03_P2 | Flash Core | FD | `Write()`: Input Name shows only the first parameter | SWE3-V5-03 |
 | V5_R2_04_P1 | Flash Core | FD | `Write()`: Return has no arrow to End | SWE3-V4-11 |
 
@@ -228,14 +228,14 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 
 | Review ID | Document | Section | Comment | Issue ID | Issue | Verdict | Status |
 |---|---|---|---|---|---|---|---|
-| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-08 | Structs and classes are missing from the unit header | Defect | Fixed |
-| V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-V4-08 | Structs and classes are missing from the unit header | Defect | Fixed |
-| V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-V4-21 | A global is in both the unit header and the interface table | As per rule | — |
+| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-07 | Structs and classes are missing from the unit header | Defect | Fixed |
+| V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-V4-07 | Structs and classes are missing from the unit header | Defect | Fixed |
+| V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-V4-22 | A global is in both the unit header and the interface table | As per rule | — |
 | V5_R1_03_P1 | Flash Core | UH | Enum `Mode` is listed in one unit only | SWE3-V5-02 | A shared header's enum is listed in one unit only | As per rule | — |
 | V5_R1_04_P1 | Flash Core | UH | Same as V5_R1_03_P1 | SWE3-V5-02 | A shared header's enum is listed in one unit only | As per rule | — |
 | V5_R2_01_P1 | Flash Core | FD | `Read()`: Return has no arrow to End | SWE3-V4-11 | Flowchart: a Return box has no arrow to End | Defect | Fixed |
 | V5_R2_02_P1 | Flash Core | FD | `DEFINE_HANDLER(Erase)`: no entry for `Erase()` | SWE3-V5-01 | A function defined by a macro has no entry | Gap | Open |
-| V5_R2_03_P1 | Flash Core | FD | Private function `Check()` is missing | SWE3-V4-22 | Private functions appear missing | As per rule | — |
+| V5_R2_03_P1 | Flash Core | FD | Private function `Check()` is missing | SWE3-V4-23 | A function no other unit calls has no interface row and no entry of its own | As per rule | — |
 | V5_R2_03_P2 | Flash Core | FD | `Write()`: Input Name shows only the first parameter | SWE3-V5-03 | Input Name shows only the first parameter | As per rule | — |
 | V5_R2_04_P1 | Flash Core | FD | `Write()`: Return has no arrow to End | SWE3-V4-11 | Flowchart: a Return box has no arrow to End | Defect | Open |
 
@@ -243,12 +243,12 @@ Issues:
 
 | Issue ID | Rule ID | Issue | Verdict | Comments | Fixed | Open | Status | Open comments |
 |---|---|---|---|---|---|---|---|---|
-| SWE3-V4-08 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect | 2 | 2 | 0 | Fixed | |
+| SWE3-V4-07 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect | 2 | 2 | 0 | Fixed | |
 | SWE3-V4-11 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect | 2 | 1 | 1 | Partly fixed | V5_R2_04_P1 |
 | SWE3-V5-01 | | A function defined by a macro has no entry | Gap | 1 | 0 | 1 | Open | V5_R2_02_P1 |
 | SWE3-V5-02 | SWE3-UH-04 | A shared header's enum is listed in one unit only | As per rule | 2 | — | — | — | |
-| SWE3-V4-21 | SWE3-UH-01 | A global is in both the unit header and the interface table | As per rule | 1 | — | — | — | |
-| SWE3-V4-22 | SWE3-FD-01 | Private functions appear missing | As per rule | 1 | — | — | — | |
+| SWE3-V4-22 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | As per rule | 1 | — | — | — | |
+| SWE3-V4-23 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule | 1 | — | — | — | |
 | SWE3-V5-03 | SWE3-FD-03 | Input Name shows only the first parameter | As per rule | 1 | — | — | — | |
 
 Totals:
@@ -281,6 +281,7 @@ Agenda:
 | Rule ID | Rule | As per rule comments |
 |---|---|---|
 | SWE3-UH-04 | Shared headers | 2 |
+| SWE3-UI-01 | Which rows | 2 |
 | SWE3-UH-01 | What is listed | 1 |
 | SWE3-FD-01 | The entry | 1 |
 | SWE3-FD-03 | Input Name and Output Name | 1 |
