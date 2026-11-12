@@ -641,6 +641,11 @@ build_dot(cfg)
         _edge_def(edge)
             normalize_edge_label(): Yes/No standardisation → taillabel="..."
             back-edges get constraint=false (don't distort ranks)
+        a switch head's edges instead: _case_edge_def()
+            one edge per target box, its cases' constants joined a line each
+            _case_value(): "case Type::eREAD" → "eREAD"; "default" as is
+            label="..." (mid-edge, Graphviz makes room) -- taillabels at one
+            diamond piled up on top of each other (review SWE3-V4-10)
     invisible push-down edges anchor Return/End at the bottom
 
 ━━━ STEP 9: Validate CFG ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

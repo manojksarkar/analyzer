@@ -25,10 +25,16 @@ Shape mapping (classic flowchart):
   CATCH                                -> box
   everything else                      -> box
 
-Edge (Yes/No/case) labels are placed with `taillabel` so they sit on the branch
-at the decision node, not floating beside the edge.
+Edge Yes/No labels are placed with `taillabel` so they sit on the branch at the
+decision node, not floating beside the edge.  A switch's case labels are not:
+every case edge leaves the same diamond, and taillabels -- which Graphviz makes no
+room for -- piled up on top of each other under it.  A case edge carries a plain
+`label`, which Graphviz lays out in the middle of the edge with room of its own;
+it shows only the case's constant (`eREAD`, not `case BufType::eREAD`), and cases
+that go to the same box share one edge, a constant per line.
 """
 
+import re
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple
 
@@ -78,9 +84,23 @@ def build_dot(cfg: ControlFlowGraph) -> str:
 
     lines.append("")
 
-    # Edge definitions.
+    # Edge definitions.  A switch's case edges to one box become one edge.
+    switch_heads = {nid for nid, n in cfg.nodes.items()
+                    if n.node_type == NodeType.SWITCH_HEAD}
+    case_labels: Dict[Tuple[str, str], List[str]] = {}
     for edge in cfg.edges:
-        lines.append(f"  {_edge_def(edge, layout)}")
+        if edge.source not in switch_heads:
+            lines.append(f"  {_edge_def(edge, layout)}")
+            continue
+        key = (edge.source, edge.target)
+        if key not in case_labels:
+            case_labels[key] = []
+            lines.append(key)                       # placeholder, filled in below
+        label = _case_value(edge.label)
+        if label and label not in case_labels[key]:
+            case_labels[key].append(label)
+    lines = [f"  {_case_edge_def(item, case_labels[item], layout)}"
+             if isinstance(item, tuple) else item for item in lines]
 
     # Invisible push-down edges: force loop-exit nodes (Return/End) below the
     # loop body so they land at the bottom instead of beside the loop head.
@@ -271,6 +291,37 @@ def _edge_def(edge: CfgEdge, layout: _LoopLayout) -> str:
     if attrs:
         return f'{edge.source} -> {edge.target} [{", ".join(attrs)}];'
     return f"{edge.source} -> {edge.target};"
+
+
+_QUALIFIED_NAME = re.compile(r"^(?:::)?(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)$")
+_NEWLINE = "\n"  # one line per case constant (no backslash in an f-string before 3.12)
+
+
+def _case_value(label) -> str:
+    """The text a case edge shows: the case's constant, without `case ` and without
+    the scope of a qualified name (`case BufType::eREAD` -> `eREAD`); `default` as is.
+    Any other value (`case 1`, `case 'a'`, `case (A | B)`) is kept whole."""
+    if not label:
+        return ""
+    text = label.strip()
+    if text.startswith("case "):
+        text = text[len("case "):].strip()
+    match = _QUALIFIED_NAME.match(text)
+    return match.group(1) if match else text
+
+
+def _case_edge_def(key: Tuple[str, str], labels: List[str],
+                   layout: _LoopLayout) -> str:
+    """A switch head's edge to one box, for every case that goes there."""
+    source, target = key
+    attrs: List[str] = []
+    if labels:
+        attrs.append(f'label="{_escape(_NEWLINE.join(labels))}"')
+    if key in layout.back_edges:
+        attrs.append("constraint=false")
+    if attrs:
+        return f'{source} -> {target} [{", ".join(attrs)}];'
+    return f"{source} -> {target};"
 
 
 def _escape(text: str) -> str:

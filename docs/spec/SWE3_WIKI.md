@@ -180,11 +180,13 @@ Appendix A  Design Guideline
 <tr><td>4. After its own flowchart, one for each private function it calls directly, drawn once per unit, under the first public function that calls it</td></tr>
 <tr><td>5. A private function called only by another private function has no flowchart</td></tr>
 <tr><td>6. Risk <code>Medium</code>, Capacity(Density) <code>Common</code> (SWE3-FX-01)</td></tr>
-<tr><td rowspan="5" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-02</b></td><td rowspan="5" valign="middle" style="vertical-align:middle"><b>The flowchart</b></td><td>1. The shape comes from the code: an oval for Start and End, a diamond for a decision with Yes/No, a box for everything else</td></tr>
+<tr><td rowspan="7" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-02</b></td><td rowspan="7" valign="middle" style="vertical-align:middle"><b>The flowchart</b></td><td>1. The shape comes from the code: an oval for Start and End, a diamond for a decision with Yes/No, a box for everything else</td></tr>
 <tr><td>2. The LLM writes only the box labels; without the LLM a box shows its own source text</td></tr>
 <tr><td>3. Every call in a box is written <code>Name()</code>; a call the label dropped is added as <code>Calls: X()</code></td></tr>
 <tr><td>4. A header that cannot be found removes no branch, except an <code>#if</code> on one of its macros</td></tr>
 <tr><td>5. Too tall for a page: split across pages, not shrunk</td></tr>
+<tr><td>6. A <code>return</code>, <code>break</code>, <code>continue</code> or <code>goto</code> ends its branch, also inside an extra <code>{ }</code> block: its box has no arrow on to the next step</td></tr>
+<tr><td>7. A switch: each arrow shows only the case's constant (<code>eREAD</code>, not <code>case Type::eREAD</code>), in the middle of the arrow; cases that go to one box share one arrow, a constant per line</td></tr>
 <tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-03</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Input Name and Output Name</b></td><td>1. Input Name: the first parameter's name; with no named parameter, the first global it writes, else reads; nothing: <code>&lt;Function&gt; input</code></td></tr>
 <tr><td>2. Output Name: a plain name on the <code>return</code> line; else the return type, unless a basic one (<code>int</code>, <code>bool</code>, …); else the first global it writes, then reads; else <code>&lt;Function&gt; result</code>. <code>TRUE</code>/<code>FALSE</code> returns give <code>TRUE/FALSE</code></td></tr>
 <tr><td>3. Tidied: <code>g_</code>, <code>s_</code>, <code>t_</code> dropped, underscores to spaces, a capital first (<code>g_entry_count</code> → <code>Entry count</code>)</td></tr>

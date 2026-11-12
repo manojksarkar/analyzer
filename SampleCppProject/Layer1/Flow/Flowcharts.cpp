@@ -250,6 +250,47 @@ PRIVATE int fnCallResultMixed(int delta) {
     return flowSlotHandle()->retryCount;
 }
 
+// Test: a return inside an extra { } block -- here the else of an #if whose macro is off --
+// ends its branch: the Return goes to End, not on to the next statement.
+PRIVATE int fnReturnInBraces(int avail, int hw) {
+    int used = 0;
+    if (!avail) {
+#if (FLOW_FEATURE_RESET)
+        if (hw) {
+            used = 1;
+        }
+        else
+#endif
+        {
+            return -1;
+        }
+    }
+    used += 2;
+    return used;
+}
+
+// Test: a switch on a scoped enum -- two cases share a box (one arrow, both constants),
+// and a case written in braces keeps its break instead of falling into the next case.
+enum class FlowMode { eREAD, eREAD_FUA, ePRE_FETCH, eIDLE };
+
+PRIVATE int fnSwitchBracedCase(FlowMode mode) {
+    int cost = 0;
+    switch (mode) {
+        case FlowMode::eREAD:
+        case FlowMode::eREAD_FUA:
+            cost = 1;
+            break;
+        case FlowMode::ePRE_FETCH: {
+            cost = 2;
+            break;
+        }
+        default:
+            cost = 0;
+            break;
+    }
+    return cost;
+}
+
 PUBLIC int runFlowTests() {
     int total = 0;
     total += fnIfSimple(5);
@@ -275,5 +316,7 @@ PUBLIC int runFlowTests() {
     total += fnCallResultFieldRead();
     total += *fnCallResultFieldAddress();
     total += fnCallResultMixed(3);
+    total += fnReturnInBraces(0, 1);
+    total += fnSwitchBracedCase(FlowMode::ePRE_FETCH);
     return total;
 }

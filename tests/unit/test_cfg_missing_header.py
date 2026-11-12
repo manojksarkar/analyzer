@@ -11,6 +11,11 @@ the switch body, and the graph builder used to drop those -- the branch was not 
 flowchart, nor in the SWE.4 Test Steps built from the same graph. The labels are read back from
 the source text (`CFGBuilder._dropped_case_labels`).
 
+Two more ways a branch went wrong, from review SWE3_V4 (the end of this file): a `{ ... }` block
+written inside a statement list was folded into one box, so a `return` or `break` in it was lost
+-- the Return pointed on to the next statement, a braced `case X: { ...; break; }` fell into the
+next case; and a switch's case labels, drawn at the diamond, piled up on top of each other.
+
 Needs libclang, so the module skips without it (see test_visibility_matrix.py).
 """
 import os
@@ -240,3 +245,122 @@ def test_the_parse_summary_names_every_header_not_found(monkeypatch):
     P._log_parse_summary(0)
     line = next(s for s in said if "header(s) not found" in s)
     assert "2 header(s) not found" in line and "stdio.h (2 files), board_cfg.h (1 file)" in line
+
+
+# -- review SWE3_V4: a block in braces, and the case labels -------------------------------------
+
+RETURN_IN_BRACES = """int g;
+int f(int avail, int hw)
+{
+    if (!avail) {
+#if (FEATURE_OFF)
+        if (hw) {
+            g = 1;
+        }
+        else
+#endif
+        {
+            return -1;
+        }
+    }
+    g = 2;
+    return g;
+}
+"""
+
+BRACED_CASE = """enum class Mode { eREAD, eREAD_FUA, ePRE_FETCH };
+int g;
+int f(Mode m)
+{
+    switch (m) {
+    case Mode::eREAD:
+    case Mode::eREAD_FUA:
+        g = 1;
+        break;
+    case Mode::ePRE_FETCH: {
+        g = 2;
+        break;
+    }
+    default:
+        g = 0;
+        break;
+    }
+    return g;
+}
+"""
+
+
+def _node(cfg, code):
+    return next(n for n in cfg.nodes.values() if " ".join(n.raw_code.split()) == code)
+
+
+def _next(cfg, node):
+    """What a box's arrows lead to, by code."""
+    return {" ".join(cfg.nodes[e.target].raw_code.split()) for e in cfg.edges
+            if e.source == node.node_id}
+
+
+def test_a_return_in_an_extra_block_goes_to_end(graph):
+    """SWE3-V4-11: the `else` of an #if whose macro is off leaves `{ return -1; }` inside the if."""
+    cfg = graph(RETURN_IN_BRACES, "f")
+    ret = _node(cfg, "return -1")
+    assert ret.node_type.name == "RETURN"
+    assert _next(cfg, ret) == {"End"}
+
+
+def test_with_the_macro_on_the_else_block_returns_too(graph):
+    cfg = graph("#define FEATURE_ON 1\n" + RETURN_IN_BRACES.replace("FEATURE_OFF", "FEATURE_ON"), "f")
+    assert _next(cfg, _node(cfg, "return -1")) == {"End"}
+    assert _node(cfg, "hw").node_type.name == "DECISION"
+
+
+def test_a_braced_case_keeps_its_break(graph):
+    """It used to be one box, `{ g = 2; break; }`, with an arrow into the default's box."""
+    cfg = graph(BRACED_CASE, "f")
+    assert _branches(cfg)["case Mode::ePRE_FETCH"] == "g = 2"
+    assert _next(cfg, _node(cfg, "g = 2")) == {"break"}
+
+
+def test_a_block_of_plain_statements_stays_one_box(graph):
+    """Only a block that holds a return, break, branch or loop is opened up."""
+    cfg = graph("""int g;
+int f(int x)
+{
+    g = x;
+    {
+        int t = x * 2;
+        g += t;
+    }
+    return g;
+}
+""", "f")
+    actions = [n for n in cfg.nodes.values() if n.node_type.name == "ACTION"]
+    assert len(actions) == 1 and "int t = x * 2;" in actions[0].raw_code
+
+
+def test_case_arrows_show_the_constant_in_the_middle(graph):
+    """SWE3-V4-10: a plain label, which Graphviz makes room for, not a taillabel at the diamond;
+    only the constant; one arrow for the cases that go to one box. The graph keeps every case."""
+    from dot_builder import build_dot
+    cfg = graph(BRACED_CASE, "f")
+    dot = build_dot(cfg)
+    assert 'label="eREAD\\neREAD_FUA"' in dot          # DOT's line break, one arrow for both
+    assert 'label="ePRE_FETCH"' in dot and 'label="default"' in dot
+    assert "case " not in dot and "Mode::" not in dot and "taillabel" not in dot
+    assert sum(1 for e in cfg.edges if e.label and e.label.startswith("case Mode::eREAD")) == 2
+
+
+def test_yes_and_no_stay_at_the_diamond(graph):
+    from dot_builder import build_dot
+    dot = build_dot(graph(RETURN_IN_BRACES, "f"))
+    assert 'taillabel="Yes"' in dot and 'taillabel="No"' in dot
+
+
+@pytest.mark.parametrize("label, shown", [
+    ("case BufType::eREAD", "eREAD"), ("case ::ns::A::kX", "kX"), ("case MODE_FAST", "MODE_FAST"),
+    ("case 1", "1"), ("case 'a'", "'a'"), ("case (1 ? 2 : 3)", "(1 ? 2 : 3)"), ("default", "default"),
+])
+def test_what_a_case_arrow_shows(label, shown):
+    """A qualified name loses its scope; any other value is kept whole -- `1` stays `1`, not Yes."""
+    from dot_builder import _case_value
+    assert _case_value(label) == shown

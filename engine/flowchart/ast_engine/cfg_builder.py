@@ -195,6 +195,23 @@ class CFGBuilder:
         for (nid, lbl) in opens:
             self._edge(nid, to_id, lbl)
 
+    def _holds_control_flow(self, cursor: ci.Cursor) -> bool:
+        """True for a `{ ... }` block written inside a statement list that holds a
+        return, break, branch or loop, directly or in a block nested in it.
+
+        Such a block is not a plain action: folded into one box, its `return`
+        or `break` was lost, and the box flowed on to the next statement -- a
+        Return pointing at the next step, a braced `case X: { ...; break; }`
+        falling into the next case. A block of plain statements stays one box."""
+        if cursor.kind != ci.CursorKind.COMPOUND_STMT:
+            return False
+        for child in cursor.get_children():
+            if _is_assert_stmt(child, self._assert_locs):
+                continue
+            if child.kind in _CONTROL_FLOW_KINDS or self._holds_control_flow(child):
+                return True
+        return False
+
     def _src_text(self, cursor: ci.Cursor) -> str:
         ext = cursor.extent
         return SourceExtractor.get_extent_text(
@@ -276,7 +293,7 @@ class CFGBuilder:
             # which would otherwise become a DECISION node.
             if _is_assert_stmt(child, self._assert_locs):
                 continue
-            if child.kind in _CONTROL_FLOW_KINDS:
+            if child.kind in _CONTROL_FLOW_KINDS or self._holds_control_flow(child):
                 flush()
                 entry, opens, rets, brks, conts = self._process_stmt(child)
                 if entry is not None:
@@ -721,7 +738,7 @@ class CFGBuilder:
             # Filter ASSERT macros before kind dispatch (same reason as _process_compound)
             if _is_assert_stmt(s, self._assert_locs):
                 continue
-            if s.kind in _CONTROL_FLOW_KINDS:
+            if s.kind in _CONTROL_FLOW_KINDS or self._holds_control_flow(s):
                 flush()
                 entry, opens, rets, brks, conts = self._process_stmt(s)
                 if entry is not None:

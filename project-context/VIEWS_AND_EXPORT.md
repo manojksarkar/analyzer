@@ -562,6 +562,30 @@ it (`parser._diag_missing_headers`, 2026-10-14k): `N header(s) not found -- add 
 stdio.h (12 files), ...`. Tests: `tests/unit/test_cfg_missing_header.py`; fixture
 `SampleCppProject/Layer1/Diag/MissingHeaderSwitch*.cpp`.
 
+### A block in braces, and the case labels (2026-11-12d, review SWE3-V4-10, -11)
+
+A `{ ... }` written inside a statement list (`_process_compound`, `_process_case_stmts`) was not
+in `_CONTROL_FLOW_KINDS`, so it was folded into an ACTION box with its text: a `return` or
+`break` in it was lost and the box flowed on. Seen at review as a Return pointing at the next
+step -- the `else` of an `#if` whose macro is off leaves `if (c) { { return X; } }` -- and a
+braced `case X: { ...; break; }` fell into the next case. `CFGBuilder._holds_control_flow` now
+opens a block that holds a return, break, continue, goto, branch or loop (directly or in a nested
+block; ASSERTs do not count); a block of plain statements stays one box, as before. Node ids are
+positions, so a function with such a block renumbers (its label corrections orphan, HANDOVER
+§4.13); the sample had none -- all 401 graphs unchanged, measured.
+
+`dot_builder`: a switch head's edges no longer carry a `taillabel` -- every case edge leaves the
+same diamond and Graphviz makes no room for taillabels, so they piled up on top of each other.
+`_case_edge_def` gives one edge per target box with a plain `label` (mid-edge, room of its own),
+the cases' constants a line each; `_case_value` drops `case ` and a qualified name's scope
+(`case Type::eREAD` -> `eREAD`) and keeps any other value whole (`1` stays `1`; through
+`normalize_edge_label` it would read `Yes`). DOT only: the CFG keeps one edge per case with its
+`case ...` label, which SWE.4's Test Steps read. Yes/No stay taillabels. Measured on the sample:
+only the 5 switch functions' DOT moved. An incremental run keeps an unchanged function's old
+chart (BACKLOG IN-7): the review site needs a fresh run to see either fix. Rules: SWE3-FD-02.6,
+.7. Tests: `test_cfg_missing_header.py` (end); fixture `Layer1/Flow/Flowcharts.cpp`
+`fnReturnInBraces`, `fnSwitchBracedCase`.
+
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 
 At import time, `flowchart_engine.py` checks `os.environ["LIBCLANG_PATH"]`.
