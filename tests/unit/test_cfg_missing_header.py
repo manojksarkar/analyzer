@@ -364,3 +364,39 @@ def test_what_a_case_arrow_shows(label, shown):
     """A qualified name loses its scope; any other value is kept whole -- `1` stays `1`, not Yes."""
     from dot_builder import _case_value
     assert _case_value(label) == shown
+
+
+# -- an empty branch, an empty loop body ---------------------------------------------------------
+# A `{ }` -- or one an #if whose macro is off emptied -- gave no arrow at all: that side of the
+# decision was missing from the chart (review SWE3-V4-12 names the symptom).
+
+def _sides(cfg, code):
+    """{edge label: what it leads to} for the decision or loop head written `code`."""
+    head = _node(cfg, code)
+    return {e.label: " ".join(cfg.nodes[e.target].raw_code.split())
+            for e in cfg.edges if e.source == head.node_id}
+
+
+@pytest.mark.parametrize("then_body, else_body, sides", [
+    ("g = 1;", "\n#if (FEATURE_OFF)\n        g = 3;\n#endif\n", {"Yes": "g = 1", "No": "g = 2"}),
+    ("", "g = 1;", {"Yes": "g = 2", "No": "g = 1"}),
+    ("\n#if (FEATURE_OFF)\n        g = 3;\n#endif\n", None, {"Yes": "g = 2", "No": "g = 2"}),
+])
+def test_an_empty_branch_keeps_its_arrow(graph, then_body, else_body, sides):
+    tail = "" if else_body is None else " else {" + else_body + "}"
+    cfg = graph("int g;\nint f(int a)\n{\n    if (a) {" + then_body + "}" + tail
+                + "\n    g = 2;\n    return g;\n}\n", "f")
+    assert _sides(cfg, "a") == sides
+
+
+@pytest.mark.parametrize("loop, head", [
+    ("while (!*ready) { }", "!*ready"),
+    ("for (int i = 0; i < *ready; ++i) { }", "for (int i = 0; i < *ready; ++i)"),
+    ("do { } while (!*ready);", "do-while: !*ready"),
+])
+def test_an_empty_loop_body_loops_on_its_head(graph, loop, head):
+    """The do-while one was worse: Start skipped the loop, its head had no way in."""
+    cfg = graph("int f(volatile int *ready)\n{\n    " + loop + "\n    return *ready;\n}\n", "f")
+    assert _sides(cfg, head) == {"Yes": head, "No": "return *ready"}
+    start = next(n for n in cfg.nodes.values() if n.node_type.name == "START")
+    assert _next(cfg, start) == {head}

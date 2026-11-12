@@ -562,7 +562,7 @@ it (`parser._diag_missing_headers`, 2026-10-14k): `N header(s) not found -- add 
 stdio.h (12 files), ...`. Tests: `tests/unit/test_cfg_missing_header.py`; fixture
 `SampleCppProject/Layer1/Diag/MissingHeaderSwitch*.cpp`.
 
-### A block in braces, and the case labels (2026-11-12d, review SWE3-V4-10, -11)
+### A block in braces, an empty branch, and the case labels (2026-11-12d, -e; review SWE3-V4-10, -11, -12)
 
 A `{ ... }` written inside a statement list (`_process_compound`, `_process_case_stmts`) was not
 in `_CONTROL_FLOW_KINDS`, so it was folded into an ACTION box with its text: a `return` or
@@ -585,6 +585,17 @@ only the 5 switch functions' DOT moved. An incremental run keeps an unchanged fu
 chart (BACKLOG IN-7): the review site needs a fresh run to see either fix. Rules: SWE3-FD-02.6,
 .7. Tests: `test_cfg_missing_header.py` (end); fixture `Layer1/Flow/Flowcharts.cpp`
 `fnReturnInBraces`, `fnSwitchBracedCase`.
+
+An empty branch (2026-11-12e): `_process_if` drew no arrow for a `then` or `else` with no statement --
+`{ }`, or one an `#if` whose macro is off or an ASSERT emptied -- so that side of the decision was
+missing (one cause of SWE3-V4-12's symptom). It now goes on to the next statement (an open exit with
+its Yes / No). An empty loop body (`while (!ready) { }`) loops on its head (a Yes self-edge, a back
+edge to `dot_builder`); an empty `do { } while (c);` used to return no entry, so the loop was cut out
+of the chart -- its head is now the entry. Only edges are added, never nodes: no node id moves, so no
+label correction orphans. SWE.4: the Yes leg of an empty loop reads `Yes: continue.`, and the walk
+goes on after the loop (with only a No leg, `walk` returned there and dropped the steps after it).
+Measured: no sample function had one (405 graphs unchanged); fixtures `fnEmptyElse`, `fnWaitReady`;
+rule SWE3-FD-02.8.
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

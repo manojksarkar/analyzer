@@ -291,6 +291,28 @@ PRIVATE int fnSwitchBracedCase(FlowMode mode) {
     return cost;
 }
 
+// Test: an empty branch -- here an else that an #if whose macro is off empties -- keeps its
+// arrow: the No side goes on to the next statement.
+PRIVATE int fnEmptyElse(int x) {
+    int level = 0;
+    if (x > 0) {
+        level = 1;
+    } else {
+#if (FLOW_FEATURE_TRACE)
+        level = -1;
+#endif
+    }
+    level += x;
+    return level;
+}
+
+// Test: a loop with an empty body waits on its condition: the Yes arrow loops on the head.
+PRIVATE int fnWaitReady(volatile int *ready) {
+    while (!*ready) {
+    }
+    return *ready;
+}
+
 PUBLIC int runFlowTests() {
     int total = 0;
     total += fnIfSimple(5);
@@ -318,5 +340,8 @@ PUBLIC int runFlowTests() {
     total += fnCallResultMixed(3);
     total += fnReturnInBraces(0, 1);
     total += fnSwitchBracedCase(FlowMode::ePRE_FETCH);
+    total += fnEmptyElse(-2);
+    volatile int ready = 1;
+    total += fnWaitReady(&ready);
     return total;
 }

@@ -330,6 +330,11 @@ class CFGBuilder:
             self._process_stmt(then_c)
         if then_entry:
             self._edge(dec.node_id, then_entry, "Yes")
+        else:
+            # An empty branch -- `{ }`, or one an #if whose macro is off or an
+            # ASSERT emptied -- goes on to the next statement. It used to get no
+            # arrow at all, and that side of the decision was missing.
+            then_opens = [(dec.node_id, "Yes")] + then_opens
 
         all_rets = list(then_rets)
         all_brks = list(then_brks)
@@ -340,6 +345,8 @@ class CFGBuilder:
                 self._process_stmt(else_c)
             if else_entry:
                 self._edge(dec.node_id, else_entry, "No")
+            else:
+                else_opens = [(dec.node_id, "No")] + else_opens
             open_exits = then_opens + else_opens
             all_rets.extend(else_rets)
             all_brks.extend(else_brks)
@@ -371,6 +378,8 @@ class CFGBuilder:
         b_entry, b_opens, b_rets, b_brks, b_conts = self._process_stmt(body)
         if b_entry:
             self._edge(loop.node_id, b_entry, "Yes")
+        else:
+            self._edge(loop.node_id, loop.node_id, "Yes")   # empty body: loops on itself
 
         # Body fall-through and continues → back to loop head
         for (nid, lbl) in b_opens:
@@ -397,6 +406,8 @@ class CFGBuilder:
         b_entry, b_opens, b_rets, b_brks, b_conts = self._process_stmt(body)
         if b_entry:
             self._edge(loop.node_id, b_entry, "Yes")
+        else:
+            self._edge(loop.node_id, loop.node_id, "Yes")   # empty body: loops on itself
 
         for (nid, lbl) in b_opens:
             self._edge(nid, loop.node_id, lbl)
@@ -432,6 +443,10 @@ class CFGBuilder:
         # Condition True → back to body start
         if b_entry:
             self._edge(loop.node_id, b_entry, "Yes")
+        else:
+            # Empty body: the condition is the whole loop -- entered first, loops on itself.
+            self._edge(loop.node_id, loop.node_id, "Yes")
+            b_entry = loop.node_id
 
         open_exits = [(loop.node_id, "No")] + [(b, None) for b in b_brks]
         return (b_entry, open_exits, b_rets, [], [])
