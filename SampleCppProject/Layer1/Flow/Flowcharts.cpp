@@ -306,11 +306,41 @@ PRIVATE int fnEmptyElse(int x) {
     return level;
 }
 
+// Test: an empty then -- an #if whose macro is off empties it -- keeps its arrow: the Yes
+// side goes on to the next statement.
+PRIVATE int fnEmptyThen(int x) {
+    int level = 0;
+    if (x > 10) {
+#if (FLOW_FEATURE_TRACE)
+        level = -1;
+#endif
+    } else {
+        level = 1;
+    }
+    level += x;
+    return level;
+}
+
 // Test: a loop with an empty body waits on its condition: the Yes arrow loops on the head.
 PRIVATE int fnWaitReady(volatile int *ready) {
     while (!*ready) {
     }
     return *ready;
+}
+
+// Test: a do-while with an empty body is still entered, and its Yes arrow loops on the head.
+PRIVATE int fnWaitIdle(volatile int *busy) {
+    do {
+    } while (*busy);
+    return *busy;
+}
+
+// Test: a for loop with an empty body counts on its condition: the Yes arrow loops on the head.
+PRIVATE int fnTextLength(const char *buf) {
+    int len;
+    for (len = 0; buf[len] != 0; ++len) {
+    }
+    return len;
 }
 
 // Test: a continue inside a switch case goes back to the loop around the switch.
@@ -360,8 +390,12 @@ PUBLIC int runFlowTests() {
     total += fnReturnInBraces(0, 1);
     total += fnSwitchBracedCase(FlowMode::ePRE_FETCH);
     total += fnEmptyElse(-2);
+    total += fnEmptyThen(3);
     volatile int ready = 1;
     total += fnWaitReady(&ready);
+    volatile int busy = 0;
+    total += fnWaitIdle(&busy);
+    total += fnTextLength("flow");
     total += fnSwitchContinue(6);
     return total;
 }

@@ -594,8 +594,8 @@ edge to `dot_builder`); an empty `do { } while (c);` used to return no entry, so
 of the chart -- its head is now the entry. Only edges are added, never nodes: no node id moves, so no
 label correction orphans. SWE.4: the Yes leg of an empty loop reads `Yes: continue.`, and the walk
 goes on after the loop (with only a No leg, `walk` returned there and dropped the steps after it).
-Measured: no sample function had one (405 graphs unchanged); fixtures `fnEmptyElse`, `fnWaitReady`;
-rule SWE3-FD-02.8.
+Measured: no sample function had one (405 graphs unchanged); fixtures `fnEmptyThen`, `fnEmptyElse`,
+`fnWaitReady` (while), `fnWaitIdle` (do-while), `fnTextLength` (for); rule SWE3-FD-02.8.
 
 A `continue` in a switch case (2026-11-12f): `_process_switch` passed a case's `break` on (it ends
 the switch) but dropped its `continue`, so the CONTINUE box had no arrow -- a dead end in a loop
