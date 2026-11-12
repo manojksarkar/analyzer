@@ -10,6 +10,9 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-12b | Function visibility: a plan for BACKLOG WA-1 | [16](16-2026-10-30.md) |
+| 2026-11-12 | Review issues: the fix plan beside the issue list | [16](16-2026-10-30.md) |
+| 2026-11-11b | Review SWE3_V4: a fix plan per issue in BACKLOG (25 days), and issue 27 on direction | [16](16-2026-10-30.md) |
 | 2026-11-11 | Review triage: an issue may name more than one rule; the issue list renumbered (26 issues, the flowchart ones together) | [16](16-2026-10-30.md) |
 | 2026-11-09 | Review triage: an Issue ID on every comment (`SWE3-V4-NN`), the verdict from the issue list, one score (Our %) | [16](16-2026-10-30.md) |
 | 2026-11-06b | Review triage: Change dropped; three verdicts, Defect, Gap, As per rule | [16](16-2026-10-30.md) |

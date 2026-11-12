@@ -59,7 +59,7 @@ Every issue any review raised, one row each, As per rule included, in a CSV file
 
 | Issue ID | Rule ID | Issue | Verdict |
 |---|---|---|---|
-| SWE3-V4-07 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect |
+| SWE3-V4-07 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect |
 | SWE3-V5-01 | | A function defined by a macro has no entry | Gap |
 | SWE3-V4-23 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule |
 
@@ -194,7 +194,7 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 
 | Issue ID | Rule ID | Issue | Verdict |
 |---|---|---|---|
-| SWE3-V4-07 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect |
+| SWE3-V4-07 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect |
 | SWE3-V4-11 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect |
 | SWE3-V4-22 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | As per rule |
 | SWE3-V4-23 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule |
@@ -228,8 +228,8 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 
 | Review ID | Document | Section | Comment | Issue ID | Issue | Verdict | Status |
 |---|---|---|---|---|---|---|---|
-| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-07 | Structs and classes are missing from the unit header | Defect | Fixed |
-| V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-V4-07 | Structs and classes are missing from the unit header | Defect | Fixed |
+| V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-V4-07 | Class: structs and classes are missing from the unit header | Defect | Fixed |
+| V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-V4-07 | Class: structs and classes are missing from the unit header | Defect | Fixed |
 | V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-V4-22 | A global is in both the unit header and the interface table | As per rule | — |
 | V5_R1_03_P1 | Flash Core | UH | Enum `Mode` is listed in one unit only | SWE3-V5-02 | A shared header's enum is listed in one unit only | As per rule | — |
 | V5_R1_04_P1 | Flash Core | UH | Same as V5_R1_03_P1 | SWE3-V5-02 | A shared header's enum is listed in one unit only | As per rule | — |
@@ -243,7 +243,7 @@ Issues:
 
 | Issue ID | Rule ID | Issue | Verdict | Comments | Fixed | Open | Status | Open comments |
 |---|---|---|---|---|---|---|---|---|
-| SWE3-V4-07 | SWE3-UH-01 | Structs and classes are missing from the unit header | Defect | 2 | 2 | 0 | Fixed | |
+| SWE3-V4-07 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect | 2 | 2 | 0 | Fixed | |
 | SWE3-V4-11 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect | 2 | 1 | 1 | Partly fixed | V5_R2_04_P1 |
 | SWE3-V5-01 | | A function defined by a macro has no entry | Gap | 1 | 0 | 1 | Open | V5_R2_02_P1 |
 | SWE3-V5-02 | SWE3-UH-04 | A shared header's enum is listed in one unit only | As per rule | 2 | — | — | — | |

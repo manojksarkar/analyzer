@@ -1,11 +1,11 @@
 Issue ID,Rule ID,Issue,Verdict
-SWE3-V4-01,SWE3-UI-05,Parser cannot detect writes to class static members,Defect
-SWE3-V4-02,SWE3-UI-01,Class access specifier not being captured,Defect
+SWE3-V4-01,SWE3-UI-05,Class: parser cannot detect writes to static members,Defect
+SWE3-V4-02,SWE3-UI-01,Class: access specifier not being captured,Defect
 SWE3-V4-03,SWE3-SD-01,No slicing mechanism for static diagram,Defect
 SWE3-V4-04,SWE3-UH-04,Orphan header's enum comes in every unit that uses the header,Defect
 SWE3-V4-05,SWE3-UI-01,Orphan header's function is treated as another unit's function in the visibility logic,Defect
 SWE3-V4-06,SWE3-UH-01,Global variables are not in the unit headers,Defect
-SWE3-V4-07,SWE3-UH-01,Structs and classes are missing from the unit headers,Defect
+SWE3-V4-07,SWE3-UH-01,Class: structs and classes are missing from the unit headers,Defect
 SWE3-V4-08,SWE3-FD-02,Flowchart: a header that cannot be reached (e.g. stdio.h) drops a branch,Defect
 SWE3-V4-09,SWE3-FD-02,Flowchart: steps are present in the JSON but not in the DOCX,Defect
 SWE3-V4-10,SWE3-FD-02,Flowchart: text is not properly visible / cluttered,Defect
@@ -25,3 +25,4 @@ SWE3-V4-23,"SWE3-UI-01, SWE3-FD-01",A function no other unit calls has no interf
 SWE3-V4-24,SWE3-UH-04,Orphan header's enum appears in the wrong single unit,As per rule
 SWE3-V4-25,SWE3-UH-04,Enum related rule: appears in one component,As per rule
 SWE3-V4-26,SWE3-FD-03,An input name is missing or incomplete,As per rule
+SWE3-V4-27,SWE3-UI-05,"Direction: a function that changes state without writing a global (a setter on its class's field, an operation like Delete) shows Out",As per rule
