@@ -25,26 +25,13 @@ API. Section 4 is a proposal, not yet built.
 | Decision | Why |
 |---|---|
 | The queue is a database table (`analysis_jobs`), not a separate queue service | Survives restarts and crashes; one truth for the API and the command line; nothing new to run |
-| Two lanes per project, generation and update, one running job in each; a server cap on generations (default 2), all projects together | A days-long generation never blocks a 20-second Word-file update; no project takes every slot; the heavy jobs running at once are bounded |
+| Each project has two queues, called lanes: one for generations, one for Word-file updates. Each lane runs one job at a time. | A quick update never waits behind a long generation, and no project runs two generations at once. Example: while a 3-day generation of v5 runs, a 20-second update of v4 starts at once. |
+| At most 2 generations run at the same time on the server, all projects together. The number is a setting. | Limits how many heavy jobs share the server. Example: A and B each run a generation; C's waits until one of them ends. |
 | One scheduler thread; a start is one database transaction under a lock; a unique index allows one running job per lane | A job starts exactly once, even with many requests at the same moment |
 | A job's state changes only by compare-and-set | A cancel and a start at the same moment cannot both win |
 | Each job runs as its own background process, with an alive signal | It outlives an API restart; a dead run is found within 10 minutes |
 | Pause stops at a safe point (exit code 75); resume redoes that step | Nothing half-written; no database write per LLM answer, which would slow every run |
 | The command line never queues, but obeys the same rules | A script gets its answer at once, and never competes unseen with web jobs |
-
-**Building blocks**
-
-| Component | Role | Code |
-|---|---|---|
-| REST routes | Submit, control and list jobs and queues | `api/routes/jobs.py`, `queues.py` |
-| Job queue service | Checks a submit and answers; pause, resume, cancel, priority, limits; waiting messages and estimates; action record and notices | `api/services/job_queue.py` |
-| Scheduler | One thread: sweep, claim, launch | `api/services/job_scheduler.py` |
-| Pipeline runner | Starts each run as a background process, follows it, ends its job by the exit code | `api/services/pipeline_runner.py` |
-| Lane rules | Lanes, states, the command line's refusal rule, the queue lock | `engine/core/job_lanes.py` |
-| Command-line gate | Checks and records a command-line run | `analyzer.py` |
-| Pause points | Stop a run at a safe point | `engine/core/pause.py` |
-| Database | The queue, the action record, the limits | `analysis_jobs`, `job_events`, `projects` (migration 0019) |
-| Settings | The `jobs` block: read by the API at start-up, by the command line at each run | `config.local.json` |
 
 **A job's states**
 
@@ -57,18 +44,6 @@ API. Section 4 is a proposal, not yet built.
 | Complete, failed | Ended by the run; a failed job keeps its version for a resume |
 | Interrupted | Silent for 10 minutes, or its process gone; the next job starts |
 | Cancelled, removed | Stopped while running or paused; taken out while waiting |
-
-**Interfaces**
-
-| Purpose | REST routes |
-|---|---|
-| Submit | `POST /projects/{p}/jobs` · `.../versions/{v}/documents/generate` · `.../versions/{v}/resume` · `.../versions/{v}/reexport` |
-| Control a job | `POST /projects/{p}/jobs/{j}/pause`, `/resume`, `/cancel` (also removes a waiting job) · `PATCH /projects/{p}/jobs/{j}` (priority) |
-| See the queues | `GET /projects/{p}/queues` · `.../queues/preview` · `.../queues/events` (the record) · `GET /queues` (all projects) |
-| Administer | `PATCH /projects/{p}/job-limits` · `POST /queues/held` (start or clear held jobs) |
-
-Command line: `analyzer.py generate`, `export`, `resume` (generation lane) and `reexport` (update lane);
-`--ignore-queue` for a super admin.
 
 **Server settings** (the `jobs` block in `config.local.json`)
 
