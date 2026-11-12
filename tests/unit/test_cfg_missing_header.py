@@ -400,3 +400,24 @@ def test_an_empty_loop_body_loops_on_its_head(graph, loop, head):
     assert _sides(cfg, head) == {"Yes": head, "No": "return *ready"}
     start = next(n for n in cfg.nodes.values() if n.node_type.name == "START")
     assert _next(cfg, start) == {head}
+
+
+def test_a_continue_in_a_switch_goes_back_to_its_loop(graph):
+    """The switch passed `break` on but dropped `continue`: its box was a dead end."""
+    cfg = graph("""int g;
+int f(int n)
+{
+    for (int i = 0; i < n; ++i) {
+        switch (i % 3) {
+        case 0:
+            continue;
+        default:
+            g += 2;
+            break;
+        }
+        g += 10;
+    }
+    return g;
+}
+""", "f")
+    assert _next(cfg, _node(cfg, "continue")) == {"for (int i = 0; i < n; ++i)"}

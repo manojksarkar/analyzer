@@ -313,6 +313,25 @@ PRIVATE int fnWaitReady(volatile int *ready) {
     return *ready;
 }
 
+// Test: a continue inside a switch case goes back to the loop around the switch.
+PRIVATE int fnSwitchContinue(int n) {
+    int hits = 0;
+    for (int i = 0; i < n; ++i) {
+        switch (i % 3) {
+            case 0:
+                continue;
+            case 1:
+                hits += 1;
+                break;
+            default:
+                hits += 2;
+                break;
+        }
+        hits += 10;
+    }
+    return hits;
+}
+
 PUBLIC int runFlowTests() {
     int total = 0;
     total += fnIfSimple(5);
@@ -343,5 +362,6 @@ PUBLIC int runFlowTests() {
     total += fnEmptyElse(-2);
     volatile int ready = 1;
     total += fnWaitReady(&ready);
+    total += fnSwitchContinue(6);
     return total;
 }

@@ -597,6 +597,13 @@ goes on after the loop (with only a No leg, `walk` returned there and dropped th
 Measured: no sample function had one (405 graphs unchanged); fixtures `fnEmptyElse`, `fnWaitReady`;
 rule SWE3-FD-02.8.
 
+A `continue` in a switch case (2026-11-12f): `_process_switch` passed a case's `break` on (it ends
+the switch) but dropped its `continue`, so the CONTINUE box had no arrow -- a dead end in a loop
+around a switch, the firmware state-machine shape. `_process_switch_body` now returns the cases'
+continues and the switch hands them to the enclosing loop. Measured: 405 sample graphs unchanged;
+fixture `fnSwitchContinue`; rule SWE3-FD-02.6. Seen at the same time, NOT changed: a switch with no
+`default` has no arrow for "no case matches" -- whether to draw one (and how SWE.4 reads it) is open.
+
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 
 At import time, `flowchart_engine.py` checks `os.environ["LIBCLANG_PATH"]`.

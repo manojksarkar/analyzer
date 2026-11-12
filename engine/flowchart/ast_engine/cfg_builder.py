@@ -466,19 +466,22 @@ class CFGBuilder:
 
         body = children[1] if len(children) > 1 else None
         all_rets: List[str] = []
+        all_conts: List[str] = []
         open_exits: OpenExits = []
 
         if body and body.kind == ci.CursorKind.COMPOUND_STMT:
-            open_exits, all_rets = self._process_switch_body(sw.node_id, body)
+            open_exits, all_rets, all_conts = self._process_switch_body(sw.node_id, body)
 
         # If no cases connected, switch head is open exit
         if not open_exits:
             open_exits = [(sw.node_id, None)]
 
-        return (sw.node_id, open_exits, all_rets, [], [])
+        # A `break` ends the switch; a `continue` belongs to the enclosing loop, so
+        # it is passed out (it used to be dropped, leaving its box a dead end).
+        return (sw.node_id, open_exits, all_rets, [], all_conts)
 
     def _process_switch_body(self, sw_id: str,
-                              body: ci.Cursor) -> Tuple[OpenExits, List[str]]:
+                              body: ci.Cursor) -> Tuple[OpenExits, List[str], List[str]]:
         """
         Process the COMPOUND_STMT of a switch statement.
 
@@ -501,6 +504,7 @@ class CFGBuilder:
 
         open_exits: OpenExits = []
         all_rets: List[str] = []
+        all_conts: List[str] = []
         prev_open: OpenExits = []       # open exits carried forward for fallthrough
         pending_labels: List[str] = []  # edge labels waiting for next non-empty case
 
@@ -508,7 +512,8 @@ class CFGBuilder:
             pending_labels.append(label)
 
             if body_stmts:
-                e, opens, rets, brks, _ = self._process_case_stmts(body_stmts)
+                e, opens, rets, brks, conts = self._process_case_stmts(body_stmts)
+                all_conts.extend(conts)
                 if e is not None:
                     # Connect switch head → first body node for every accumulated label
                     for lbl in pending_labels:
@@ -527,7 +532,7 @@ class CFGBuilder:
 
         # Last case without a break falls through to after-switch
         open_exits.extend(prev_open)
-        return open_exits, all_rets
+        return open_exits, all_rets, all_conts
 
     def _flatten_switch_cases(
             self,

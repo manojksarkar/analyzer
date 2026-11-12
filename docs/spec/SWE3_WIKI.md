@@ -185,7 +185,7 @@ Appendix A  Design Guideline
 <tr><td>3. Every call in a box is written <code>Name()</code>; a call the label dropped is added as <code>Calls: X()</code></td></tr>
 <tr><td>4. A header that cannot be found removes no branch, except an <code>#if</code> on one of its macros</td></tr>
 <tr><td>5. Too tall for a page: split across pages, not shrunk</td></tr>
-<tr><td>6. A <code>return</code>, <code>break</code>, <code>continue</code> or <code>goto</code> ends its branch, also inside an extra <code>{ }</code> block: its box has no arrow on to the next step</td></tr>
+<tr><td>6. A <code>return</code>, <code>break</code>, <code>continue</code> or <code>goto</code> ends its branch, also inside an extra <code>{ }</code> block: its box has no arrow on to the next step; a <code>continue</code> goes back to its loop, also from a <code>switch</code> case</td></tr>
 <tr><td>7. A switch: each arrow shows only the case's constant (<code>eREAD</code>, not <code>case Type::eREAD</code>), in the middle of the arrow; cases that go to one box share one arrow, a constant per line</td></tr>
 <tr><td>8. An empty branch -- <code>{ }</code>, or one an <code>#if</code> whose macro is off empties -- still has its arrow, to the next step; a loop with an empty body loops on its own condition</td></tr>
 <tr><td rowspan="4" nowrap valign="middle" style="white-space:nowrap; vertical-align:middle"><b>SWE3-FD-03</b></td><td rowspan="4" valign="middle" style="vertical-align:middle"><b>Input Name and Output Name</b></td><td>1. Input Name: the first parameter's name; with no named parameter, the first global it writes, else reads; nothing: <code>&lt;Function&gt; input</code></td></tr>
