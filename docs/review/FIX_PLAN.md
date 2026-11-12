@@ -3,24 +3,22 @@
 How each issue in [issue_list.csv](issue_list.csv) is fixed. The issue list stays as it is; this file changes
 as work moves. Verdicts: [REVIEW_TRIAGE_SPEC](../spec/REVIEW_TRIAGE_SPEC.md).
 
-**Effort**: days to find and fix. A run and check at the review site takes 3 d; a fix that fails needs
-another run.
+**Effort**: days to find and fix one issue.
 
 ## Review SWE3_V4 (2026-11-11)
 
-### Time — 12 to 26 days
+### Time — 11 to 13 days, then 4 to 5 for hide/show
 
-Fixes go in batches, one review-site run each. The next batch is fixed while a run goes on; a fix that
-fails goes into the next run.
-
-| Step | Fix | Days | Review site meanwhile |
+| # | Work | Issues | Days |
 |---|---|---|---|
-| 1 | 10, 11, 13, 15; 12 once found | 5–10 | run today's code: verify 08, 09; investigate 12, 17 |
-| 2 | 17, 18, 19, 27; re-fixes from step 1 | 4–9 | run step 1 |
-| 3 | re-fixes from step 2 | 0–1 | run step 2 (3 d); one more run if needed (3 d) |
+| 1 | Setup and environment | Run at the review site (`.axf`); fix 19 and 12's headers; verify 08, 09 | 8–10 |
+| 2 | Fixes | 10, 11, 12, 13, 15, 17, 18, 27 | 8–10 |
+| 3 | Investigate and review tool | 12, 17; rules for 18, 19, 27; categorize the rest of the review comments (done: SWE.3 100 of 232, SWE.4 350 of 500); the review tool | 8–10 |
+| 4 | Hide/show | Function visibility and editable direction (21, 23); lower priority | 4–5 |
 
-Best: 5 + 4 + 3 = 12 d. Worst: 10 + 9 + 3 + 1 + 3 = 26 d. With function visibility and editable direction
-(BACKLOG WA-1, S3-20, 13 d to build): 25 to 40 d.
+Optimistic days. 1–3 run side by side, one person each: 8–10 days, then the last run and check (3 d):
+11–13 days.
+4 comes after.
 
 ### Open
 

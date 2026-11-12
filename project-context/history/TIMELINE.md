@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-12c | Review fix plan: the time for three people (11–13 days) | [16](16-2026-10-30.md) |
 | 2026-11-12b | Function visibility: a plan for BACKLOG WA-1 | [16](16-2026-10-30.md) |
 | 2026-11-12 | Review issues: the fix plan beside the issue list | [16](16-2026-10-30.md) |
 | 2026-11-11b | Review SWE3_V4: a fix plan per issue in BACKLOG (25 days), and issue 27 on direction | [16](16-2026-10-30.md) |
