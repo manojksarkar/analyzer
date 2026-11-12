@@ -6,8 +6,9 @@ How [JOB_SCHEDULING_SPEC](../spec/JOB_SCHEDULING_SPEC.md) is built; the HTTP con
 scheduler, the API, the command line and pause; the web screens are Manoj's ([§14](#14-web-app)). One
 server now; [§18](#18-two-servers-later) says what is left for two. Testing it on a server:
 [JOB_SCHEDULING_TESTING](../JOB_SCHEDULING_TESTING.md). What is built and what is left, in key points,
-for review: [JOB_SCHEDULING_SUMMARY](../planning/JOB_SCHEDULING_SUMMARY.md). One page with the
-scheduler's diagram, for Confluence: [JOB_SCHEDULING_OVERVIEW](JOB_SCHEDULING_OVERVIEW.md).
+for review: [JOB_SCHEDULING_SUMMARY](../planning/JOB_SCHEDULING_SUMMARY.md). The high-level design,
+for Confluence -- overview, architecture diagram, the requirements in key points, the proposed resource
+limits: [JOB_SCHEDULING_HLD](JOB_SCHEDULING_HLD.md).
 
 **Outline:** [1 Principles](#1-principles) · [2 Data](#2-data--migration-0019) ·
 [3 States](#3-a-jobs-states) · [4 Submitting](#4-submitting) · [5 Scheduler](#5-the-scheduler) ·
