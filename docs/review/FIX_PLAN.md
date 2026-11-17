@@ -15,11 +15,11 @@ as work moves. Verdicts: [REVIEW_TRIAGE_SPEC](../spec/REVIEW_TRIAGE_SPEC.md).
 
 | Verdict | Fixed | Open | Planned | Nothing to do | Total |
 |---|---|---|---|---|---|
-| Defect — flowchart | 1 | 7 | — | — | 8 |
+| Defect — flowchart | 3 | 5 | — | — | 8 |
 | Defect — other | 7 | — | — | — | 7 |
 | Gap | — | 2 | — | — | 2 |
 | As per rule | — | — | 3 | 5 | 8 |
-| **Total** | **8** | **9** | **3** | **5** | **25** |
+| **Total** | **10** | **7** | **3** | **5** | **25** |
 
 ### Time — 11 to 13 days, then 4 to 5 for hide/show
 
@@ -38,10 +38,10 @@ Optimistic days. 1–3 run side by side, one person each: 8–10 days, then the 
 | Issue ID | Issue | Fix | Effort | Status |
 |---|---|---|---|---|
 | SWE3-V4-08 | A header not reached drops a branch | 1) A `case` keeps its branch when its header is not found: fixed, to verify.<br>2) An `if` whose condition uses a value from a header not reached: to find.<br>3) Check in the review-site run (12) | 1–2 d | open |
-| SWE3-V4-09 | Steps in the JSON, not in the DOCX | Very big charts were drawn only in part (the bottom blank); now drawn whole | — | to verify |
-| SWE3-V4-10 | Text cluttered | Case labels piled up under the diamond.<br>1) Label in the middle of the arrow.<br>2) Constant only: `eVALUE`, not `case Type::eVALUE`.<br>3) Cases to the same box share one arrow | 1–2 d | done (branch) |
-| SWE3-V4-11 | Return not joined to End | A `return` inside an extra `{ }` had an arrow to the next step.<br>1) Look inside nested `{ }` for how a branch ends.<br>2) No arrow on after `return`, `break`, `continue`, `goto`.<br>Also fixed: a `case X: { …; break; }` in braces fell into the next case; a `continue` in a `switch` case had no arrow back to its loop | 1–2 d | done (branch) |
-| SWE3-V4-12 | One side of a branch missing | 1) Header not found: fixed by 08; check at the review site.<br>2) Macro off: 17.<br>3) An empty branch (an `#if` whose macro is off empties `{ }`) had no arrow: done (branch).<br>4) Other causes: to find | 1–2 d | investigate |
+| SWE3-V4-09 | Steps in the JSON, not in the DOCX | Very big charts were drawn only in part (the bottom blank); now drawn whole (no review comment found for it) | — | verified |
+| SWE3-V4-10 | Text cluttered | Case labels piled up under the diamond.<br>1) Label in the middle of the arrow.<br>2) Constant only: `eVALUE`, not `case Type::eVALUE`.<br>3) Cases to the same box share one arrow | 1–2 d | verified |
+| SWE3-V4-11 | Return not joined to End | A `return` inside an extra `{ }` had an arrow to the next step.<br>1) Look inside nested `{ }` for how a branch ends.<br>2) No arrow on after `return`, `break`, `continue`, `goto`.<br>Also fixed: a `case X: { …; break; }` in braces fell into the next case; a `continue` in a `switch` case had no arrow back to its loop | 1–2 d | verified |
+| SWE3-V4-12 | One side of a branch missing | 1) Header not found: fixed by 08; check at the review site.<br>2) Macro off: 17.<br>3) An empty branch (an `#if` whose macro is off empties `{ }`) had no arrow: done.<br>4) Other causes: to find | 1–2 d | investigate |
 | SWE3-V4-13 | Wrong value on a branch | Branch labels from the code, not the LLM | 1–2 d | open |
 | SWE3-V4-14 | Both branches look the same | Two boxes with different code never share a label: the pass that evens out the labels sees no code | 1 d | open |
 | SWE3-V4-15 | Wording or label should change | Reviewers correct it in the app | 0 d | open: the reviewing team |

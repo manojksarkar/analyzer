@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-17 | Flowchart fixes in develop; review issues 09, 10, 11 verified | [16](16-2026-10-30.md) |
 | 2026-11-12h | Review fix plan: a table per verdict, flowchart apart | [16](16-2026-10-30.md) |
 | 2026-11-12g | Review issue list: two issues removed (old 15, 17), the rest renumbered | [16](16-2026-10-30.md) |
 | 2026-11-12f | Flowcharts: a continue in a switch case goes back to its loop | [16](16-2026-10-30.md) |
