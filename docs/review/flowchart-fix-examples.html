@@ -1,0 +1,2248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flowchart Fix Examples</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column of examples; each is code, then Before | After at one scale. */
+:root {
+  --bg: #f6f5fa;
+  --surface: #ffffff;
+  --ink: #1f1d2b;
+  --muted: #5d5a6e;
+  --line: #dcd9e8;
+  --accent: #5246b8;
+  --paper: #ffffff;
+  --code-bg: #efedf6;
+  --before: #a8372d;
+  --before-bg: #fbeceb;
+  --after: #1e7044;
+  --after-bg: #e7f4ec;
+  --font-body: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15141c; --surface: #1e1c28; --ink: #ecebf3; --muted: #a9a6bb; --line: #34313f;
+    --accent: #a99ff0; --paper: #ffffff; --code-bg: #262433;
+    --before: #f0918a; --before-bg: #3a2023; --after: #7fd3a2; --after-bg: #1b3326;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15141c; --surface: #1e1c28; --ink: #ecebf3; --muted: #a9a6bb; --line: #34313f;
+  --accent: #a99ff0; --paper: #ffffff; --code-bg: #262433;
+  --before: #f0918a; --before-bg: #3a2023; --after: #7fd3a2; --after-bg: #1b3326;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 56px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1 { font-size: 28px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.lede { margin: 8px 0 0; color: var(--muted); max-width: 68ch; }
+.lede code, figcaption code, .note code { font-family: var(--font-mono); font-size: 0.9em; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 500; }
+.index { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
+.index a { display: flex; align-items: baseline; gap: 10px; padding: 6px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+.index a:hover { background: var(--surface); }
+.index a:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ix-num { font-family: var(--font-mono); font-size: 12px; color: var(--accent); min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.ix-title { flex: 1; min-width: 0; }
+.ix-issue { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.ix-issue::before { content: "V4-"; }
+.ex { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 16px; }
+.ex-head { display: flex; gap: 14px; align-items: baseline; }
+.ex-num { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--accent); border: 1px solid var(--accent); border-radius: 5px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
+.ex-title { min-width: 0; }
+.ex-title h2 { font-size: 18px; font-weight: 600; margin: 0; text-wrap: balance; }
+.ex-issue { margin: 2px 0 0; font-size: 13px; color: var(--muted); font-family: var(--font-mono); }
+.ex-body { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.code-wrap { min-width: 0; overflow-x: auto; background: var(--code-bg); border-radius: 8px; }
+.code { margin: 0; padding: 14px 16px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; color: var(--ink); white-space: pre; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+.side { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+figcaption { font-size: 14px; color: var(--ink); min-height: 3em; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; padding: 1px 7px; margin-right: 8px; vertical-align: 1px; }
+.tag-before { color: var(--before); background: var(--before-bg); }
+.tag-after { color: var(--after); background: var(--after-bg); }
+.chart { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; justify-content: center; align-items: flex-start; overflow-x: auto; }
+.side-before .chart { border-top: 3px solid var(--before); }
+.side-after .chart { border-top: 3px solid var(--after); }
+.chart svg { display: block; }
+.note { font-size: 13px; color: var(--muted); max-width: 80ch; margin: 0; }
+@media (max-width: 900px) {
+  .ex-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  figcaption { min-height: 0; }
+  .ex { padding: 14px; }
+  h1 { font-size: 23px; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>Flowchart fixes, before and after</h1>
+    <p class="lede">Ten small C++ functions, each drawn twice by the real flowchart engine: once by the code before the fixes and once after them (branch <code>fix/flowchart-review-v4</code>, in <code>develop</code> since 2026-11-17). No pipeline run and no LLM,
+    so each box shows its raw code; in a document the LLM writes the box text, and the arrows stay the same.</p>
+    <div class="meta">
+      <span><b>Issue 10</b> · examples 1–2</span>
+      <span><b>Issue 11</b> · examples 3–5</span>
+      <span><b>Issue 12</b> · examples 6–10</span>
+    </div>
+  </header>
+  <nav aria-label="Examples"><ol class="index"><li><a href="#ex01"><span class="ix-num">1</span><span class="ix-title">Case labels from a scoped enum</span><span class="ix-issue">10</span></a></li><li><a href="#ex02"><span class="ix-num">2</span><span class="ix-title">Several cases go to one box</span><span class="ix-issue">10</span></a></li><li><a href="#ex03"><span class="ix-num">3</span><span class="ix-title">A return inside an extra { }</span><span class="ix-issue">11</span></a></li><li><a href="#ex04"><span class="ix-num">4</span><span class="ix-title">A case in braces: case X: { …; break; }</span><span class="ix-issue">11</span></a></li><li><a href="#ex05"><span class="ix-num">5</span><span class="ix-title">A continue in a switch case</span><span class="ix-issue">11</span></a></li><li><a href="#ex06"><span class="ix-num">6</span><span class="ix-title">An empty Yes side</span><span class="ix-issue">12</span></a></li><li><a href="#ex07"><span class="ix-num">7</span><span class="ix-title">An empty No side</span><span class="ix-issue">12</span></a></li><li><a href="#ex08"><span class="ix-num">8</span><span class="ix-title">An empty while loop</span><span class="ix-issue">12</span></a></li><li><a href="#ex09"><span class="ix-num">9</span><span class="ix-title">An empty do-while</span><span class="ix-issue">12</span></a></li><li><a href="#ex10"><span class="ix-num">10</span><span class="ix-title">An empty for loop</span><span class="ix-issue">12</span></a></li></ol></nav>
+  
+<article class="ex" id="ex01">
+  <header class="ex-head">
+    <span class="ex-num">1</span>
+    <div class="ex-title">
+      <h2>Case labels from a scoped enum</h2>
+      <p class="ex-issue">SWE3-V4-10 · Text cluttered</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>enum class Mode { eREAD, eWRITE, eERASE };
+int g;
+void handleMode(Mode m) {
+    switch (m) {
+    case Mode::eREAD:  g = 1; break;
+    case Mode::eWRITE: g = 2; break;
+    case Mode::eERASE: g = 3; break;
+    default:           g = 0; break;
+    }
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>Each arrow says <code>case Mode::eREAD</code>; the labels pile up under the diamond.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of handleMode" style="width:100.0%;max-width:548px;height:auto"
+ viewBox="0.00 0.00 548.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 544,-444 544,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="270" cy="-422" rx="57.51" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="270" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">handleMode()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="270,-339 243,-321 270,-303 297,-321 270,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="270" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">m</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M270,-403.3C270,-388.94 270,-368.39 270,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="273.5,-351.66 270,-341.66 266.5,-351.66 273.5,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="270" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="270" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="54,-238 0,-238 0,-202 54,-202 54,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="27" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 1</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M253.68,-313.35C215.51,-297.8 119.57,-258.71 65.54,-236.7"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="66.9,-233.48 56.32,-232.95 64.26,-239.96 66.9,-233.48"/>
+<text xml:space="preserve" text-anchor="middle" x="233.7" y="-311.04" font-family="Helvetica,sans-Serif" font-size="11.00">case Mode::eREAD</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="216,-238 162,-238 162,-202 216,-202 216,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="189" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 2</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M260.71,-308.64C248.64,-293.89 227.18,-267.67 210.88,-247.74"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="213.73,-245.7 204.69,-240.18 208.32,-250.13 213.73,-245.7"/>
+<text xml:space="preserve" text-anchor="middle" x="242.69" y="-296.67" font-family="Helvetica,sans-Serif" font-size="11.00">case Mode::eWRITE</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="378,-238 324,-238 324,-202 378,-202 378,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="351" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 3</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M279.29,-308.64C291.36,-293.89 312.82,-267.67 329.12,-247.74"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="331.68,-250.13 335.31,-240.18 326.27,-245.7 331.68,-250.13"/>
+<text xml:space="preserve" text-anchor="middle" x="284.23" y="-285.96" font-family="Helvetica,sans-Serif" font-size="11.00">case Mode::eERASE</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="540,-238 486,-238 486,-202 540,-202 540,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="513" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M286.32,-313.35C324.49,-297.8 420.43,-258.71 474.46,-236.7"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="475.74,-239.96 483.68,-232.95 473.1,-233.48 475.74,-239.96"/>
+<text xml:space="preserve" text-anchor="middle" x="299.92" y="-295.38" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="54,-137 0,-137 0,-101 54,-101 54,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="27" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M27,-201.3C27,-186.94 27,-166.39 27,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="30.5,-149.66 27,-139.66 23.5,-149.66 30.5,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M54.4,-106.84C99.01,-88.66 187.21,-52.73 235.84,-32.92"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="237.11,-36.18 245.05,-29.17 234.47,-29.7 237.11,-36.18"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="216,-137 162,-137 162,-101 216,-101 216,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="189" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M189,-201.3C189,-186.94 189,-166.39 189,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="192.5,-149.66 189,-139.66 185.5,-149.66 192.5,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M203.48,-100.3C216.38,-84.53 235.39,-61.3 249.79,-43.7"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="252.28,-46.19 255.9,-36.23 246.86,-41.75 252.28,-46.19"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="378,-137 324,-137 324,-101 378,-101 378,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="351" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M351,-201.3C351,-186.94 351,-166.39 351,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="354.5,-149.66 351,-139.66 347.5,-149.66 354.5,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M336.52,-100.3C323.62,-84.53 304.61,-61.3 290.21,-43.7"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="293.14,-41.75 284.1,-36.23 287.72,-46.19 293.14,-41.75"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="540,-137 486,-137 486,-101 540,-101 540,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="513" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M513,-201.3C513,-186.94 513,-166.39 513,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="516.5,-149.66 513,-139.66 509.5,-149.66 516.5,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M485.6,-106.84C440.99,-88.66 352.79,-52.73 304.16,-32.92"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="305.53,-29.7 294.95,-29.17 302.89,-36.18 305.53,-29.7"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>The constant only, <code>eREAD</code>, in the middle of its arrow.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of handleMode" style="width:100.0%;max-width:548px;height:auto"
+ viewBox="0.00 0.00 548.00 468.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 464.2)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-464.2 544,-464.2 544,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="268" cy="-442.2" rx="57.51" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="268" y="-438.6" font-family="Helvetica,sans-Serif" font-size="12.00">handleMode()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="268,-357.2 241,-339.2 268,-321.2 295,-339.2 268,-357.2"/>
+<text xml:space="preserve" text-anchor="middle" x="268" y="-335.6" font-family="Helvetica,sans-Serif" font-size="12.00">m</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M268,-423.61C268,-408.85 268,-387.46 268,-370.04"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="271.5,-370.05 268,-360.05 264.5,-370.05 271.5,-370.05"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="270" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="270" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="54,-242 0,-242 0,-206 54,-206 54,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="27" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 1</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M246.83,-334.47C214.62,-328.21 152.01,-313.69 104.32,-288.2 85.63,-278.21 67.16,-263.35 52.96,-250.55"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="55.56,-248.18 45.85,-243.95 50.8,-253.32 55.56,-248.18"/>
+<text xml:space="preserve" text-anchor="middle" x="122.66" y="-278.3" font-family="Helvetica,sans-Serif" font-size="11.00">eREAD</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="216,-242 162,-242 162,-206 216,-206 216,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="189" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 2</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M247.66,-334.08C224.8,-328.23 188.73,-315.11 172.44,-288.2 166.1,-277.72 168.06,-264.84 172.44,-253.44"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="175.5,-255.15 176.52,-244.61 169.15,-252.21 175.5,-255.15"/>
+<text xml:space="preserve" text-anchor="middle" x="193.22" y="-278.3" font-family="Helvetica,sans-Serif" font-size="11.00">eWRITE</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="378,-242 324,-242 324,-206 378,-206 378,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="351" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 3</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M276.57,-326.51C289.4,-309.01 313.95,-275.53 331.34,-251.81"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="333.96,-254.16 337.05,-244.03 328.31,-250.03 333.96,-254.16"/>
+<text xml:space="preserve" text-anchor="middle" x="333.69" y="-278.3" font-family="Helvetica,sans-Serif" font-size="11.00">eERASE</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="540,-242 486,-242 486,-206 540,-206 540,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="513" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M284.32,-331.26C306.52,-321.77 347.45,-304.11 382,-288.2 413.51,-273.69 448.93,-256.56 474.98,-243.79"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="476.2,-247.09 483.63,-239.54 473.12,-240.81 476.2,-247.09"/>
+<text xml:space="preserve" text-anchor="middle" x="423.74" y="-278.3" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="54,-139 0,-139 0,-103 54,-103 54,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="27" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M27,-205.41C27,-190.49 27,-168.79 27,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="30.5,-151.51 27,-141.51 23.5,-151.51 30.5,-151.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M54.4,-108.61C99.12,-90.02 187.67,-53.22 236.21,-33.04"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="237.51,-36.3 245.4,-29.23 234.82,-29.83 237.51,-36.3"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="216,-139 162,-139 162,-103 216,-103 216,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="189" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M189,-205.41C189,-190.49 189,-168.79 189,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="192.5,-151.51 189,-141.51 185.5,-151.51 192.5,-151.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M203.11,-102.41C216.11,-86.19 235.54,-61.96 250.12,-43.79"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="252.79,-46.05 256.32,-36.06 247.33,-41.67 252.79,-46.05"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="378,-139 324,-139 324,-103 378,-103 378,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="351" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M351,-205.41C351,-190.49 351,-168.79 351,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="354.5,-151.51 351,-141.51 347.5,-151.51 354.5,-151.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M336.89,-102.41C323.89,-86.19 304.46,-61.96 289.88,-43.79"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="292.67,-41.67 283.68,-36.06 287.21,-46.05 292.67,-41.67"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="540,-139 486,-139 486,-103 540,-103 540,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="513" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M513,-205.41C513,-190.49 513,-168.79 513,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="516.5,-151.51 513,-141.51 509.5,-151.51 516.5,-151.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M485.41,-108.13C461.12,-97.71 424.77,-82.21 393,-69 362.87,-56.47 328.44,-42.51 303.69,-32.53"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="305.26,-29.39 294.68,-28.9 302.65,-35.88 305.26,-29.39"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex02">
+  <header class="ex-head">
+    <span class="ex-num">2</span>
+    <div class="ex-title">
+      <h2>Several cases go to one box</h2>
+      <p class="ex-issue">SWE3-V4-10 · Text cluttered</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>enum { CMD_READ, CMD_READ_FAST, CMD_READ_CACHED, CMD_WRITE, CMD_WRITE_FAST };
+void doRead(); void doWrite(); void reject();
+void runCommand(int cmd) {
+    switch (cmd) {
+    case CMD_READ:
+    case CMD_READ_FAST:
+    case CMD_READ_CACHED:
+        doRead();
+        break;
+    case CMD_WRITE:
+    case CMD_WRITE_FAST:
+        doWrite();
+        break;
+    default:
+        reject();
+        break;
+    }
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>Three arrows to <code>doRead()</code>, one per case.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of runCommand" style="width:93.0%;max-width:427px;height:auto"
+ viewBox="0.00 0.00 427.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 422.85,-444 422.85,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="136.85" cy="-422" rx="61.76" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="136.85" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">runCommand()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="136.85,-339 101.92,-321 136.85,-303 171.77,-321 136.85,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="136.85" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">cmd</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M136.85,-403.3C136.85,-388.94 136.85,-368.39 136.85,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="140.35,-351.66 136.85,-341.66 133.35,-351.66 140.35,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="223.85" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="223.85" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="82.86,-238 16.83,-238 16.83,-202 82.86,-202 82.86,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="49.85" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">doRead()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M107.17,-317.55C35.46,-305.79 -18,-254.68 6.31,-231.96"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="7.83,-235.13 14.61,-226.98 4.23,-229.13 7.83,-235.13"/>
+<text xml:space="preserve" text-anchor="middle" x="87.64" y="-318.57" font-family="Helvetica,sans-Serif" font-size="11.00">case CMD_READ</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M126.18,-307.86C113.08,-292.95 90.47,-267.23 73.25,-247.64"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="75.93,-245.38 66.7,-240.18 70.67,-250 75.93,-245.38"/>
+<text xml:space="preserve" text-anchor="middle" x="107.86" y="-296.52" font-family="Helvetica,sans-Serif" font-size="11.00">case CMD_READ_FAST</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M165.12,-316.82C216.05,-302.62 168.39,-244.95 94.89,-226.62"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="95.96,-223.27 85.45,-224.57 94.48,-230.11 95.96,-223.27"/>
+<text xml:space="preserve" text-anchor="middle" x="178.28" y="-298.46" font-family="Helvetica,sans-Serif" font-size="11.00">case CMD_READ_CACHED</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="256.51,-238 191.18,-238 191.18,-202 256.51,-202 256.51,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="223.85" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">doWrite()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M120.19,-310.86C116.11,-293.86 146.47,-257.19 180.1,-236.33"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="181.77,-239.41 188.76,-231.44 178.33,-233.31 181.77,-239.41"/>
+<text xml:space="preserve" text-anchor="middle" x="111.04" y="-289.78" font-family="Helvetica,sans-Serif" font-size="11.00">case CMD_WRITE</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M160.75,-314.82C190.91,-302.89 223.32,-272.77 235.68,-249.85"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="238.91,-251.2 239.4,-240.62 232.42,-248.59 238.91,-251.2"/>
+<text xml:space="preserve" text-anchor="middle" x="173.8" y="-296.36" font-family="Helvetica,sans-Serif" font-size="11.00">case CMD_WRITE_FAST</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="418.85,-238 364.85,-238 364.85,-202 418.85,-202 418.85,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="391.85" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">reject()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M156.43,-312.4C198.46,-296.08 297.95,-257.45 353.19,-236.01"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="354.24,-239.35 362.29,-232.47 351.71,-232.83 354.24,-239.35"/>
+<text xml:space="preserve" text-anchor="middle" x="170.27" y="-294.66" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="82.85,-137 28.85,-137 28.85,-101 82.85,-101 82.85,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="55.85" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M50.92,-201.3C51.79,-186.94 53.03,-166.39 54.05,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="57.54,-149.85 54.65,-139.66 50.55,-149.43 57.54,-149.85"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M83.21,-101.87C113.49,-84.03 162.13,-55.37 193.54,-36.86"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="195.21,-39.94 202.04,-31.85 191.65,-33.91 195.21,-39.94"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="250.85,-137 196.85,-137 196.85,-101 250.85,-101 250.85,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="223.85" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M223.85,-201.3C223.85,-186.94 223.85,-166.39 223.85,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="227.35,-149.66 223.85,-139.66 220.35,-149.66 227.35,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M223.85,-100.3C223.85,-85.94 223.85,-65.39 223.85,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="227.35,-48.66 223.85,-38.66 220.35,-48.66 227.35,-48.66"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="415.85,-137 361.85,-137 361.85,-101 415.85,-101 415.85,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="388.85" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M391.31,-201.3C390.87,-186.94 390.25,-166.39 389.74,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="393.24,-149.55 389.44,-139.66 386.25,-149.77 393.24,-149.55"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M361.23,-101.43C331.52,-83.61 284.44,-55.35 253.84,-37"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="255.95,-34.18 245.58,-32.04 252.35,-40.19 255.95,-34.18"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>One arrow, with the three constants on it.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of runCommand" style="width:100.0%;max-width:459px;height:auto"
+ viewBox="0.00 0.00 459.00 495.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 490.6)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-490.6 455.01,-490.6 455.01,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="233.01" cy="-468.6" rx="61.76" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="233.01" y="-465" font-family="Helvetica,sans-Serif" font-size="12.00">runCommand()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="233.01,-383.6 198.08,-365.6 233.01,-347.6 267.94,-365.6 233.01,-383.6"/>
+<text xml:space="preserve" text-anchor="middle" x="233.01" y="-362" font-family="Helvetica,sans-Serif" font-size="12.00">cmd</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M233.01,-450.01C233.01,-435.25 233.01,-413.86 233.01,-396.44"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="236.51,-396.45 233.01,-386.45 229.51,-396.45 236.51,-396.45"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="233.01" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="233.01" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="66.03,-242 0,-242 0,-206 66.03,-206 66.03,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="33.01" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">doRead()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M201.35,-363.25C164.49,-360.03 103.94,-349.39 66.72,-314.6 49.8,-298.79 41.32,-273.66 37.09,-254.03"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="40.58,-253.65 35.32,-244.45 33.7,-254.92 40.58,-253.65"/>
+<text xml:space="preserve" text-anchor="middle" x="123.87" y="-304.7" font-family="Helvetica,sans-Serif" font-size="11.00">CMD_READ</text>
+<text xml:space="preserve" text-anchor="middle" x="123.87" y="-291.5" font-family="Helvetica,sans-Serif" font-size="11.00">CMD_READ_FAST</text>
+<text xml:space="preserve" text-anchor="middle" x="123.87" y="-278.3" font-family="Helvetica,sans-Serif" font-size="11.00">CMD_READ_CACHED</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="265.68,-242 200.35,-242 200.35,-206 265.68,-206 265.68,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="233.01" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">doWrite()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M225.3,-351.1C220.16,-341.32 213.89,-327.58 211.18,-314.6 207.58,-297.37 207.58,-292.23 211.18,-275 212.69,-267.75 215.31,-260.27 218.23,-253.37"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="221.37,-254.93 222.38,-244.38 215.01,-251.99 221.37,-254.93"/>
+<text xml:space="preserve" text-anchor="middle" x="261.6" y="-298.1" font-family="Helvetica,sans-Serif" font-size="11.00">CMD_WRITE</text>
+<text xml:space="preserve" text-anchor="middle" x="261.6" y="-284.9" font-family="Helvetica,sans-Serif" font-size="11.00">CMD_WRITE_FAST</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="451.01,-242 397.01,-242 397.01,-206 451.01,-206 451.01,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="424.01" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">reject()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M252.88,-357.17C274.26,-348.67 308.73,-333.45 335.01,-314.6 360.31,-296.45 384.93,-270.87 401.84,-251.68"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="404.44,-254.03 408.33,-244.17 399.14,-249.45 404.44,-254.03"/>
+<text xml:space="preserve" text-anchor="middle" x="395.66" y="-291.5" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="82.01,-139 28.01,-139 28.01,-103 82.01,-103 82.01,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="55.01" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M36.85,-205.41C40.11,-190.42 44.87,-168.58 48.7,-151"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="52.07,-151.98 50.77,-141.46 45.23,-150.49 52.07,-151.98"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M82.44,-104.44C114.91,-86.02 168.83,-55.42 202.57,-36.28"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="203.94,-39.52 210.92,-31.54 200.49,-33.43 203.94,-39.52"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="260.01,-139 206.01,-139 206.01,-103 260.01,-103 260.01,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="233.01" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M233.01,-205.41C233.01,-190.49 233.01,-168.79 233.01,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="236.51,-151.51 233.01,-141.51 229.51,-151.51 236.51,-151.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M233.01,-102.41C233.01,-87.49 233.01,-65.79 233.01,-48.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="236.51,-48.51 233.01,-38.51 229.51,-48.51 236.51,-48.51"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="436.01,-139 382.01,-139 382.01,-103 436.01,-103 436.01,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="409.01" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M421.4,-205.41C419.19,-190.49 415.96,-168.79 413.36,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="416.84,-150.86 411.91,-141.49 409.91,-151.89 416.84,-150.86"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M381.51,-104.22C349.55,-85.88 296.94,-55.69 263.68,-36.6"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="265.46,-33.58 255.04,-31.64 261.97,-39.65 265.46,-33.58"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex03">
+  <header class="ex-head">
+    <span class="ex-num">3</span>
+    <div class="ex-title">
+      <h2>A return inside an extra { }</h2>
+      <p class="ex-issue">SWE3-V4-11 · Return not joined to End</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>void logError(); void process(int v);
+int checkValue(int v) {
+    if (v &lt; 0) {
+        {
+            logError();
+            return -1;
+        }
+    }
+    process(v);
+    return 0;
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>The block is one box, and an arrow goes on to <code>process(v)</code>, as if the function did not return.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of checkValue" style="width:96.9%;max-width:246px;height:auto"
+ viewBox="0.00 0.00 246.00 549.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 545)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-545 242.3,-545 242.3,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="183.35" cy="-523" rx="54.95" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="183.35" y="-519.4" font-family="Helvetica,sans-Serif" font-size="12.00">checkValue()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="183.35,-440 145.1,-422 183.35,-404 221.61,-422 183.35,-440"/>
+<text xml:space="preserve" text-anchor="middle" x="183.35" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">v &lt; 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M183.35,-504.3C183.35,-489.94 183.35,-469.39 183.35,-452.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="186.85,-452.66 183.35,-442.66 179.85,-452.66 186.85,-452.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="183.35" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="183.35" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="136.71,-339 0,-339 0,-303 136.71,-303 136.71,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="68.35" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">{ logError(); return &#45;1; }</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M170.16,-409.64C152.64,-394.56 121.17,-367.47 97.85,-347.39"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="100.2,-344.79 90.33,-340.92 95.63,-350.1 100.2,-344.79"/>
+<text xml:space="preserve" text-anchor="middle" x="150.91" y="-400.92" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="219.36,-238 147.35,-238 147.35,-202 219.36,-202 219.36,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="183.35" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">process(v)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M185.19,-404.38C186.92,-387.83 189.39,-361.7 190.35,-339 191.64,-308.76 189.12,-274.2 186.76,-250.33"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="190.27,-250.27 185.74,-240.69 183.31,-251 190.27,-250.27"/>
+<text xml:space="preserve" text-anchor="middle" x="178.64" y="-382.18" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M88.91,-302.3C106.98,-286.74 133.5,-263.92 153.83,-246.41"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="156.07,-249.11 161.37,-239.93 151.5,-243.8 156.07,-249.11"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="212.03,-137 154.68,-137 154.68,-101 212.03,-101 212.03,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="183.35" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">return 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M183.35,-201.3C183.35,-186.94 183.35,-166.39 183.35,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="186.85,-149.66 183.35,-139.66 179.85,-149.66 186.85,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M183.35,-100.3C183.35,-85.94 183.35,-65.39 183.35,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="186.85,-48.66 183.35,-38.66 179.85,-48.66 186.85,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span><code>logError()</code>, then <code>return -1</code>, then End.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of checkValue" style="width:100.0%;max-width:254px;height:auto"
+ viewBox="0.00 0.00 254.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 250.34,-444 250.34,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="121.34" cy="-422" rx="54.95" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="121.34" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">checkValue()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="121.34,-339 83.08,-321 121.34,-303 159.59,-321 121.34,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="121.34" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">v &lt; 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M121.34,-403.3C121.34,-388.94 121.34,-368.39 121.34,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="124.84,-351.66 121.34,-341.66 117.84,-351.66 124.84,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="121.34" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="121.34" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="66.67,-238 0,-238 0,-202 66.67,-202 66.67,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="33.34" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">logError()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M110.55,-307.86C97.29,-292.95 74.43,-267.23 57.01,-247.64"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="59.63,-245.32 50.37,-240.17 54.4,-249.97 59.63,-245.32"/>
+<text xml:space="preserve" text-anchor="middle" x="92.19" y="-296.63" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="246.34,-238 174.33,-238 174.33,-202 246.34,-202 246.34,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="210.34" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">process(v)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M132.25,-307.86C145.71,-292.88 168.98,-267 186.63,-247.37"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="189.03,-249.94 193.11,-240.16 183.82,-245.26 189.03,-249.94"/>
+<text xml:space="preserve" text-anchor="middle" x="138.08" y="-285.43" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="66.01,-137 4.66,-137 4.66,-101 66.01,-101 66.01,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="35.34" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">return &#45;1</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M33.69,-201.3C33.98,-186.94 34.4,-166.39 34.74,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="38.24,-149.73 34.94,-139.66 31.24,-149.59 38.24,-149.73"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M50.71,-100.3C64.49,-84.44 84.83,-61.02 100.15,-43.39"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="102.76,-45.72 106.68,-35.87 97.48,-41.13 102.76,-45.72"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="236.01,-137 178.66,-137 178.66,-101 236.01,-101 236.01,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="207.34" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">return 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M209.8,-201.3C209.36,-186.94 208.74,-166.39 208.23,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="211.73,-149.55 207.93,-139.66 204.74,-149.77 211.73,-149.55"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M191.96,-100.3C178.18,-84.44 157.84,-61.02 142.52,-43.39"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="145.19,-41.13 135.99,-35.87 139.91,-45.72 145.19,-41.13"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex04">
+  <header class="ex-head">
+    <span class="ex-num">4</span>
+    <div class="ex-title">
+      <h2>A case in braces: case X: { …; break; }</h2>
+      <p class="ex-issue">SWE3-V4-11 · Return not joined to End</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>int read(); int g;
+void stepState(int state) {
+    switch (state) {
+    case 0: {
+        int t = read();
+        g = t;
+        break;
+    }
+    case 1: {
+        g = 0;
+        break;
+    }
+    default:
+        break;
+    }
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>Case 0's box runs into case 1's box, and that into the default's break.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of stepState" style="width:90.9%;max-width:429px;height:auto"
+ viewBox="0.00 0.00 429.00 550.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 545.8)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-545.8 425.03,-545.8 425.03,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="285.03" cy="-523.8" rx="47.71" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="285.03" y="-520.2" font-family="Helvetica,sans-Serif" font-size="12.00">stepState()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="285.03,-440.8 247.08,-422.8 285.03,-404.8 322.98,-422.8 285.03,-440.8"/>
+<text xml:space="preserve" text-anchor="middle" x="285.03" y="-419.2" font-family="Helvetica,sans-Serif" font-size="12.00">state</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M285.03,-505.1C285.03,-490.74 285.03,-470.19 285.03,-453.34"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="288.53,-453.46 285.03,-443.46 281.53,-453.46 288.53,-453.46"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="394.03" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="394.03" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="122.05,-339.8 0,-339.8 0,-303 122.05,-303 122.05,-339.8"/>
+<text xml:space="preserve" text-anchor="middle" x="61.03" y="-325" font-family="Helvetica,sans-Serif" font-size="12.00">{ int t = read(); g = t;</text>
+<text xml:space="preserve" text-anchor="middle" x="61.03" y="-310.6" font-family="Helvetica,sans-Serif" font-size="12.00">break;</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M265.93,-413.33C232.26,-398.39 161.3,-366.89 112.4,-345.2"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="113.9,-342.03 103.34,-341.18 111.06,-348.43 113.9,-342.03"/>
+<text xml:space="preserve" text-anchor="middle" x="245.93" y="-410.4" font-family="Helvetica,sans-Serif" font-size="11.00">case 0</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="333.89,-238 236.16,-238 236.16,-202 333.89,-202 333.89,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="285.03" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">{ g = 0; break; }</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M285.03,-404.33C285.03,-369.92 285.03,-293.01 285.03,-250.55"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="288.53,-250.69 285.03,-240.69 281.53,-250.69 288.53,-250.69"/>
+<text xml:space="preserve" text-anchor="middle" x="276.57" y="-382.91" font-family="Helvetica,sans-Serif" font-size="11.00">case 1</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="421.03,-137 367.03,-137 367.03,-101 421.03,-101 421.03,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="394.03" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M300.09,-411.2C318.86,-397.13 350.5,-370.46 367.03,-339.8 400.15,-278.35 399.87,-193.49 396.91,-149.35"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="400.42,-149.34 396.15,-139.64 393.44,-149.88 400.42,-149.34"/>
+<text xml:space="preserve" text-anchor="middle" x="309.33" y="-390.16" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M101.59,-302.4C138.81,-285.88 194.1,-261.35 234.25,-243.53"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="235.48,-246.81 243.2,-239.56 232.64,-240.42 235.48,-246.81"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M304.51,-201.3C321.56,-185.81 346.54,-163.13 365.78,-145.65"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="368.09,-148.28 373.14,-138.97 363.38,-143.1 368.09,-148.28"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M394.03,-100.3C394.03,-85.94 394.03,-65.39 394.03,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="397.53,-48.66 394.03,-38.66 390.53,-48.66 397.53,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>Each case ends with its own break and leaves the switch.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of stepState" style="width:100.0%;max-width:472px;height:auto"
+ viewBox="0.00 0.00 472.00 503.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 499.2)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-499.2 467.69,-499.2 467.69,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="246.69" cy="-477.2" rx="47.71" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="246.69" y="-473.6" font-family="Helvetica,sans-Serif" font-size="12.00">stepState()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="246.69,-392.2 208.74,-374.2 246.69,-356.2 284.64,-374.2 246.69,-392.2"/>
+<text xml:space="preserve" text-anchor="middle" x="246.69" y="-370.6" font-family="Helvetica,sans-Serif" font-size="12.00">state</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M246.69,-458.61C246.69,-443.85 246.69,-422.46 246.69,-405.04"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="250.19,-405.05 246.69,-395.05 243.19,-405.05 250.19,-405.05"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="246.69" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="246.69" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="111.38,-277 0,-277 0,-241 111.38,-241 111.38,-277"/>
+<text xml:space="preserve" text-anchor="middle" x="55.69" y="-255.4" font-family="Helvetica,sans-Serif" font-size="12.00">int t = read(); g = t</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M230.07,-363.35C200.35,-345.74 137.31,-308.37 95.73,-283.73"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="97.6,-280.77 87.22,-278.68 94.03,-286.79 97.6,-280.77"/>
+<text xml:space="preserve" text-anchor="middle" x="159.98" y="-313.3" font-family="Helvetica,sans-Serif" font-size="11.00">0</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="273.69,-277 219.69,-277 219.69,-241 273.69,-241 273.69,-277"/>
+<text xml:space="preserve" text-anchor="middle" x="246.69" y="-255.4" font-family="Helvetica,sans-Serif" font-size="12.00">g = 0</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M246.69,-355.51C246.69,-337.9 246.69,-310.55 246.69,-289.62"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="250.19,-289.68 246.69,-279.68 243.19,-289.68 250.19,-289.68"/>
+<text xml:space="preserve" text-anchor="middle" x="249.75" y="-313.3" font-family="Helvetica,sans-Serif" font-size="11.00">1</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="463.69,-208 409.69,-208 409.69,-172 463.69,-172 463.69,-208"/>
+<text xml:space="preserve" text-anchor="middle" x="436.69" y="-186.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M258.86,-361.53C289.08,-332.55 368.08,-256.79 409.87,-216.72"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="412.11,-219.42 416.91,-209.97 407.27,-214.37 412.11,-219.42"/>
+<text xml:space="preserve" text-anchor="middle" x="326.2" y="-313.3" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="104.69,-139 50.69,-139 50.69,-103 104.69,-103 104.69,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="77.69" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M58.52,-240.5C62.17,-217.96 68.56,-178.45 72.95,-151.29"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="76.39,-151.96 74.53,-141.53 69.48,-150.84 76.39,-151.96"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M105.22,-103.55C135.84,-85.25 185.15,-55.78 216.72,-36.91"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="218.48,-39.93 225.27,-31.8 214.89,-33.93 218.48,-39.93"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="273.69,-139 219.69,-139 219.69,-103 273.69,-103 273.69,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="246.69" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M246.69,-240.5C246.69,-217.96 246.69,-178.45 246.69,-151.29"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="250.19,-151.55 246.69,-141.55 243.19,-151.55 250.19,-151.55"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M246.69,-102.41C246.69,-87.49 246.69,-65.79 246.69,-48.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="250.19,-48.51 246.69,-38.51 243.19,-48.51 250.19,-48.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M423.73,-171.66C404.71,-146.94 367.29,-101.04 328.69,-69 313.26,-56.19 294.23,-44.39 278.39,-35.47"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="280.33,-32.53 269.88,-30.79 276.96,-38.67 280.33,-32.53"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex05">
+  <header class="ex-head">
+    <span class="ex-num">5</span>
+    <div class="ex-title">
+      <h2>A continue in a switch case</h2>
+      <p class="ex-issue">SWE3-V4-11 · Return not joined to End</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>int count;
+void countItems(const int* items, int n) {
+    for (int i = 0; i &lt; n; i++) {
+        switch (items[i]) {
+        case 0:
+            continue;
+        case 1:
+            count += 2;
+            break;
+        default:
+            break;
+        }
+        count++;
+    }
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span><code>continue</code> is a dead end: no arrow leaves it.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of countItems" style="width:85.0%;max-width:645px;height:auto"
+ viewBox="0.00 0.00 645.00 688.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 683.6)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-683.6 641.06,-683.6 641.06,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="109.38" cy="-661.6" rx="52.81" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="109.38" y="-658" font-family="Helvetica,sans-Serif" font-size="12.00">countItems()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="109.38,-578.6 0,-541.8 109.38,-505 218.75,-541.8 109.38,-578.6"/>
+<text xml:space="preserve" text-anchor="middle" x="109.38" y="-545.4" font-family="Helvetica,sans-Serif" font-size="12.00">for (int i = 0; i &lt; n;</text>
+<text xml:space="preserve" text-anchor="middle" x="109.38" y="-531" font-family="Helvetica,sans-Serif" font-size="12.00">i++)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M109.38,-642.96C109.38,-629.24 109.38,-609.5 109.38,-591.16"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="112.88,-591.21 109.38,-581.21 105.88,-591.21 112.88,-591.21"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="187.38" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="187.38" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M85.32,-512.49C54.05,-472.71 3.38,-396.71 3.38,-322 3.38,-322 3.38,-322 3.38,-219 3.38,-130.24 102.73,-63.93 155.42,-35.01"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="156.87,-38.2 164.04,-30.41 153.57,-32.03 156.87,-38.2"/>
+<text xml:space="preserve" text-anchor="middle" x="67.61" y="-499.9" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="293.38,-440 244.6,-422 293.38,-404 342.15,-422 293.38,-440"/>
+<text xml:space="preserve" text-anchor="middle" x="293.38" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">items[i]</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M146.61,-516.96C182.08,-494.25 234.64,-460.6 266.29,-440.34"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="267.85,-443.5 274.38,-435.16 264.07,-437.6 267.85,-443.5"/>
+<text xml:space="preserve" text-anchor="middle" x="157.32" y="-496.77" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="228.06,-339 166.69,-339 166.69,-303 228.06,-303 228.06,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="197.38" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">continue</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M280.82,-408.06C266.17,-392.95 241.56,-367.56 222.85,-348.27"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="225.41,-345.89 215.94,-341.15 220.39,-350.76 225.41,-345.89"/>
+<text xml:space="preserve" text-anchor="middle" x="262.14" y="-397.63" font-family="Helvetica,sans-Serif" font-size="11.00">case 0</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="408.73,-339 336.02,-339 336.02,-303 408.73,-303 408.73,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="372.38" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">count += 2</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M304.03,-407.65C316.01,-392.64 335.77,-367.87 350.97,-348.82"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="353.61,-351.12 357.12,-341.12 348.14,-346.76 353.61,-351.12"/>
+<text xml:space="preserve" text-anchor="middle" x="308.73" y="-384.91" font-family="Helvetica,sans-Serif" font-size="11.00">case 1</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="579.38,-238 525.38,-238 525.38,-202 579.38,-202 579.38,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="552.38" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M318.96,-412.83C354.01,-400.75 417.69,-375.54 462.38,-339 493.61,-313.45 520.32,-275 536.34,-248.99"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="539.29,-250.87 541.44,-240.5 533.29,-247.27 539.29,-250.87"/>
+<text xml:space="preserve" text-anchor="middle" x="333.22" y="-395.51" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="399.38,-238 345.38,-238 345.38,-202 399.38,-202 399.38,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="372.38" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M372.38,-302.3C372.38,-287.94 372.38,-267.39 372.38,-250.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="375.88,-250.66 372.38,-240.66 368.88,-250.66 375.88,-250.66"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="402.06,-137 342.69,-137 342.69,-101 402.06,-101 402.06,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="372.38" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">count++</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M372.38,-201.3C372.38,-186.94 372.38,-166.39 372.38,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="375.88,-149.66 372.38,-139.66 368.88,-149.66 375.88,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M525.04,-203.96C495.31,-187.61 447.47,-161.3 413.27,-142.49"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="414.99,-139.44 404.54,-137.69 411.61,-145.58 414.99,-139.44"/>
+</g>
+
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M402.75,-120.61C477.93,-123.6 664.48,-140.79 633.38,-238 574.13,-423.17 326.76,-498.86 194.18,-526.58"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="193.67,-523.12 184.57,-528.54 195.07,-529.97 193.67,-523.12"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>An arrow from <code>continue</code> back to the loop.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of countItems" style="width:100.0%;max-width:759px;height:auto"
+ viewBox="0.00 0.00 759.00 747.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 742.8)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-742.8 755.42,-742.8 755.42,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="109.38" cy="-720.8" rx="52.81" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="109.38" y="-717.2" font-family="Helvetica,sans-Serif" font-size="12.00">countItems()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="109.38,-635.8 0,-599 109.38,-562.2 218.75,-599 109.38,-635.8"/>
+<text xml:space="preserve" text-anchor="middle" x="109.38" y="-602.6" font-family="Helvetica,sans-Serif" font-size="12.00">for (int i = 0; i &lt; n;</text>
+<text xml:space="preserve" text-anchor="middle" x="109.38" y="-588.2" font-family="Helvetica,sans-Serif" font-size="12.00">i++)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M109.38,-702.12C109.38,-687.85 109.38,-667.08 109.38,-647.99"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="112.88,-648.2 109.38,-638.2 105.88,-648.2 112.88,-648.2"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="270.38" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="270.38" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M86.85,-569.28C70.91,-546.06 52.38,-511.83 52.38,-478.2 52.38,-478.2 52.38,-478.2 52.38,-120 52.38,-42.18 168.15,-24.14 230.96,-20.09"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="230.85,-23.6 240.65,-19.56 230.47,-16.61 230.85,-23.6"/>
+<text xml:space="preserve" text-anchor="middle" x="69.78" y="-555.55" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="368.38,-495.2 319.6,-477.2 368.38,-459.2 417.15,-477.2 368.38,-495.2"/>
+<text xml:space="preserve" text-anchor="middle" x="368.38" y="-473.6" font-family="Helvetica,sans-Serif" font-size="12.00">items[i]</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M155.08,-576.86C207.05,-552.82 290.57,-514.19 336.15,-493.11"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="337.61,-496.29 345.22,-488.91 334.67,-489.93 337.61,-496.29"/>
+<text xml:space="preserve" text-anchor="middle" x="167.99" y="-558.28" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="301.06,-311 239.69,-311 239.69,-275 301.06,-275 301.06,-311"/>
+<text xml:space="preserve" text-anchor="middle" x="270.38" y="-289.4" font-family="Helvetica,sans-Serif" font-size="12.00">continue</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M360.52,-461.6C344.24,-431.33 306.57,-361.29 285.44,-322.01"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="288.65,-320.59 280.83,-313.44 282.49,-323.91 288.65,-320.59"/>
+<text xml:space="preserve" text-anchor="middle" x="342.86" y="-416.3" font-family="Helvetica,sans-Serif" font-size="11.00">0</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="505.73,-380 433.02,-380 433.02,-344 505.73,-344 505.73,-380"/>
+<text xml:space="preserve" text-anchor="middle" x="469.38" y="-358.4" font-family="Helvetica,sans-Serif" font-size="12.00">count += 2</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M379.96,-463.21C395.9,-445.35 424.96,-412.78 445.63,-389.62"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="448.18,-392.02 452.22,-382.23 442.95,-387.36 448.18,-392.02"/>
+<text xml:space="preserve" text-anchor="middle" x="424.96" y="-416.3" font-family="Helvetica,sans-Serif" font-size="11.00">1</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="692.38,-311 638.38,-311 638.38,-275 692.38,-275 692.38,-311"/>
+<text xml:space="preserve" text-anchor="middle" x="665.38" y="-289.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M390.7,-466.84C427.24,-451.11 501.54,-417.4 559.38,-380 587.5,-361.81 616.88,-337.49 637.56,-319.35"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="639.67,-322.16 644.83,-312.9 635.02,-316.92 639.67,-322.16"/>
+<text xml:space="preserve" text-anchor="middle" x="517.95" y="-416.3" font-family="Helvetica,sans-Serif" font-size="11.00">default</text>
+</g>
+
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M301.53,-294.62C369.18,-296.69 526.1,-305.62 559.38,-344 606.18,-397.99 570.87,-406.96 561.38,-426.2 501.24,-548.08 336.39,-584.52 223.32,-594.83"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="223.3,-591.32 213.63,-595.65 223.89,-598.3 223.3,-591.32"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="496.38,-242 442.38,-242 442.38,-206 496.38,-206 496.38,-242"/>
+<text xml:space="preserve" text-anchor="middle" x="469.38" y="-220.4" font-family="Helvetica,sans-Serif" font-size="12.00">break</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M469.38,-343.5C469.38,-320.96 469.38,-281.45 469.38,-254.29"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="472.88,-254.55 469.38,-244.55 465.88,-254.55 472.88,-254.55"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="499.06,-139 439.69,-139 439.69,-103 499.06,-103 499.06,-139"/>
+<text xml:space="preserve" text-anchor="middle" x="469.38" y="-117.4" font-family="Helvetica,sans-Serif" font-size="12.00">count++</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M469.38,-205.41C469.38,-190.49 469.38,-168.79 469.38,-151.26"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="472.88,-151.51 469.38,-141.51 465.88,-151.51 472.88,-151.51"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M651.16,-274.32C630.74,-249.6 591.17,-204.13 551.38,-172 538.56,-161.65 523.42,-151.84 509.66,-143.7"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="511.71,-140.84 501.3,-138.87 508.21,-146.9 511.71,-140.84"/>
+</g>
+
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M499.59,-127.45C579,-143.45 784.94,-196.52 746.38,-311 703.99,-436.81 668.27,-487.07 542.38,-529.2 433.17,-565.75 301.8,-583.13 212.62,-591.23"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="212.36,-587.74 202.7,-592.1 212.97,-594.71 212.36,-587.74"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex06">
+  <header class="ex-head">
+    <span class="ex-num">6</span>
+    <div class="ex-title">
+      <h2>An empty Yes side</h2>
+      <p class="ex-issue">SWE3-V4-12 · One side of a branch missing</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>#define LIMIT 10
+void trace(int v); void store(int v); void done();
+void update(int v) {
+    if (v &gt; LIMIT) {
+#ifdef TRACE_ON
+        trace(v);
+#endif
+    } else {
+        store(v);
+    }
+    done();
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span><code>TRACE_ON</code> is off, so the Yes block is empty, and there is no Yes arrow.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of update" style="width:67.0%;max-width:128px;height:auto"
+ viewBox="0.00 0.00 128.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 123.85,-444 123.85,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="59.93" cy="-422" rx="38.77" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="59.93" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">update()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="59.93,-339 0,-321 59.93,-303 119.85,-321 59.93,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="59.93" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">v &gt; LIMIT</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M59.93,-403.3C59.93,-388.94 59.93,-368.39 59.93,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="63.43,-351.66 59.93,-341.66 56.43,-351.66 63.43,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="59.93" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="59.93" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="88.26,-238 31.59,-238 31.59,-202 88.26,-202 88.26,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="59.93" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">store(v)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M59.93,-302.3C59.93,-287.94 59.93,-267.39 59.93,-250.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="63.43,-250.66 59.93,-240.66 56.43,-250.66 63.43,-250.66"/>
+<text xml:space="preserve" text-anchor="middle" x="51.47" y="-280.87" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="86.93,-137 32.93,-137 32.93,-101 86.93,-101 86.93,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="59.93" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">done()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M59.93,-201.3C59.93,-186.94 59.93,-166.39 59.93,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="63.43,-149.66 59.93,-139.66 56.43,-149.66 63.43,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M59.93,-100.3C59.93,-85.94 59.93,-65.39 59.93,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="63.43,-48.66 59.93,-38.66 56.43,-48.66 63.43,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>Yes goes on to <code>done()</code>.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of update" style="width:100.0%;max-width:191px;height:auto"
+ viewBox="0.00 0.00 191.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 187.26,-444 187.26,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="123.33" cy="-422" rx="38.77" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="123.33" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">update()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="123.33,-339 63.41,-321 123.33,-303 183.26,-321 123.33,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="123.33" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">v &gt; LIMIT</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M123.33,-403.3C123.33,-388.94 123.33,-368.39 123.33,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="126.84,-351.66 123.33,-341.66 119.84,-351.66 126.84,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="123.33" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="123.33" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="56.67,-238 0,-238 0,-202 56.67,-202 56.67,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="28.33" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">store(v)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M110.52,-306.65C95.92,-291.43 71.7,-266.19 53.32,-247.04"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="56.01,-244.79 46.56,-239.99 50.96,-249.63 56.01,-244.79"/>
+<text xml:space="preserve" text-anchor="middle" x="91.87" y="-296.12" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="150.33,-137 96.33,-137 96.33,-101 150.33,-101 150.33,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="123.33" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">done()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M123.33,-302.6C123.33,-268.32 123.33,-191.72 123.33,-149.44"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="126.84,-149.62 123.33,-139.62 119.84,-149.62 126.84,-149.62"/>
+<text xml:space="preserve" text-anchor="middle" x="114.88" y="-281.18" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M45.32,-201.3C60.04,-185.96 81.55,-163.54 98.26,-146.13"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="100.63,-148.71 105.03,-139.07 95.58,-143.87 100.63,-148.71"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M123.33,-100.3C123.33,-85.94 123.33,-65.39 123.33,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="126.84,-48.66 123.33,-38.66 119.84,-48.66 126.84,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex07">
+  <header class="ex-head">
+    <span class="ex-num">7</span>
+    <div class="ex-title">
+      <h2>An empty No side</h2>
+      <p class="ex-issue">SWE3-V4-12 · One side of a branch missing</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>void start(); void trace(); void finish();
+void begin(bool ready) {
+    if (ready) {
+        start();
+    } else {
+#ifdef TRACE_ON
+        trace();
+#endif
+    }
+    finish();
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>The No block is empty, and there is no No arrow.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of begin" style="width:52.9%;max-width:91px;height:auto"
+ viewBox="0.00 0.00 91.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 87.13,-444 87.13,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="41.57" cy="-422" rx="34.08" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="41.57" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">begin()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="41.57,-339 0,-321 41.57,-303 83.13,-321 41.57,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="41.57" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">ready</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M41.57,-403.3C41.57,-388.94 41.57,-368.39 41.57,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="45.07,-351.66 41.57,-341.66 38.07,-351.66 45.07,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="41.57" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="41.57" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="68.57,-238 14.57,-238 14.57,-202 68.57,-202 68.57,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="41.57" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">start()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M41.57,-302.3C41.57,-287.94 41.57,-267.39 41.57,-250.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="45.07,-250.66 41.57,-240.66 38.07,-250.66 45.07,-250.66"/>
+<text xml:space="preserve" text-anchor="middle" x="33.11" y="-280.87" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="68.57,-137 14.57,-137 14.57,-101 68.57,-101 68.57,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="41.57" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">finish()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M41.57,-201.3C41.57,-186.94 41.57,-166.39 41.57,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="45.07,-149.66 41.57,-139.66 38.07,-149.66 45.07,-149.66"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M41.57,-100.3C41.57,-85.94 41.57,-65.39 41.57,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="45.07,-48.66 41.57,-38.66 38.07,-48.66 45.07,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>No goes on to <code>finish()</code>.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of begin" style="width:100.0%;max-width:172px;height:auto"
+ viewBox="0.00 0.00 172.00 448.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 444)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-444 167.57,-444 167.57,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="122" cy="-422" rx="34.08" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="122" y="-418.4" font-family="Helvetica,sans-Serif" font-size="12.00">begin()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="122,-339 80.43,-321 122,-303 163.57,-321 122,-339"/>
+<text xml:space="preserve" text-anchor="middle" x="122" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">ready</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M122,-403.3C122,-388.94 122,-368.39 122,-351.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="125.5,-351.66 122,-341.66 118.5,-351.66 125.5,-351.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="122" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="122" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="54,-238 0,-238 0,-202 54,-202 54,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="27" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">start()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M109.97,-307.46C95.49,-292.37 70.78,-266.63 52.09,-247.15"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="54.64,-244.75 45.19,-239.96 49.59,-249.6 54.64,-244.75"/>
+<text xml:space="preserve" text-anchor="middle" x="91.32" y="-296.94" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="149,-137 95,-137 95,-101 149,-101 149,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="122" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">finish()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M122,-302.25C122,-267.77 122,-191.42 122,-149.31"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="125.5,-149.54 122,-139.54 118.5,-149.54 125.5,-149.54"/>
+<text xml:space="preserve" text-anchor="middle" x="113.55" y="-280.83" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M43.98,-201.3C58.71,-185.96 80.22,-163.54 96.93,-146.13"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="99.3,-148.71 103.7,-139.07 94.25,-143.87 99.3,-148.71"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M122,-100.3C122,-85.94 122,-65.39 122,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="125.5,-48.66 122,-38.66 118.5,-48.66 125.5,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex08">
+  <header class="ex-head">
+    <span class="ex-num">8</span>
+    <div class="ex-title">
+      <h2>An empty while loop</h2>
+      <p class="ex-issue">SWE3-V4-12 · One side of a branch missing</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>bool isReady(); void start();
+void waitReady() {
+    while (!isReady()) {
+    }
+    start();
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>No Yes arrow, so the wait looks like it runs once.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of waitReady" style="width:55.7%;max-width:136px;height:auto"
+ viewBox="0.00 0.00 136.00 347.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 343)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-343 131.68,-343 131.68,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="63.84" cy="-321" rx="51.11" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">waitReady()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="63.84,-238 0,-220 63.84,-202 127.68,-220 63.84,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">!isReady()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M63.84,-302.3C63.84,-287.94 63.84,-267.39 63.84,-250.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="67.34,-250.66 63.84,-240.66 60.34,-250.66 67.34,-250.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="63.84" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="90.84,-137 36.84,-137 36.84,-101 90.84,-101 90.84,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">start()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M63.84,-201.3C63.84,-186.94 63.84,-166.39 63.84,-149.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="67.34,-149.66 63.84,-139.66 60.34,-149.66 67.34,-149.66"/>
+<text xml:space="preserve" text-anchor="middle" x="55.39" y="-179.87" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M63.84,-100.3C63.84,-85.94 63.84,-65.39 63.84,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="67.34,-48.66 63.84,-38.66 60.34,-48.66 67.34,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>Yes loops back on the diamond.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of waitReady" style="width:100.0%;max-width:244px;height:auto"
+ viewBox="0.00 0.00 244.00 347.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 343)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-343 239.68,-343 239.68,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="63.84" cy="-321" rx="51.11" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">waitReady()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="63.84,-238 0,-220 63.84,-202 127.68,-220 63.84,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">!isReady()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M63.84,-302.3C63.84,-287.94 63.84,-267.39 63.84,-250.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="67.34,-250.66 63.84,-240.66 60.34,-250.66 67.34,-250.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="63.84" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M94.23,-229.99C154.13,-244.63 235.68,-241.3 235.68,-220 235.68,-200.07 164.3,-195.87 106.06,-207.41"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="105.31,-203.98 96.3,-209.56 106.82,-210.82 105.31,-203.98"/>
+<text xml:space="preserve" text-anchor="middle" x="113.7" y="-222.11" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="90.84,-137 36.84,-137 36.84,-101 90.84,-101 90.84,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="63.84" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">start()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M38,-208.78C21.82,-193.04 19.03,-162.53 29.65,-141.72"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="32.45,-143.82 35.22,-133.59 26.68,-139.86 32.45,-143.82"/>
+<text xml:space="preserve" text-anchor="middle" x="19.74" y="-197.31" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M63.84,-100.3C63.84,-85.94 63.84,-65.39 63.84,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="67.34,-48.66 63.84,-38.66 60.34,-48.66 67.34,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex09">
+  <header class="ex-head">
+    <span class="ex-num">9</span>
+    <div class="ex-title">
+      <h2>An empty do-while</h2>
+      <p class="ex-issue">SWE3-V4-12 · One side of a branch missing</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>bool busy(); void start();
+void waitIdle() {
+    do {
+    } while (busy());
+    start();
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>The loop is cut out: Start goes straight to <code>start()</code> and the diamond hangs alone.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of waitIdle" style="width:100.0%;max-width:380px;height:auto"
+ viewBox="0.00 0.00 380.00 246.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 242)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-242 376.27,-242 376.27,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="41.31" cy="-220" rx="41.31" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="41.31" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">waitIdle()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="188.31,-137 134.31,-137 134.31,-101 188.31,-101 188.31,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="161.31" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">start()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M60.06,-203.53C78.98,-187.92 108.5,-163.57 130.8,-145.17"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="132.74,-148.11 138.22,-139.05 128.28,-142.71 132.74,-148.11"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="161.31" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="161.31" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="281.31,-238 190.36,-220 281.31,-202 372.27,-220 281.31,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="281.31" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">do&#45;while: busy()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M264.12,-204.82C245.29,-189.28 214.73,-164.07 191.82,-145.17"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="194.09,-142.51 184.15,-138.84 189.64,-147.91 194.09,-142.51"/>
+<text xml:space="preserve" text-anchor="middle" x="244.76" y="-196.5" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M161.31,-100.3C161.31,-85.94 161.31,-65.39 161.31,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="164.81,-48.66 161.31,-38.66 157.81,-48.66 164.81,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>Start, then the loop with its Yes arrow, then <code>start()</code>.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of waitIdle" style="width:78.4%;max-width:298px;height:auto"
+ viewBox="0.00 0.00 298.00 347.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 343)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-343 293.91,-343 293.91,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="90.96" cy="-321" rx="41.31" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="90.96" y="-317.4" font-family="Helvetica,sans-Serif" font-size="12.00">waitIdle()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="90.96,-238 0,-220 90.96,-202 181.91,-220 90.96,-238"/>
+<text xml:space="preserve" text-anchor="middle" x="90.96" y="-216.4" font-family="Helvetica,sans-Serif" font-size="12.00">do&#45;while: busy()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M90.96,-302.3C90.96,-287.94 90.96,-267.39 90.96,-250.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="94.46,-250.66 90.96,-240.66 87.46,-250.66 94.46,-250.66"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="90.96" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="90.96" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M130.51,-230.88C199.38,-244.49 289.91,-240.86 289.91,-220 289.91,-200.32 209.34,-195.98 142.4,-206.97"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="141.81,-203.52 132.59,-208.74 143.05,-210.41 141.81,-203.52"/>
+<text xml:space="preserve" text-anchor="middle" x="149.78" y="-222.25" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="117.96,-137 63.96,-137 63.96,-101 117.96,-101 117.96,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="90.96" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">start()</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M63.27,-206.86C48.73,-190.67 46.56,-161.72 56.76,-141.72"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="59.51,-143.91 62.26,-133.68 53.73,-139.96 59.51,-143.91"/>
+<text xml:space="preserve" text-anchor="middle" x="45.55" y="-194.29" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M90.96,-100.3C90.96,-85.94 90.96,-65.39 90.96,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="94.46,-48.66 90.96,-38.66 87.46,-48.66 94.46,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+<article class="ex" id="ex10">
+  <header class="ex-head">
+    <span class="ex-num">10</span>
+    <div class="ex-title">
+      <h2>An empty for loop</h2>
+      <p class="ex-issue">SWE3-V4-12 · One side of a branch missing</p>
+    </div>
+  </header>
+  <div class="ex-body">
+    <div class="code-wrap"><pre class="code"><code>int textLength(const char* buf) {
+    int len;
+    for (len = 0; buf[len] != 0; len++) {
+    }
+    return len;
+}</code></pre></div>
+    <div class="pair">
+      <figure class="side side-before">
+        <figcaption><span class="tag tag-before">Before</span>No Yes arrow, so the count looks like it runs once.</figcaption>
+        <div class="chart"><svg role="img" aria-label="Before: flowchart of textLength" style="width:71.8%;max-width:275px;height:auto"
+ viewBox="0.00 0.00 275.00 486.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 481.6)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-481.6 270.81,-481.6 270.81,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="133.4" cy="-459.6" rx="51.12" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-456" font-family="Helvetica,sans-Serif" font-size="12.00">textLength()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="160.4,-376.6 106.4,-376.6 106.4,-340.6 160.4,-340.6 160.4,-376.6"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-355" font-family="Helvetica,sans-Serif" font-size="12.00">int len;</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-440.9C133.4,-426.54 133.4,-405.99 133.4,-389.14"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-389.26 133.4,-379.26 129.9,-389.26 136.9,-389.26"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="133.4" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="133.4,-275.6 0,-238.8 133.4,-202 266.81,-238.8 133.4,-275.6"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-242.4" font-family="Helvetica,sans-Serif" font-size="12.00">for (len = 0; buf[len] !=</text>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-228" font-family="Helvetica,sans-Serif" font-size="12.00">0; len++)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-339.96C133.4,-326.24 133.4,-306.5 133.4,-288.16"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-288.21 133.4,-278.21 129.9,-288.21 136.9,-288.21"/>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="166.75,-137 100.06,-137 100.06,-101 166.75,-101 166.75,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">return len</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-201.49C133.4,-184.75 133.4,-165.12 133.4,-149.33"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-149.73 133.4,-139.73 129.9,-149.73 136.9,-149.73"/>
+<text xml:space="preserve" text-anchor="middle" x="124.95" y="-180.07" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-100.3C133.4,-85.94 133.4,-65.39 133.4,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-48.66 133.4,-38.66 129.9,-48.66 136.9,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+      <figure class="side side-after">
+        <figcaption><span class="tag tag-after">After</span>Yes loops back on the diamond.</figcaption>
+        <div class="chart"><svg role="img" aria-label="After: flowchart of textLength" style="width:100.0%;max-width:383px;height:auto"
+ viewBox="0.00 0.00 383.00 486.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 481.6)">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-481.6 378.81,-481.6 378.81,4 -4,4"/>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="133.4" cy="-459.6" rx="51.12" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-456" font-family="Helvetica,sans-Serif" font-size="12.00">textLength()</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="160.4,-376.6 106.4,-376.6 106.4,-340.6 160.4,-340.6 160.4,-376.6"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-355" font-family="Helvetica,sans-Serif" font-size="12.00">int len;</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-440.9C133.4,-426.54 133.4,-405.99 133.4,-389.14"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-389.26 133.4,-379.26 129.9,-389.26 136.9,-389.26"/>
+</g>
+
+<g class="node">
+
+<ellipse fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" cx="133.4" cy="-18" rx="27" ry="18"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-14.4" font-family="Helvetica,sans-Serif" font-size="12.00">End</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="133.4,-275.6 0,-238.8 133.4,-202 266.81,-238.8 133.4,-275.6"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-242.4" font-family="Helvetica,sans-Serif" font-size="12.00">for (len = 0; buf[len] !=</text>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-228" font-family="Helvetica,sans-Serif" font-size="12.00">0; len++)</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-339.96C133.4,-326.24 133.4,-306.5 133.4,-288.16"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-288.21 133.4,-278.21 129.9,-288.21 136.9,-288.21"/>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M207.24,-255.95C285.92,-266.77 374.81,-261.06 374.81,-238.8 374.81,-217.63 294.39,-211.42 218.83,-220.18"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="218.82,-216.66 209.34,-221.38 219.7,-223.6 218.82,-216.66"/>
+<text xml:space="preserve" text-anchor="middle" x="226.22" y="-246.33" font-family="Helvetica,sans-Serif" font-size="11.00">Yes</text>
+</g>
+
+<g class="node">
+
+<polygon fill="#eae6fb" stroke="#8b7fd6" stroke-width="1.4" points="166.75,-137 100.06,-137 100.06,-101 166.75,-101 166.75,-137"/>
+<text xml:space="preserve" text-anchor="middle" x="133.4" y="-115.4" font-family="Helvetica,sans-Serif" font-size="12.00">return len</text>
+</g>
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M98.84,-211.07C91.13,-192.32 90.93,-167.29 98.25,-148.22"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="101.32,-149.9 102.65,-139.39 95.06,-146.78 101.32,-149.9"/>
+<text xml:space="preserve" text-anchor="middle" x="84.75" y="-193.58" font-family="Helvetica,sans-Serif" font-size="11.00">No</text>
+</g>
+
+
+<g class="edge">
+
+<path fill="none" stroke="#333333" stroke-width="1.4" d="M133.4,-100.3C133.4,-85.94 133.4,-65.39 133.4,-48.54"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="1.4" points="136.9,-48.66 133.4,-38.66 129.9,-48.66 136.9,-48.66"/>
+</g>
+</g>
+</svg></div>
+      </figure>
+    </div>
+  </div>
+</article>
+  <p class="note">Examples 1–2 change only the drawing: the flowchart still keeps one edge per case, so the
+  SWE.4 Test Steps read the same. Not shown: 08 (a <code>case</code> from a header that is not found) and 09
+  (very big charts drawn whole) were fixed earlier; 13 and 14 are open.</p>
+</main>
+</body>
+</html>

@@ -76,7 +76,7 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 ## SWE.3 — review SWE3_V4 (2026-11-11)
 
 How each issue is fixed, by Issue ID, with effort in days: [review/FIX_PLAN.md](review/FIX_PLAN.md) --
-9 open, 11–13 d with three people (environment, fixes, investigate and review tool); WA-1 and S3-20 after, lower priority.
+10 fixed, 7 open (2026-11-17), 11–13 d with three people (environment, fixes, investigate and review tool); WA-1 and S3-20 after, lower priority.
 
 ## SWE.4 and UT export
 
