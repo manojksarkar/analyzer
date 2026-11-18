@@ -204,10 +204,17 @@ class LabelGenerator:
                          func_entry.qualified_name)
 
         # Coherence pass: normalize terminology and phrasing across all labels.
+        first_pass = {nid: (lbl or "").strip() for nid, lbl in label_map.items()}
         if len(label_map) >= 5:
             label_map = self._coherence_pass(cfg, func_entry, label_map, ordered_labelable)
 
         self._apply_labels(cfg, label_map)
+
+        # Before the call names go on, so a label taken back still gets them.
+        kept = guard_labels(cfg, first_pass)
+        if kept:
+            logger.info("'%s': %d label(s) put back to their code's values or told apart",
+                        func_entry.qualified_name, kept)
 
         # Call-name enforcement runs LAST, after the coherence pass, so a
         # coherence rewrite cannot strip a function name back out. It also
@@ -651,9 +658,12 @@ class LabelGenerator:
         voice, inconsistent subject across labels).  Only changes what needs
         changing — returns the same label_map if all is consistent.
         """
-        # Build ordered list of (node_id, label, type) for the prompt
+        # Build ordered list of (node_id, label, type, code) for the prompt. The code is there
+        # so the pass can tell boxes apart: shown labels alone, it evened out "Set speed to 10"
+        # and "Set speed to 2" into one label (review SWE3-V4-14).
         ordered_pairs = [
-            (n.node_id, label_map[n.node_id], n.node_type.value)
+            (n.node_id, label_map[n.node_id], n.node_type.value,
+             " ".join((n.raw_code or "").split())[:160])
             for n in ordered_nodes
             if n.node_id in label_map
         ]
@@ -668,8 +678,8 @@ class LabelGenerator:
                 purpose = fk.description
 
         node_lines = "\n".join(
-            f'  "{nid}" ({ntype}): "{lbl}"'
-            for nid, lbl, ntype in ordered_pairs
+            f'  "{nid}" ({ntype}): "{lbl}"    code: {code}'
+            for nid, lbl, ntype, code in ordered_pairs
         )
 
         prompt = (
@@ -685,6 +695,8 @@ class LabelGenerator:
             "  - Replace labels that are copies of raw code with readable prose.\n"
             "  - Replace vague labels ('Process data', 'Handle case') with specifics drawn from the raw node content.\n"
             "  - Keep every Name() exactly as it appears; never drop a function name while rephrasing.\n"
+            "  - Keep every number and constant name of a node's code in its label, unchanged.\n"
+            "  - Two nodes whose code differs keep different labels.\n"
             "  - Do NOT change node meaning; do NOT re-label already-good labels.\n\n"
             'Return ONLY: {"node_id": "improved_label", ...} or {} if nothing needs changing.'
         )
@@ -879,6 +891,120 @@ def enforce_call_names(cfg: ControlFlowGraph) -> int:
         node.label = label
 
     return appended_nodes
+
+
+# ---------------------------------------------------------------------------
+# Labels true to their code (review SWE3-V4-13, SWE3-V4-14)
+# ---------------------------------------------------------------------------
+#
+# A label is LLM text; the box it sits on is code. Two things the LLM must not change:
+#   - a branch's values. `retry > 3` labelled "Retry count above 5?" is a wrong flowchart.
+#     A decision's and a loop head's label may name no number the code does not have, and
+#     must name every number but 0 and 1 (often put in words: "empty", "non-zero") and every
+#     constant name (`MAX_RETRY`, `eREAD`).
+#   - which box is which. Two boxes with different code under one label ("Set speed" for
+#     `speed = 10` and `speed = 2`) read as the same step.
+# A label that breaks either goes back to the first-pass label when that one keeps them (the
+# coherence pass sees only labels, and is where most of these come from), else to the
+# box's code-based label (`_fallback_label`), which is correct by construction.
+
+_VALUE_CHECKED_TYPES = (NodeType.DECISION, NodeType.LOOP_HEAD)
+_NUMBER_RE = re.compile(r"(?<![\w.])(0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)[uUlLfF]*(?![\w.])")
+# A constant: ALL_CAPS with two characters or more, or an `e`/`k` enumerator (`eREAD`,
+# `kMaxLen`). A name followed by `(` is a call (call names have their own pass), and the
+# null / boolean / void spellings carry no value of their own.
+_CONSTANT_RE = re.compile(r"\b([A-Z][A-Z0-9_]*[A-Z0-9]|[ek][A-Z][A-Za-z0-9_]*)\b(?!\s*\()")
+_NOT_A_VALUE = {"NULL", "TRUE", "FALSE", "VOID", "nullptr"}
+# Fixed-text labels: every `break` reads "Exit loop", whatever loop it leaves.
+_FIXED_LABEL_TYPES = (NodeType.START, NodeType.END, NodeType.BREAK, NodeType.CONTINUE,
+                      NodeType.DEFAULT_CASE, NodeType.TRY_HEAD)
+
+
+def _number_value(text: str):
+    t = text.rstrip("uUlLfF")
+    try:
+        return int(t, 16) if t[:2] in ("0x", "0X") else (float(t) if "." in t else int(t))
+    except ValueError:
+        return t
+
+
+def _code_values(code: str) -> Tuple[set, set]:
+    """(numbers, constant names) a box's code names. String and char literals are skipped."""
+    code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', " ", code or "")
+    numbers = {_number_value(m.group(1)) for m in _NUMBER_RE.finditer(code)}
+    constants = {c for c in _CONSTANT_RE.findall(code) if c not in _NOT_A_VALUE}
+    return numbers, constants
+
+
+def label_keeps_values(label: str, code: str) -> bool:
+    """True when `label` names no number the code lacks, and every number but 0 and 1 and
+    every constant name the code has."""
+    want_numbers, want_constants = _code_values(code)
+    # Call names (`Crc32()`) and line breaks are not values.
+    text = re.sub(r"\b\w+\(\)", " ", (label or "").replace("<br/>", " "))
+    has_numbers = {_number_value(m.group(1)) for m in _NUMBER_RE.finditer(text)}
+    if has_numbers - want_numbers:
+        return False
+    if {n for n in want_numbers if n not in (0, 1)} - has_numbers:
+        return False
+    words = set(re.findall(r"\w+", text))
+    return want_constants <= words
+
+
+def _same_text(label: str) -> str:
+    return " ".join((label or "").casefold().replace("<br/>", " ").rstrip("?.!: ").split())
+
+
+def guard_labels(cfg: ControlFlowGraph, first_pass: Optional[Dict[str, str]] = None) -> int:
+    """Keep every label true to its box's code; return how many labels were replaced.
+
+    Runs on every chart's final labels, the cached ones too: the label cache is keyed by
+    the source, so labels cached before this guard existed would otherwise be served for
+    good. `first_pass` (node id -> the label before the coherence pass) is there only when
+    the labels were just generated.
+    """
+    first_pass = first_pass or {}
+    replaced: Set[str] = set()
+
+    def _use(node: CfgNode, keep) -> None:
+        earlier = first_pass.get(node.node_id)
+        if earlier and earlier != node.label and keep(earlier):
+            node.label = earlier
+        else:
+            node.label = _fallback_label(node)
+        replaced.add(node.node_id)
+
+    def _code(node: CfgNode) -> str:
+        return getattr(node, "raw_code", "") or ""
+
+    for node in cfg.nodes.values():
+        if (node.node_type in _VALUE_CHECKED_TYPES and node.label
+                and not label_keeps_values(node.label, _code(node))):
+            _use(node, lambda text, _n=node: label_keeps_values(text, _code(_n)))
+
+    # Same label, different code. Two rounds: back to the first pass, then to the code.
+    for _round in range(2):
+        groups: Dict[str, List[CfgNode]] = {}
+        for node in cfg.nodes.values():
+            if node.node_type not in _FIXED_LABEL_TYPES and node.label:
+                groups.setdefault(_same_text(node.label), []).append(node)
+        clashes = [g for g in groups.values()
+                   if len({" ".join(_code(n).split()) for n in g}) > 1]
+        if not clashes:
+            break
+        for group in clashes:
+            for node in group:
+                earlier = first_pass.get(node.node_id)
+                if (_round == 0 and earlier not in (None, node.label)
+                        and (node.node_type not in _VALUE_CHECKED_TYPES
+                             or label_keeps_values(earlier, _code(node)))):
+                    node.label = earlier
+                elif _round == 1:
+                    node.label = _fallback_label(node)
+                else:
+                    continue
+                replaced.add(node.node_id)
+    return len(replaced)
 
 
 # ---------------------------------------------------------------------------

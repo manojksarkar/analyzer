@@ -362,6 +362,23 @@ PRIVATE int fnSwitchContinue(int n) {
     return hits;
 }
 
+// Test: labels keep the code's values, and boxes with different code keep different labels
+// (review SWE3-V4-13, -14): the first diamond names 3 and FLOW_RETRY_MAX, the two speed boxes
+// stay "... 10" and "... 2". Without the LLM every label is its code, so only an LLM run shows it.
+#define FLOW_RETRY_MAX 5
+PRIVATE int fnRetrySpeed(int retry, int fast) {
+    int speed = 0;
+    if (retry > 3 && retry < FLOW_RETRY_MAX) {
+        return -1;
+    }
+    if (fast) {
+        speed = 10;
+    } else {
+        speed = 2;
+    }
+    return speed;
+}
+
 PUBLIC int runFlowTests() {
     int total = 0;
     total += fnIfSimple(5);
@@ -397,5 +414,6 @@ PUBLIC int runFlowTests() {
     total += fnWaitIdle(&busy);
     total += fnTextLength("flow");
     total += fnSwitchContinue(6);
+    total += fnRetrySpeed(4, 1);
     return total;
 }

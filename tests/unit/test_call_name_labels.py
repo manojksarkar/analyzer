@@ -284,3 +284,79 @@ def test_overlong_label_is_not_grown_further():
 
     assert enforce_call_names(cfg) == 0
     assert node.label == long_label
+
+
+# ---------------------------------------------------------------------------
+# Labels true to their code (review SWE3-V4-13, SWE3-V4-14) -- `guard_labels`
+# ---------------------------------------------------------------------------
+
+from llm.generator import guard_labels, label_keeps_values  # noqa: E402
+
+
+@pytest.mark.parametrize("label, code, keeps", [
+    ("Retry count above 3?", "retry > 3", True),
+    ("Retry count above 5?", "retry > 3", False),            # a value changed
+    ("Retry limit reached?", "retry > 3", False),            # a value dropped
+    ("Is count non-zero?", "count != 0", True),              # 0 and 1 may be put in words
+    ("Is count above 1?", "count > 0", False),               # ...but never as another number
+    ("Mode is eREAD?", "mode == Mode::eREAD", True),
+    ("Is the read mode set?", "mode == Mode::eREAD", False), # a constant must stay
+    ("Retries left below MAX_RETRY?", "n < MAX_RETRY", True),
+    ("Pointer valid?", "p != NULL", True),                   # NULL carries no value
+    ("Size above 16?", "size > 0x10", True),                 # a hex value written out
+    ("Ready per IsReady()?", "IsReady(dev, 2) == TRUE", False),
+])
+def test_what_a_branch_label_must_keep(label, code, keeps):
+    assert label_keeps_values(label, code) is keeps
+
+
+def test_a_branch_label_with_a_wrong_value_falls_back_to_its_code():
+    dec = _node("N1", "retry > 3", "Retry count above 5?", node_type=NodeType.DECISION)
+    assert guard_labels(_cfg(dec)) == 1
+    assert dec.label == "Check: retry > 3?"
+
+
+def test_the_first_pass_label_comes_back_when_it_kept_the_value():
+    dec = _node("N1", "retry > 3", "Retry count above 5?", node_type=NodeType.DECISION)
+    guard_labels(_cfg(dec), first_pass={"N1": "Retry count above 3?"})
+    assert dec.label == "Retry count above 3?"
+
+
+def test_an_action_label_is_not_held_to_the_numbers():
+    act = _node("N1", "x <<= 3;", "Multiply x by 8")         # right, and no 3 in it
+    assert guard_labels(_cfg(act)) == 0
+    assert act.label == "Multiply x by 8"
+
+
+def test_two_boxes_with_different_code_never_share_a_label():
+    a = _node("N1", "speed = 10;", "Set speed")
+    b = _node("N2", "speed = 2;", "Set speed")
+    guard_labels(_cfg(a, b), first_pass={"N1": "Set speed to 10", "N2": "Set speed to 2"})
+    assert (a.label, b.label) == ("Set speed to 10", "Set speed to 2")
+
+
+def test_with_no_first_pass_the_clash_falls_back_to_the_code():
+    a = _node("N1", "speed = 10;", "Set speed")
+    b = _node("N2", "speed = 2;", "Set speed.")              # same text, punctuation aside
+    assert guard_labels(_cfg(a, b)) == 2
+    assert (a.label, b.label) == ("speed = 10;", "speed = 2;")
+
+
+def test_boxes_with_the_same_code_may_share_a_label():
+    a = _node("N1", "count++;", "Count the entry")
+    b = _node("N2", "count++;", "Count the entry")
+    brk1 = _node("N3", "break;", "Exit loop", node_type=NodeType.BREAK)
+    brk2 = _node("N4", "break;", "Exit loop", node_type=NodeType.BREAK)
+    assert guard_labels(_cfg(a, b, brk1, brk2)) == 0
+
+
+def test_labels_without_the_llm_pass_unchanged():
+    from llm.generator import _fallback_label
+    nodes = [_node("N1", "retry > MAX_RETRY", "", node_type=NodeType.DECISION),
+             _node("N2", "for (int i = 0; i < 10; ++i)", "", node_type=NodeType.LOOP_HEAD),
+             _node("N3", "speed = 10;", "")]
+    for n in nodes:
+        n.label = _fallback_label(n)
+    before = [n.label for n in nodes]
+    assert guard_labels(_cfg(*nodes)) == 0
+    assert [n.label for n in nodes] == before
