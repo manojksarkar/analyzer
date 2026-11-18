@@ -358,12 +358,11 @@ function usage at all.
 
 ```c
 static const fp_t table[] = { fn1, fn2 };   // detection point
-table[0]();                                 // the reason — NOT resolved
+table[0]();                                 // the reason -- linked to EVERY entry since 2026-11-18
 ```
 
-Which entry `table[0]()` reaches is statically unknowable and is deliberately not resolved
-(the long-standing documented limitation stands). Membership in the table is sufficient
-evidence on its own.
+Which entry `table[0]()` reaches is statically unknowable. Membership in the table is sufficient
+evidence on its own; since 2026-11-18 the call is also linked to every entry (next section).
 
 The rule is by **shape, not by file**: a file-scope initializer counts even when the table
 sits in the same `.c` as the function — the canonical firmware pattern, which a cross-file
@@ -407,6 +406,54 @@ Fixture: `SampleCppProject/Layer1/Poly/OpsTable.cpp` (table + ops, deliberately 
 `static` not `PRIVATE`, plus an `opsSeed()` call-in-initializer false-positive guard) and
 `OpsClient.cpp` (a different unit consuming the table via `extern`). Verified: `opsAdd`/
 `opsSub` get `IF_` ids with Source/Destination `Cross/OpsClient`; `opsSeed` stays private.
+
+### Calls through a function pointer (2026-11-18, review SWE3-V5-02)
+
+A call through a pointer names a **slot**, not a function: libclang resolves `o->read(x)` to
+the FIELD `read`, `fp(x)` to the variable, `cb(x)` to the parameter, `table[i](x)` to nothing.
+Such a call had no edge -- and worse, the name fallback in `visit_calls` matched the slot's
+spelling against every function, so a field `add` linked the call to the first function
+anywhere called `add`. Rule (SWE3_WIKI SWE3-UI-01.6, not agreed yet): **a call through a
+function pointer is a call to every function stored in it anywhere.**
+
+- Slots: `f:<field USR>`, `v:<qualified name>` for a variable outside a function (by name, as
+  the tables are: an `extern` and a C++ `const` definition carry two USRs), `v:<USR>` for a
+  local, `p:<function key>#<index>` for a parameter (by position: the parameter's own USR
+  names the declaration it sits in). `_ptr_slot`, `_var_slot`, `_param_slot`.
+- Stores, `_walk_ptr_stores` (each body + each file-scope initializer, in `visit_definitions`):
+  `slot = value` (pure `=` only, `_is_assign_op`), a variable's initializer (a struct's
+  positional and designated `{ .read = fn }` initializers, arrays, nested lists), and an
+  argument passed for a function-pointer parameter. A value is a function (`fn:<key>`, under
+  casts, `&`, `*`, `?:`) or another slot (`slot:<slot>`, `o->read = d.k`), followed to a fixpoint.
+- Calls, `visit_calls`: a CALL_EXPR whose `referenced` is a field / variable / parameter, or
+  nothing, is recorded against its slot and **never** name-matched.
+- `incremental/pointer_calls.py` (pure): `slot_contents`, `link_pointer_calls`, `strip_edges`.
+  `build_metadata` links before the virtual spread; by slot, not by object (every `ops->read`
+  is one slot) -- over-approximate, like D7.
+- Persisted: `model/pointer_calls.json` (`POINTER_CALLS`) = stores, calls, and the `edges` the
+  parse added. In `DB_BACKED_PARSE`, `_PARSE_ARTIFACTS`, `_PARSE_SNAPSHOT_FILES`.
+  `parse_merge._merge_pointer_calls` keeps the baseline's facts of files not re-parsed, takes
+  each function's own parse's pointer edges back out (`stale_pointer_edges`), and links again;
+  a direct call to a function the pointer also reaches is never removed (only ADDED edges are
+  recorded). A baseline without the artifact logs that it links only re-parsed stores.
+- Not followed: a pointer returned by a function, `void*` / casts through other types,
+  constructor member-initializer lists, member-function pointers.
+- A call that reaches no function is listed at the end of Phase 1 (review SWE3-V5-01):
+  WARNING count by reason, each `call not linked: file:line text -- reason` at INFO (200, then
+  DEBUG): a member call on a class the parse cannot see, a callee it cannot see, a function
+  pointer no parsed code stores a function in (full parse only), a call through a field or
+  variable that is not a function pointer. `_diag_unresolved_calls`, `_log_unresolved_calls`.
+
+Fixture: `SampleCppProject/Layer1/Poly/Callbacks.cpp` + `CallbackUser.cpp` (a registered
+handler kept in a static, a struct of two pointers, a field named `add` like Math's). Sample
+effect, measured: `cbFire -> cbUserOnRead`, `cbApply -> cbUserOnRead, cbUserDouble` (not Math
+`add`), `opsDispatch` and `opsClientApply -> opsAdd, opsSub`, `applyWithCallback -> add,
+subtract` (App/Main passes them). Tests: `tests/unit/test_pointer_calls.py`. Whole sample, before/
+after (2026-11-18, `--no-llm`, all 56 documents): only Cross and Math moved -- Source/Destination
+(`cbUserOnRead`, `cbUserDouble` get `Cross/Callbacks`; Math `add` loses it, `subtract` gains
+`Cross/Dispatch`), their unit-diagram arrows, SWE.4 mocks (`cbFire`, `cbApply`, `applyWithCallback`),
+and `applyWithCallback`'s Output Name, which falls through to the global its new callees write
+(`UtilsCounter`, SWE3-FD-03.2).
 
 ### External data dictionary merge
 

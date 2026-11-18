@@ -528,7 +528,8 @@ WHERE version_id = 'f1' AND rel_path = 'Layer1.Diag/interface_tables.json';
 SELECT name, pg_size_pretty(length(payload::text)::bigint) FROM parse_snapshots
 WHERE version_id = 'f1' ORDER BY length(payload::text) DESC;
 -- names: functions.json, globalVariables.json, edges.json, hashes.json, dataDictionary.json,
---        entity_files.json, func_keys.json, override_pairs.json, address_taken.json, metadata.json
+--        entity_files.json, func_keys.json, override_pairs.json, address_taken.json,
+--        pointer_calls.json, metadata.json
 ```
 
 ### Review — what a reviewer corrected

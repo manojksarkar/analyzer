@@ -287,6 +287,21 @@ Generates one `.mmd` per (current function, external caller) pair via
 > called `_get_units_in_call_chain`, which only exists on `MultiUnitFunctionDiagramSelector`.
 > **Tests:** [tests/unit/test_behaviour_diagram_package.py](../tests/unit/test_behaviour_diagram_package.py) —
 > 19 tests, the package's first coverage. Mutation-checked: reintroducing the `_`/`/` bug fails 12 of 19.
+
+**A call bullet the LLM did not write is not left silently (2026-11-18, review SWE3-V5-05).** It fell
+back to `X calls Y` for good on any of: `llm.descriptions` off; ONE failed server check (memoised for
+the run); neither function described (no LLM call at all); a failed call (the exception swallowed).
+`CallDescriptionGenerator` now: tries a call `TRIES` (3) times, `WAIT_SECONDS` apart; after a failed
+call rests the server and checks it again `RECHECK_SECONDS` (30) later; with no description on either
+end asks with the two functions' code (`_code_context`, `basePath` from the run's metadata, 40 lines
+each); records each fallback with its reason (`fell_back`, `counts`). The view's `_second_round`, after
+all rows and before the reviewers' corrections, asks once more for every bullet that fell back on the
+server or a failed call (`retry_fallbacks`, stops after 3 misses in a row) and replaces it in the rows;
+then logs one line -- written by the LLM / in a second round / without it, by reason (a WARNING when
+some are left). The LLM off is not retried and is said once. `review/rewrite._row_bullets` no longer
+keeps a stored `X calls Y` as the LLM's words: it would have been taught to the cache for good. The
+entry call's bullet was already LLM-written on the view's path (`build_diagram_for_caller`); only the
+older `generate_diagram` path (`add_backward_calls`) writes it fixed. Tests: the same module.
 > Note `tests/unit/test_behaviour_diagram_generator.py`, described in the test-inventory table below, **does
 > not exist** — that row is stale.
 > **Known gap:** `generator.py` was transcribed from screenshots that ended at line 460; the closing
@@ -603,6 +618,25 @@ around a switch, the firmware state-machine shape. `_process_switch_body` now re
 continues and the switch hands them to the enclosing loop. Measured: 405 sample graphs unchanged;
 fixture `fnSwitchContinue`; rule SWE3-FD-02.6. Seen at the same time, NOT changed: a switch with no
 `default` has no arrow for "no case matches" -- whether to draw one (and how SWE.4 reads it) is open.
+
+### Labels true to their code (2026-11-18, review SWE3-V4-13, -14)
+
+A label is LLM text on a box of code; `llm/generator.guard_labels` keeps it true to that code. (1) A
+DECISION's or LOOP_HEAD's label may name no number its code lacks, and must name every number but 0
+and 1 (put in words: "empty", "non-zero") and every constant name -- ALL_CAPS of two characters or
+more, or an `e`/`k` enumerator; NULL / TRUE / FALSE / VOID and names before `(` aside
+(`label_keeps_values`). (2) Two boxes whose code differs never share a label (punctuation and case
+aside; fixed-text kinds -- break, continue, default -- excluded). A label that breaks either goes back
+to its first-pass label when that one keeps them, else to `_fallback_label` ("Check: retry > 3?").
+Runs in `label_cfg` after the coherence pass and before the call names, AND on cached labels
+(`flowchart_engine._label_chart`): the label cache is keyed by the source, so labels cached before
+the guard would be served for good. Guard-replaced labels are not "fallbacks" for the cache (they
+are deterministic), so the chart is cached as usual. The coherence pass now sees each box's code
+(160 characters), and is told to keep numbers, constants and different steps apart: shown labels
+alone, it evened "Set speed to 10" / "to 2" into one label. Without the LLM every label is its code,
+so the guard changes nothing there (measured: whole sample). Strict on constants by decision
+(2026-11-18): `if (retry > MAX_RETRY)` written "above maximum?" falls back to the code. Fixture
+`fnRetrySpeed`; tests in `tests/unit/test_call_name_labels.py`.
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

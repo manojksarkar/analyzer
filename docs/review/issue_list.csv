@@ -24,3 +24,9 @@ SWE3-V4-22,SWE3-UH-04,Orphan header's enum appears in the wrong single unit,As p
 SWE3-V4-23,SWE3-UH-04,Enum related rule: appears in one component,As per rule
 SWE3-V4-24,SWE3-FD-03,An input name is missing or incomplete,As per rule
 SWE3-V4-25,SWE3-UI-05,"Direction: a function that changes state without writing a global (a setter on its class's field, an operation like Delete) shows Out",As per rule
+SWE3-V5-01,SWE3-DB-01,Dynamic behaviour: missing for a component whose calls use the arrow operator (->),Defect
+SWE3-V5-02,,Parser cannot detect an indirect dispatch call (a call through a function pointer),Defect
+SWE3-V5-03,SWE3-UI-01,"A function is in the interface table of a unit that calls it directly; overridden functions not handled",To check
+SWE3-V5-04,SWE3-UI-01,Interface table lists only the functions called from another unit of the same component,As per rule
+SWE3-V5-05,SWE3-DB-03,Dynamic behaviour: descriptions are not written by the LLM,Defect
+SWE3-V5-06,SWE3-UH-01,"A protected global is recorded private, so it gets no row in the unit header",As per rule

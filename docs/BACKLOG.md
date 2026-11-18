@@ -73,10 +73,10 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | RV-6 | Unit diagram: the unit's In/Out globals inside the unit, no edges | issue | — | — | the review's check | to verify | `views/unit_diagrams.py` |
 | RV-7 | Struct / class missing from unit headers | issue | — | — | the review's check | to verify | `views/unit_headers.py` |
 
-## SWE.3 — review SWE3_V4 (2026-11-11)
+## SWE.3 — review SWE3_V4 (2026-11-11), SWE3_V5 (2026-11-18)
 
 How each issue is fixed, by Issue ID, with effort in days: [review/FIX_PLAN.md](review/FIX_PLAN.md) --
-10 fixed, 7 open (2026-11-17), 11–13 d with three people (environment, fixes, investigate and review tool); WA-1 and S3-20 after, lower priority.
+31 issues, V4's and V5's in one list: 10 fixed, 11 open (2026-11-18), 11–13 d with three people (environment, fixes, investigate and review tool); WA-1 and S3-20 after, lower priority.
 
 ## SWE.4 and UT export
 
