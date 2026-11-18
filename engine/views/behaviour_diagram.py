@@ -259,6 +259,10 @@ def run(model, output_dir, model_dir, config):
             })
             count += 1
 
+    # Review SWE3-V5-05: a call bullet the LLM did not write ("A calls B") is asked once more
+    # now, when an outage during the step may be over -- before the reviewers' corrections go on.
+    _second_round(gen, docx_rows)
+
     # REQ-AP-05. A behaviour description has no model field -- it is made here, in Phase 3 --
     # so the override table is its source and the corrections are an INPUT to this run, applied
     # before the manifest is written. Writing a correction into this file instead would be undone
@@ -296,6 +300,30 @@ def run(model, output_dir, model_dir, config):
             "produces them any more.", component="behaviourDiagram", err=True)
 
     progress.done(summary="output/behaviour_diagrams/ (%d diagrams)" % count)
+
+
+def _second_round(gen, docx_rows) -> int:
+    """Ask once more for the call bullets written without the LLM, put the answers into the
+    rows, and log how the bullets were written. Returns how many bullets changed. Never fatal:
+    the step has already paid for its diagrams."""
+    changed = 0
+    try:
+        swap = gen.retry_call_descriptions()
+        if swap:
+            for units in docx_rows.values():
+                for rows in units.values():
+                    for row in rows:
+                        bullets = row.get("behaviorDescription") or []
+                        new = [swap.get(b, b) for b in bullets]
+                        changed += sum(1 for a, b in zip(bullets, new) if a != b)
+                        row["behaviorDescription"] = new
+        line, short = gen.call_description_summary()
+        if line:
+            log(line, component="behaviourDiagram", err=short)
+    except Exception as exc:
+        log("second round of call descriptions skipped: %s" % exc,
+            component="behaviourDiagram", err=True)
+    return changed
 
 
 def _apply_text_overrides(docx_rows, config) -> int:

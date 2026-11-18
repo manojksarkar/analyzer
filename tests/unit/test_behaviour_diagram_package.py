@@ -143,3 +143,132 @@ def test_no_llm_configured_means_no_llm_call():
     """Offline/air-gapped runs must not attempt a network call."""
     assert CallDescriptionGenerator(None)._is_llm_available() is False
     assert CallDescriptionGenerator({})._is_llm_available() is False
+
+
+# ---------------------------------------------------------------------------
+# A call bullet the LLM did not write is not left that way silently (review SWE3-V5-05)
+# ---------------------------------------------------------------------------
+
+_LLM_CFG = {"llm": {"descriptions": True}}
+
+
+@pytest.fixture
+def describer(monkeypatch):
+    """A CallDescriptionGenerator whose LLM answers from `answers` (None = no answer), with
+    no cache in between and no waiting."""
+    import llm_enrichment as le
+    monkeypatch.setattr(le, "_cached_desc", lambda config, material, generate: generate())
+    monkeypatch.setattr(le, "llm_provider_reachable", lambda config: True)
+    monkeypatch.setattr(CallDescriptionGenerator, "WAIT_SECONDS", 0)
+    answers, asked = [], []
+
+    class Client:
+        def generate(self, system, prompt):
+            asked.append(prompt)
+            return answers.pop(0) if answers else None
+
+    gen = CallDescriptionGenerator(_LLM_CFG)
+    gen._llm_available, gen._llm_client = True, Client()
+    return gen, answers, asked
+
+
+def _name(key):
+    return FUNCTIONS[key]["qualifiedName"]
+
+
+def test_a_call_is_tried_three_times_before_it_falls_back(describer):
+    gen, answers, asked = describer
+    answers.extend([None, None, "target calls worker to do the work"])
+    assert gen.get_call_description(TARGET, "CompA|Unit2|worker", _name, FUNCTIONS) == \
+        "target calls worker to do the work"
+    assert len(asked) == 3 and gen.fell_back == []
+
+
+def test_a_call_that_fell_back_is_written_in_the_second_round(describer):
+    gen, answers, asked = describer
+    assert gen.get_call_description(TARGET, "CompA|Unit2|worker", _name, FUNCTIONS) == \
+        "target calls worker"                            # three tries, no answer
+    assert len(asked) == 3
+    # the server is rested: the next call falls back at once, without asking
+    assert gen.get_call_description(CALLER, TARGET, _name, FUNCTIONS) == "extCaller calls target"
+    assert len(asked) == 3
+    answers.extend(["target calls worker to do the work", "extCaller calls target to start"])
+    done = gen.retry_fallbacks(_name, FUNCTIONS)
+    assert done == {(TARGET, "CompA|Unit2|worker"): "target calls worker to do the work",
+                    (CALLER, TARGET): "extCaller calls target to start"}
+    line, short = gen.summary()
+    assert (line, short) == ("behaviour descriptions: 2 call bullet(s) written by the LLM "
+                             "(2 of them in a second round)", False)
+
+
+def test_a_server_that_stays_down_is_reported(describer):
+    gen, _answers, _asked = describer
+    for _ in range(2):
+        gen.get_call_description(TARGET, "CompA|Unit2|worker", _name, FUNCTIONS)
+    assert gen.retry_fallbacks(_name, FUNCTIONS) == {}
+    line, short = gen.summary()
+    assert short is True
+    assert "0 call bullet(s) written by the LLM, 2 without it: " in line
+
+
+def test_one_failed_server_check_is_not_final(monkeypatch):
+    import llm_enrichment as le
+    clock = {"now": 1000.0}
+    monkeypatch.setattr("behaviour_diagram.llm_call_description.time.monotonic", lambda: clock["now"])
+    up = {"server": False}
+    monkeypatch.setattr(le, "llm_provider_reachable", lambda config: up["server"])
+    monkeypatch.setattr("llm_core.client.from_config", lambda cfg: object())
+    monkeypatch.setattr("core.config.load_llm_config", lambda cfg: {})
+    gen = CallDescriptionGenerator(_LLM_CFG)
+    assert gen._is_llm_available() is False
+    up["server"] = True
+    clock["now"] += 5
+    assert gen._is_llm_available() is False                  # too soon to ask again
+    clock["now"] += CallDescriptionGenerator.RECHECK_SECONDS
+    assert gen._is_llm_available() is True                   # asked again, and it is back
+
+
+def test_with_no_description_the_llm_reads_the_two_functions_code(describer, tmp_path):
+    gen, answers, asked = describer
+    (tmp_path / "a.cpp").write_text("int run() {\n    return compute(1, 2);\n}\n"
+                                    "int compute(int a, int b) {\n    return a + b;\n}\n")
+    gen._base_path = str(tmp_path)
+    functions = {"A|U|run|": {"qualifiedName": "run",
+                              "location": {"file": "a.cpp", "line": 1, "endLine": 3}},
+                 "A|V|compute|": {"qualifiedName": "compute",
+                                  "location": {"file": "a.cpp", "line": 4, "endLine": 6}}}
+    answers.append("run calls compute to add two numbers")
+    name = lambda k: functions[k]["qualifiedName"]  # noqa: E731
+    assert gen.get_call_description("A|U|run|", "A|V|compute|", name, functions) == \
+        "run calls compute to add two numbers"
+    assert "return compute(1, 2);" in asked[0] and "return a + b;" in asked[0]
+
+
+def test_with_the_llm_off_nothing_is_asked_or_queued():
+    gen = CallDescriptionGenerator({"llm": {"descriptions": False}})
+    assert gen.get_call_description(TARGET, "CompA|Unit2|worker", _name, FUNCTIONS) == \
+        "target calls worker"
+    assert gen.fell_back == [] and gen.retry_fallbacks(_name, FUNCTIONS) == {}
+    line, short = gen.summary()
+    assert short is False and "written without the LLM -- the LLM is off" in line
+
+
+def test_the_view_puts_the_second_round_into_its_rows(monkeypatch):
+    from views import behaviour_diagram as view
+    said = []
+    monkeypatch.setattr(view, "log", lambda msg, **kw: said.append(msg))
+
+    class Gen:
+        def retry_call_descriptions(self):
+            return {"extCaller calls target": "extCaller calls target to start"}
+
+        def call_description_summary(self):
+            return "behaviour descriptions: 3 call bullet(s) written by the LLM", False
+
+    rows = {"CompA": {"Unit1": [{"behaviorDescription": [
+        "extCaller calls target", "target calls worker to do the work", "worker returns to target"]}]}}
+    assert view._second_round(Gen(), rows) == 1
+    assert rows["CompA"]["Unit1"][0]["behaviorDescription"] == [
+        "extCaller calls target to start", "target calls worker to do the work",
+        "worker returns to target"]
+    assert said == ["behaviour descriptions: 3 call bullet(s) written by the LLM"]
