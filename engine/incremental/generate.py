@@ -68,7 +68,7 @@ def _now_iso() -> str:
 _PARSE_SNAPSHOT_FILES = ("functions.json", "globalVariables.json", "dataDictionary.json",
                          "hashes.json", "edges.json", "tu_includes.json",
                          "entity_files.json", "func_keys.json", "override_pairs.json",
-                         "address_taken.json", "metadata.json")
+                         "address_taken.json", "pointer_calls.json", "metadata.json")
 
 
 def snapshot_parse_model(model_dir: str, version_dir: str, store=None,

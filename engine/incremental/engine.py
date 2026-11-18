@@ -360,7 +360,7 @@ _PARSE_ARTIFACTS = ("functions", "globalVariables", "dataDictionary", "hashes",
                     # func_keys was missing here, so a narrowed parse never republished it and
                     # the resulting version could not serve as a narrowed-parse baseline without
                     # losing cross-TU call edges. address_taken arrives with the same duty.
-                    "func_keys", "address_taken", "metadata")
+                    "func_keys", "address_taken", "pointer_calls", "metadata")
 
 
 def _load_parse_dir(d: str) -> Dict[str, Any]:

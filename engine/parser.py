@@ -32,6 +32,7 @@ from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
 from incremental.virtual_dispatch import spread_virtual_families
+from incremental.pointer_calls import FN as _PTR_FN, SLOT as _PTR_SLOT, link_pointer_calls
 from core.logging_setup import get_logger
 
 # Module level, not inside main(): the macro-loading report below runs at import
@@ -722,6 +723,17 @@ _address_taken_in_body = set()
 # model/address_taken.json so a narrowed parse (which may not re-parse the file holding the
 # table) can replay the registrations instead of silently demoting the function to private.
 _address_taken_fid = []
+# Calls through a function pointer (review SWE3-V5-02; incremental/pointer_calls.py). A SLOT is
+# where a function's address can be kept -- `f:<field usr>`, `v:<variable usr>` or
+# `p:<function key>#<index>` for a parameter -- and a call through it reaches every function
+# any store puts there:
+#   _ptr_stores: (site rel_file, slot, "fn:<func_key>" | "slot:<slot>")
+#   _ptr_calls:  (caller func_key, slot)
+# build_metadata links them and writes the fid-level facts to model/pointer_calls.json, so a
+# narrowed parse can link again with the stores of the files it does not re-parse.
+_ptr_stores = set()
+_ptr_calls = set()
+_pointer_calls_fid = {"stores": [], "calls": [], "edges": []}
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -1645,6 +1657,219 @@ def _walk_address_taken(cursor, on_hit, in_callee=False):
         _walk_address_taken(child, on_hit, still_callee)
 
 
+# --- calls through a function pointer (review SWE3-V5-02) ---------------------------------
+# What a slot is and how its calls are linked: incremental/pointer_calls.py. These helpers
+# only READ the AST: which slot an expression names, which values it stores, where.
+
+_ARRAY_TYPE_KINDS = tuple(getattr(cindex.TypeKind, n) for n in (
+    "CONSTANTARRAY", "INCOMPLETEARRAY", "VARIABLEARRAY", "DEPENDENTSIZEDARRAY")
+    if hasattr(cindex.TypeKind, n))
+_FUNCTION_TYPE_KINDS = (cindex.TypeKind.FUNCTIONPROTO, cindex.TypeKind.FUNCTIONNOPROTO)
+# Wrappers a function-pointer expression sits in: implicit conversions, parentheses, casts.
+_PTR_WRAPPER_KINDS = tuple(getattr(cindex.CursorKind, n) for n in (
+    "UNEXPOSED_EXPR", "PAREN_EXPR", "CSTYLE_CAST_EXPR", "CXX_STATIC_CAST_EXPR",
+    "CXX_REINTERPRET_CAST_EXPR", "CXX_CONST_CAST_EXPR", "CXX_FUNCTIONAL_CAST_EXPR")
+    if hasattr(cindex.CursorKind, n))
+_FUNCTION_CURSOR_KINDS = (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
+
+
+def _is_fn_ptr_type(t) -> bool:
+    """A pointer to a function, or an array of them (`Fn tbl[]`, `const OpsFn g_ops[]`)."""
+    try:
+        t = t.get_canonical()
+        while t.kind in _ARRAY_TYPE_KINDS:
+            t = t.element_type.get_canonical()
+        if t.kind == cindex.TypeKind.POINTER:
+            t = t.get_pointee().get_canonical()
+        return t.kind in _FUNCTION_TYPE_KINDS
+    except Exception:
+        return False
+
+
+def _strip_ptr_expr(cursor):
+    """The expression under casts, parentheses, `*fp` and `&fn`."""
+    for _ in range(32):
+        kids = [k for k in cursor.get_children() if k.kind != cindex.CursorKind.TYPE_REF]
+        if cursor.kind in _PTR_WRAPPER_KINDS and kids:
+            cursor = kids[-1]
+        elif cursor.kind == cindex.CursorKind.UNARY_OPERATOR and len(kids) == 1:
+            cursor = kids[0]
+        else:
+            break
+    return cursor
+
+
+def _param_slot(parm):
+    """`p:<function key>#<index>` for a function-pointer parameter, or None. By position, not
+    by the parameter's own USR: that names the declaration it sits in, and a call site sees
+    the header's declaration while the body uses the definition's."""
+    fn = parm.semantic_parent
+    if fn is None or fn.kind not in _FUNCTION_CURSOR_KINDS + (cindex.CursorKind.CONSTRUCTOR,):
+        return None
+    for i, arg in enumerate(fn.get_arguments()):
+        if arg.spelling and arg.spelling == parm.spelling:
+            return f"p:{get_function_key(fn)}#{i}"
+    return None
+
+
+def _ptr_slot(cursor):
+    """The slot an expression names -- a field, variable or parameter holding a function
+    pointer (`o->read`, `fp`, `table[i]`, `cb`) -- or None."""
+    cursor = _strip_ptr_expr(cursor)
+    if cursor.kind == cindex.CursorKind.ARRAY_SUBSCRIPT_EXPR:
+        kids = list(cursor.get_children())
+        return _ptr_slot(kids[0]) if kids else None
+    if cursor.kind not in (cindex.CursorKind.MEMBER_REF_EXPR, cindex.CursorKind.DECL_REF_EXPR,
+                           cindex.CursorKind.MEMBER_REF):
+        return None
+    ref = cursor.referenced
+    if ref is None or not _is_fn_ptr_type(ref.type):
+        return None
+    if ref.kind == cindex.CursorKind.PARM_DECL:
+        return _param_slot(ref)
+    if ref.kind == cindex.CursorKind.VAR_DECL:
+        return _var_slot(ref)
+    if ref.kind == cindex.CursorKind.FIELD_DECL:
+        usr = ref.get_usr()
+        return ("f:" + usr) if usr else None
+    return None
+
+
+def _var_slot(var):
+    """`v:<name>` for a variable. Outside a function by QUALIFIED NAME, not by USR, as the
+    address-taken tables are matched: `extern const OpsFn g_opsTable[];` in the reading file
+    and the `const` definition (internal in C++) carry two different USRs for one table. Two
+    file-scope statics of one name then share a slot -- an error on the side of linking, like
+    the global use rule's. A local variable keeps its USR, which names its function."""
+    parent = var.semantic_parent
+    if parent is not None and (parent.kind in (cindex.CursorKind.TRANSLATION_UNIT,
+                                               cindex.CursorKind.NAMESPACE)
+                               or parent.kind in _CLASS_PARENT_KINDS):
+        name = get_qualified_name(var)
+        return ("v:" + name) if name else None
+    usr = var.get_usr()
+    return ("v:" + usr) if usr else None
+
+
+def _ptr_values(cursor):
+    """What an expression puts into a slot: `fn:<key>` for a function, `slot:<slot>` for
+    another slot's contents, both arms of a `?:`; [] for anything else (0, NULL, a call)."""
+    cursor = _strip_ptr_expr(cursor)
+    if cursor.kind == cindex.CursorKind.CONDITIONAL_OPERATOR:
+        kids = list(cursor.get_children())
+        return (_ptr_values(kids[1]) + _ptr_values(kids[2])) if len(kids) == 3 else []
+    if cursor.kind == cindex.CursorKind.DECL_REF_EXPR:
+        ref = cursor.referenced
+        if ref is not None and ref.kind in _FUNCTION_CURSOR_KINDS:
+            return [_PTR_FN + get_function_key(ref)]
+    slot = _ptr_slot(cursor)
+    return [_PTR_SLOT + slot] if slot else []
+
+
+def _init_expr(cursor):
+    """A VAR_DECL's initializer, or None: its last child that is an expression."""
+    kids = [k for k in cursor.get_children() if k.kind.is_expression()]
+    return kids[-1] if kids else None
+
+
+def _store_init_list(t, init, slot, site, on_store):
+    """Record what an initializer list stores. `t` is the type it initialises; `slot` is the
+    slot its elements land in when they are function pointers (the array variable or field).
+    A struct's elements go to its fields in order, or to the field a designator names
+    (`{ .read = fn }`, which libclang shows as an UNEXPOSED_EXPR: MEMBER_REF, value)."""
+    try:
+        ct = t.get_canonical()
+    except Exception:
+        return
+    kids = list(init.get_children())
+    if ct.kind in _ARRAY_TYPE_KINDS:
+        elem = ct.element_type
+        for ch in kids:
+            sub = list(ch.get_children())
+            if ch.kind == cindex.CursorKind.UNEXPOSED_EXPR and len(sub) >= 2:
+                ch = sub[-1]                               # `[2] = fn`
+            if ch.kind == cindex.CursorKind.INIT_LIST_EXPR:
+                _store_init_list(elem, ch, slot, site, on_store)
+            elif slot and _is_fn_ptr_type(elem):
+                for v in _ptr_values(ch):
+                    on_store(site, slot, v)
+        return
+    if ct.kind != cindex.TypeKind.RECORD:
+        return
+    decl = ct.get_declaration()
+    fields = [f for f in decl.get_children() if f.kind == cindex.CursorKind.FIELD_DECL]
+    idx = 0
+    for ch in kids:
+        field, value = None, ch
+        sub = list(ch.get_children())
+        if (ch.kind == cindex.CursorKind.UNEXPOSED_EXPR and len(sub) >= 2
+                and sub[0].kind == cindex.CursorKind.MEMBER_REF and sub[0].referenced is not None):
+            named = sub[0].referenced.get_usr()
+            idx = next((i for i, f in enumerate(fields) if f.get_usr() == named), len(fields))
+            value = sub[-1]
+        if idx >= len(fields):
+            break
+        field = fields[idx]
+        idx += 1
+        field_slot = ("f:" + field.get_usr()) if field.get_usr() else None
+        if value.kind == cindex.CursorKind.INIT_LIST_EXPR:
+            _store_init_list(field.type, value,
+                             field_slot if _is_fn_ptr_type(field.type) else None, site, on_store)
+        elif field_slot and _is_fn_ptr_type(field.type):
+            for v in _ptr_values(value):
+                on_store(site, field_slot, v)
+
+
+def _walk_ptr_stores(cursor, site, on_store):
+    """Call on_store(site, slot, value) for every function pointer this subtree stores:
+    `slot = value`, a variable's initializer, and an argument passed for a function-pointer
+    parameter (that parameter is the slot)."""
+    kind = cursor.kind
+    if kind == cindex.CursorKind.BINARY_OPERATOR:
+        kids = list(cursor.get_children())
+        if len(kids) >= 2:
+            slot = _ptr_slot(kids[0])
+            if slot and _is_assign_op(cursor) == (True, False):
+                for v in _ptr_values(kids[1]):
+                    on_store(site, slot, v)
+    elif kind == cindex.CursorKind.VAR_DECL:
+        init = _init_expr(cursor)
+        if init is not None:
+            var_slot = _var_slot(cursor) if _is_fn_ptr_type(cursor.type) else None
+            if init.kind == cindex.CursorKind.INIT_LIST_EXPR:
+                _store_init_list(cursor.type, init, var_slot, site, on_store)
+            elif var_slot:
+                for v in _ptr_values(init):
+                    on_store(site, var_slot, v)
+    elif kind == cindex.CursorKind.CALL_EXPR:
+        callee = cursor.referenced
+        if callee is not None and callee.kind in _FUNCTION_CURSOR_KINDS + (cindex.CursorKind.CONSTRUCTOR,):
+            try:
+                params = list(callee.get_arguments())
+                args = list(cursor.get_arguments())
+            except Exception:
+                params, args = [], []
+            for i, (arg, prm) in enumerate(zip(args, params)):
+                if _is_fn_ptr_type(prm.type):
+                    for v in _ptr_values(arg):
+                        on_store(site, f"p:{get_function_key(callee)}#{i}", v)
+    for child in cursor.get_children():
+        _walk_ptr_stores(child, site, on_store)
+
+
+def _ptr_call_slot(call):
+    """The slot a CALL_EXPR calls through (`o->read(x)`, `fp(x)`, `table[i](x)`), or None."""
+    kids = list(call.get_children())
+    return _ptr_slot(kids[0]) if kids else None
+
+
+def _rel_site(path):
+    try:
+        return os.path.relpath(path, MODULE_BASE_PATH).replace("\\", "/")
+    except ValueError:
+        return path.replace("\\", "/")
+
+
 def _is_class_static_var(cursor) -> bool:
     """True for a `static` DATA MEMBER -- `static int s_count;` inside a class or struct.
 
@@ -1780,6 +2005,10 @@ def visit_definitions(cursor):
         _walk_address_taken(
             cursor, lambda target, _t=func_key: _address_taken_in_body.add((_t, target))
         )
+        # Function pointers this body stores (`o->read = fn`, `register(fn)`), for the calls
+        # through them (SWE3-V5-02). Once per function, like the address-takes above.
+        _walk_ptr_stores(cursor, _rel_site(cursor.location.file.name),
+                         lambda s, sl, v: _ptr_stores.add((s, sl, v)))
         # Record virtual override -> base relations for the D7 virtual-dispatch
         # over-approximation (build_metadata spreads caller edges across the family).
         # Queried via the C API on the canonical decl (out-of-line defs report none).
@@ -1845,8 +2074,9 @@ def visit_definitions(cursor):
     elif is_global_var and cursor.spelling and cursor.location.file:
         # File-scope initializer tables: `static const fp_t table[] = { fn1, fn2 };`.
         # Nothing calls fn1 by name, but the table publishes it — so membership alone makes
-        # it public, regardless of which file the table is in. No attempt is made to resolve
-        # which function `table[0]()` reaches; that is statically unknowable.
+        # it public, regardless of which file the table is in. Which entry `table[i]()`
+        # reaches is statically unknowable, so the call is linked to every entry
+        # (SWE3-V5-02, `_walk_ptr_stores` below).
         # _get_var_init_value only slices ONE declaration line, so a multi-line table is
         # invisible to it — the AST walk is what actually sees these.
         try:
@@ -1863,6 +2093,8 @@ def visit_definitions(cursor):
             cursor,
             lambda target, _f=_rel_init, _n=_tbl_qn: _address_taken_at_file_scope[target].add((_f, _n)),
         )
+        # The same initializer as stores: `g_opsTable[i](a, b)` then reaches every entry.
+        _walk_ptr_stores(cursor, _rel_init, lambda s, sl, v: _ptr_stores.add((s, sl, v)))
         if _var_decl_should_record_as_function_not_global(cursor):
             func_id = f"{cursor.location.file.name}:{cursor.location.line}"
             component_name = get_component_name(cursor.location.file.name)
@@ -2203,6 +2435,20 @@ def visit_calls(cursor, current_key=None):
             current_key = func_key
     elif cursor.kind == cindex.CursorKind.CALL_EXPR and current_key:
         called_key = None
+        _ref = cursor.referenced
+        # A call through a function pointer names a field, a variable or a parameter, not a
+        # function (`o->read(x)`, `table[i](x)`, `cb(x)`). It is recorded against that slot and
+        # linked in build_metadata to what the slot holds -- and never matched by NAME below:
+        # a field `read` used to link the call to the first function anywhere called `read`.
+        if _ref is None or _ref.kind in (cindex.CursorKind.FIELD_DECL, cindex.CursorKind.VAR_DECL,
+                                         cindex.CursorKind.PARM_DECL):
+            _slot = _ptr_call_slot(cursor)
+            if _slot:
+                _ptr_calls.add((current_key, _slot))
+            if _ref is not None or _slot:
+                for child in cursor.get_children():
+                    visit_calls(child, current_key)
+                return
         if cursor.referenced:
             called_key = get_function_key(cursor.referenced)
             # M4.4 narrowed parse: a callee defined in an UN-parsed file isn't in `functions`;
@@ -2530,6 +2776,13 @@ def build_metadata():
             reverse_call_graph[_target].append(_taker)
     if _n_addr_edges:
         print(f"  address-taken: linked {_n_addr_edges} in-body address-of-function edge(s)")
+    # Calls through a function pointer reach what the pointer can hold (SWE3-V5-02). Before
+    # the virtual spread and the ids mapping below, like the address-taken edges above.
+    _ptr_edges = link_pointer_calls(call_graph, reverse_call_graph, _ptr_stores, _ptr_calls,
+                                    set(functions) | set(_baseline_func_keys))
+    if _ptr_calls:
+        print(f"  pointer calls: {len(_ptr_calls)} call(s) through a function pointer, "
+              f"linked {len(_ptr_edges)} edge(s) from {len(_ptr_stores)} store(s)")
     # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
     # to ALL members, so a call that may dynamically dispatch to any override impacts the
     # whole family (never stale) and calledByIds is accurate. Must run before the
@@ -2658,6 +2911,25 @@ def build_metadata():
     if _address_taken_fid:
         print(f"  address-taken: {len(_address_taken_fid)} function/unit registration(s) "
               f"from file-scope initializers")
+
+    # SWE3-V5-02: the pointer facts at fid level, for a narrowed parse to link again with the
+    # stores of files it does not re-parse. Slots stay as they are (opaque, stable names);
+    # a function a store names, and every caller, becomes its fid. `edges` are the ones this
+    # parse ADDED, which a merge takes back out before it links again.
+    def _ptr_value_fid(v):
+        if v.startswith(_PTR_FN):
+            _f = func_key_to_fid.get(v[len(_PTR_FN):])
+            return (_PTR_FN + _f) if _f else None
+        return v
+    _pointer_calls_fid["stores"] = sorted(
+        {(s, sl, fv) for s, sl, v in _ptr_stores for fv in [_ptr_value_fid(v)] if fv})
+    _pointer_calls_fid["calls"] = sorted(
+        {(func_key_to_fid[c], sl) for c, sl in _ptr_calls if c in func_key_to_fid})
+    _pointer_calls_fid["edges"] = sorted(
+        {(func_key_to_fid[c], func_key_to_fid[t]) for c, t in _ptr_edges
+         if c in func_key_to_fid and t in func_key_to_fid})
+    for _k in ("stores", "calls", "edges"):
+        _pointer_calls_fid[_k] = [list(r) for r in _pointer_calls_fid[_k]]
 
     # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is
     # its fid when defined, else its (stable) mangled key as a grouping token.
@@ -3312,7 +3584,7 @@ def main():
         _fingerprint_args(), std="", toolchain=str(_toolchain), base_path=base_path)
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
                                HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
-                               ADDRESS_TAKEN)
+                               ADDRESS_TAKEN, POINTER_CALLS)
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -3382,6 +3654,10 @@ def main():
     # not re-parse the table's file can replay them (otherwise the function flips back to
     # private and the same source produces a different document run to run).
     write_model_file(ADDRESS_TAKEN, sorted(_address_taken_fid))
+
+    # Calls through function pointers -> model/pointer_calls.json, for the same reason: a
+    # narrowed parse links them again with the stores of the files it does not re-parse.
+    write_model_file(POINTER_CALLS, _pointer_calls_fid)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

@@ -62,7 +62,7 @@ DB_BACKED_STANDALONE = frozenset(("knowledge_base", "incremental_plan", "tu_incl
 # reads, the version's snapshot had no address_taken, and function-pointer table entries went
 # back to reading as private on the next incremental run.
 DB_BACKED_PARSE = frozenset(("entity_files", "func_keys", "override_pairs", "metadata",
-                             "address_taken"))
+                             "address_taken", "pointer_calls"))
 
 DB_BACKED = DB_BACKED_MODEL | DB_BACKED_STANDALONE | DB_BACKED_PARSE
 

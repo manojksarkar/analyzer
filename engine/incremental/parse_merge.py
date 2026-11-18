@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Set
 
 from incremental.virtual_dispatch import spread_virtual_families
+from incremental.pointer_calls import link_pointer_calls, strip_edges
 
 
 def _norm(p: str) -> str:
@@ -187,19 +188,57 @@ def _apply_address_taken(functions: Dict[str, dict], records: List[list],
         # else: file not re-parsed, no evidence -- keep what the baseline carried.
 
 
-def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list]) -> None:
-    """Mutate `functions`: drop callsIds to entities no longer in the model, re-run the
-    virtual-dispatch family spread (D7/M3.13), then recompute calledByIds by inverting
-    the merged callsIds. readsGlobalIds/writesGlobalIds/direction are forward fields and
-    survive the by-file merge unchanged."""
+def _merge_pointer_calls(baseline_pc, fresh_pc, entity_files, drop) -> Dict[str, list]:
+    """Calls through function pointers (SWE3-V5-02): the baseline's stores and calls whose file
+    was not re-parsed, plus the fresh ones from the files that were. `edges` is filled by
+    `_recompute_call_edges`, which links them again."""
+    base, fresh = baseline_pc or {}, fresh_pc or {}
+    stores: Set[tuple] = set()
+    for s in base.get("stores") or []:
+        if len(s) >= 3 and _norm(s[0]) not in drop:
+            stores.add(tuple(s))
+    for s in fresh.get("stores") or []:
+        if len(s) >= 3 and _norm(s[0]) in drop:
+            stores.add(tuple(s))
+    calls: Set[tuple] = set()
+    for c in base.get("calls") or []:
+        if len(c) >= 2 and _file_of(c[0], entity_files) not in drop:
+            calls.add(tuple(c))
+    for c in fresh.get("calls") or []:
+        if len(c) >= 2 and _file_of(c[0], entity_files) in drop:
+            calls.add(tuple(c))
+    return {"stores": [list(s) for s in sorted(stores)],
+            "calls": [list(c) for c in sorted(calls)], "edges": []}
+
+
+def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list],
+                          pointer_calls: Dict[str, list] = None, stale_pointer_edges=(),
+                          ) -> None:
+    """Mutate `functions`: drop callsIds to entities no longer in the model, link the calls
+    through function pointers again, re-run the virtual-dispatch family spread (D7/M3.13),
+    then recompute calledByIds by inverting the merged callsIds.
+    readsGlobalIds/writesGlobalIds/direction are forward fields and survive the by-file merge
+    unchanged.
+
+    `stale_pointer_edges` are the pointer edges the merged callsIds still carry from the parse
+    that made them -- the baseline's for a function whose file was not re-parsed, the partial
+    parse's for one whose file was. They come out first: those parses linked with only their
+    own stores, the merged ones may reach more or less. `pointer_calls["edges"]` is set to the
+    edges this link adds."""
     valid = set(functions)
     call_graph: Dict[str, List[str]] = {}
     for fid, f in functions.items():
         call_graph[fid] = [c for c in (f.get("callsIds") or []) if c in valid]
+    strip_edges(call_graph, stale_pointer_edges)
     reverse: Dict[str, List[str]] = {}
     for fid, callees in call_graph.items():
         for c in callees:
             reverse.setdefault(c, []).append(fid)
+
+    if pointer_calls is not None:
+        added = link_pointer_calls(call_graph, reverse, pointer_calls.get("stores") or [],
+                                   pointer_calls.get("calls") or [], valid)
+        pointer_calls["edges"] = [list(e) for e in sorted(added)]
 
     spread_virtual_families(call_graph, reverse, override_pairs, valid)
 
@@ -268,7 +307,22 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
                  component="incremental", err=True)
     _apply_address_taken(functions, address_taken, entity_files, drop)
 
-    _recompute_call_edges(functions, override_pairs)
+    # Calls through function pointers: merged by file, then linked again over the whole model.
+    # The edges to take out first are each function's own parse's: the baseline's for a file
+    # not re-parsed, the partial parse's for one that was.
+    pointer_calls = _merge_pointer_calls(baseline.get("pointer_calls"), fresh.get("pointer_calls"),
+                                         entity_files, drop)
+    stale_ptr = [e for e in ((baseline.get("pointer_calls") or {}).get("edges") or [])
+                 if len(e) >= 2 and _file_of(e[0], entity_files) not in drop]
+    stale_ptr += [e for e in ((fresh.get("pointer_calls") or {}).get("edges") or [])
+                  if len(e) >= 2 and _file_of(e[0], entity_files) in drop]
+    if not baseline.get("pointer_calls") and pointer_calls["calls"]:
+        from utils import log as _log
+        _log("baseline has no pointer_calls snapshot: a call through a function pointer is "
+             "linked only with the stores of the re-parsed files -- regenerate the baseline "
+             "with --full to link the rest", component="incremental", err=True)
+
+    _recompute_call_edges(functions, override_pairs, pointer_calls, stale_ptr)
 
     return {
         "metadata": fresh.get("metadata") or baseline.get("metadata") or {},
@@ -293,6 +347,8 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         # Function-pointer table registrations, replayed because a narrowed parse may not
         # re-parse the file holding the table. Same reasoning as func_keys above.
         "address_taken": address_taken,
+        # Calls through function pointers and their stores, linked again above (SWE3-V5-02).
+        "pointer_calls": pointer_calls,
     }
 
 

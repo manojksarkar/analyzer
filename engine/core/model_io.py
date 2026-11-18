@@ -71,6 +71,12 @@ OVERRIDE_PAIRS = "override_pairs"
 # so without this they read as private. A narrowed parse may not re-parse the file holding the
 # table, so the registrations are replayed from here. Not in ALL_MODEL_NAMES.
 ADDRESS_TAKEN = "address_taken"
+# POINTER_CALLS = {"stores": [[site_file, slot, value]], "calls": [[caller_fid, slot]],
+# "edges": [[caller_fid, target_fid]]} -- calls through a function pointer and what each
+# pointer can hold (incremental/pointer_calls.py, review SWE3-V5-02). A narrowed parse links
+# them again with the stores of the files it does not re-parse; `edges` are the ones the parse
+# added, which the merge takes back out first. Not in ALL_MODEL_NAMES.
+POINTER_CALLS = "pointer_calls"
 
 ALL_MODEL_NAMES = (
     METADATA,
