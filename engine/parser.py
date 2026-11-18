@@ -32,7 +32,8 @@ from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
 from incremental.virtual_dispatch import spread_virtual_families
-from incremental.pointer_calls import FN as _PTR_FN, SLOT as _PTR_SLOT, link_pointer_calls
+from incremental.pointer_calls import (FN as _PTR_FN, SLOT as _PTR_SLOT, link_pointer_calls,
+                                       slot_contents)
 from core.logging_setup import get_logger
 
 # Module level, not inside main(): the macro-loading report below runs at import
@@ -802,6 +803,13 @@ _MISSING_HEADER_RE = re.compile(r"^'([^']+)' file not found")
 _diag_tu_defs: dict = {}                       # rel_path -> definitions contributed
 _diag_unrecorded: list = []                    # (rel_path, line, name) text-scan misses
 _diag_decl_only: dict = {}                     # func_key -> "rel:line name", resolved at summary
+# Calls Phase 1 could not link to any function (review SWE3-V5-01): such a call draws no arrow
+# and adds no caller, so a dynamic behaviour or an interface row can be missing with nothing
+# said. (rel_path, line, call text, reason), each logged at the end; a call through a pointer
+# is listed only when nothing is stored in it (`_ptr_call_sites`, checked in build_metadata).
+_diag_unresolved_calls: list = []
+_ptr_call_sites: dict = {}                     # (caller func_key, slot) -> (rel_path, line, text)
+_UNRESOLVED_LIST_CAP = 200
 
 
 def _rel_path(path: str) -> str:
@@ -911,6 +919,64 @@ def _diag_drop(reason: str, cursor=None) -> None:
         pass
 
 
+def _call_text(call) -> str:
+    """The called expression as written, `g_inc->go` for `g_inc->go(1)`: the call's tokens
+    up to its argument list."""
+    try:
+        toks = [t.spelling for t in call.get_tokens()]
+    except Exception:
+        return call.spelling or "?"
+    out, depth = [], 0
+    for t in toks:
+        if t == "(" and depth == 0 and out:
+            break                                  # the argument list starts here
+        if t in ("(", "["):
+            depth += 1
+        elif t in (")", "]"):
+            depth -= 1
+        out.append(t)
+    return "".join(out)[:80] or call.spelling or "?"
+
+
+def _record_unresolved_call(call, reason: str) -> None:
+    try:
+        loc = call.location
+        _diag_unresolved_calls.append((_rel_path(loc.file.name), loc.line, _call_text(call), reason))
+    except Exception:
+        pass
+
+
+def _note_empty_pointer_calls() -> None:
+    """A call through a pointer no parsed code stores a function in reaches nothing: list it
+    with the unresolved calls. Full parse only -- a narrowed one cannot see the stores of the
+    files it skips, so every such call would read as empty."""
+    if _baseline_func_keys:
+        return
+    holds = slot_contents(_ptr_stores)
+    defined = set(functions)
+    for (_caller, slot), site in sorted(_ptr_call_sites.items()):
+        if not (holds.get(slot, set()) & defined):
+            _diag_unresolved_calls.append(site + ("a function pointer no parsed code stores a function in",))
+
+
+def _log_unresolved_calls() -> None:
+    """Every call that reaches no function, with file and line (review SWE3-V5-01). The count
+    and reasons as a WARNING, each call as INFO up to a cap, every one at DEBUG."""
+    rows = sorted(set(_diag_unresolved_calls))
+    if not rows:
+        return
+    by_reason = defaultdict(int)
+    for *_x, reason in rows:
+        by_reason[reason] += 1
+    _log.warning("%d call(s) reach no function -- no arrow, no caller for them in the documents: %s",
+                 len(rows), "; ".join(f"{n} {r}" for r, n in sorted(by_reason.items(), key=lambda kv: -kv[1])))
+    for i, (rel, line, text, reason) in enumerate(rows):
+        (_log.info if i < _UNRESOLVED_LIST_CAP else _log.debug)(
+            "  call not linked: %s:%d %s -- %s", rel, line, text, reason)
+    if len(rows) > _UNRESOLVED_LIST_CAP:
+        _log.info("  ... and %d more (every one at DEBUG)", len(rows) - _UNRESOLVED_LIST_CAP)
+
+
 def _log_parse_summary(n_funcs: int) -> None:
     """The end-of-Phase-1 block: what was seen, what was dropped, and why.
 
@@ -949,6 +1015,8 @@ def _log_parse_summary(n_funcs: int) -> None:
                      ", ".join(f"{h} ({n} file{'s' if n != 1 else ''})" for h, n in named))
         if any("unknown type name" in (f or "").lower() for _, _, f in _diag_tu_errors):
             _log.warning("  Hint: undefined macro/typedef - check --macros / clang.clangArgs")
+
+    _log_unresolved_calls()
 
     # A declaration whose definition never appeared anywhere in the parse is a real
     # reason for a function to be absent from functions.json. Declarations that DID get
@@ -2445,6 +2513,16 @@ def visit_calls(cursor, current_key=None):
             _slot = _ptr_call_slot(cursor)
             if _slot:
                 _ptr_calls.add((current_key, _slot))
+                if (current_key, _slot) not in _ptr_call_sites:
+                    try:
+                        _ptr_call_sites[(current_key, _slot)] = (
+                            _rel_path(cursor.location.file.name), cursor.location.line,
+                            _call_text(cursor))
+                    except Exception:
+                        pass
+            elif _ref is not None:
+                _record_unresolved_call(cursor, "a call through a field or variable that is "
+                                                "not a function pointer")
             if _ref is not None or _slot:
                 for child in cursor.get_children():
                     visit_calls(child, current_key)
@@ -2461,6 +2539,14 @@ def visit_calls(cursor, current_key=None):
                 if functions[k]["functionName"] == cursor.spelling:
                     called_key = k
                     break
+        if not called_key and _ref is None:
+            # Nothing names a function: typically a type or a declaration the parse cannot
+            # see -- `e->run()` on a class that is only declared, whose header was not reached.
+            _callee = _strip_ptr_expr(next(iter(cursor.get_children()), cursor))
+            _record_unresolved_call(
+                cursor, "a member call on a class the parse cannot see"
+                if _callee.kind in (cindex.CursorKind.MEMBER_REF_EXPR, cindex.CursorKind.MEMBER_REF)
+                else "a callee the parse cannot see")
         if called_key and (called_key in functions or called_key in _baseline_func_keys):
             # Use list to preserve insertion order, but avoid duplicates
             if called_key not in call_graph[current_key]:
@@ -2783,6 +2869,7 @@ def build_metadata():
     if _ptr_calls:
         print(f"  pointer calls: {len(_ptr_calls)} call(s) through a function pointer, "
               f"linked {len(_ptr_edges)} edge(s) from {len(_ptr_stores)} store(s)")
+        _note_empty_pointer_calls()
     # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
     # to ALL members, so a call that may dynamically dispatch to any override impacts the
     # whole family (never stale) and calledByIds is accurate. Must run before the

@@ -76,20 +76,24 @@ def parser_mod():
     yield P
 
 
-def _call_graph(P, tmp_path, source, lang="c++"):
+def _call_graph(P, tmp_path, source, lang="c++", unresolved=None):
     """Parse a snippet; run Phase 1's call visitor and pointer link on it; return
-    {caller name: sorted callee names}. The parser's module state is saved and restored."""
+    {caller name: sorted callee names}. The parser's module state is saved and restored.
+    With `unresolved` (a list), the calls Phase 1 would report as reaching no function are
+    appended to it, and the snippet may have clang errors."""
     from clang import cindex
 
     src = tmp_path / ("t.cpp" if lang == "c++" else "t.c")
     src.write_text(source, encoding="utf-8")
     args = ["-x", lang] + (["-std=c++20"] if lang == "c++" else [])
     tu = cindex.Index.create().parse(str(src), args=args)
-    assert not [d for d in tu.diagnostics if d.severity >= 3], [d.spelling for d in tu.diagnostics]
+    if unresolved is None:
+        assert not [d for d in tu.diagnostics if d.severity >= 3], [d.spelling for d in tu.diagnostics]
 
     saved = {n: getattr(P, n) for n in ("functions", "call_graph", "reverse_call_graph",
                                          "_visited_call_keys", "_ptr_stores", "_ptr_calls",
-                                         "is_project_file")}
+                                         "_ptr_call_sites", "_diag_unresolved_calls",
+                                         "is_project_file", "MODULE_BASE_PATH")}
     try:
         P.functions = {}
         P.call_graph = defaultdict(list)
@@ -97,6 +101,9 @@ def _call_graph(P, tmp_path, source, lang="c++"):
         P._visited_call_keys = set()
         P._ptr_stores = set()
         P._ptr_calls = set()
+        P._ptr_call_sites = {}
+        P._diag_unresolved_calls = []
+        P.MODULE_BASE_PATH = str(tmp_path)
         P.is_project_file = lambda _p: True
         names = {}
 
@@ -116,6 +123,9 @@ def _call_graph(P, tmp_path, source, lang="c++"):
         P.visit_calls(tu.cursor)
         link_pointer_calls(P.call_graph, P.reverse_call_graph, P._ptr_stores, P._ptr_calls,
                            set(P.functions))
+        if unresolved is not None:
+            P._note_empty_pointer_calls()
+            unresolved.extend(P._diag_unresolved_calls)
         return {names[k]: sorted(names[c] for c in v) for k, v in P.call_graph.items() if v}
     finally:
         for n, v in saved.items():
@@ -194,6 +204,54 @@ int read(int x) { return x; }
 int callEmpty(Ops* o) { return o->read(1); }
 """)
     assert "callEmpty" not in g                   # and not to the function `read`
+
+
+# ---------------------------------------------------------------- calls that reach nothing (V5-01)
+
+def test_a_call_that_reaches_no_function_is_listed_with_file_and_line(parser_mod, tmp_path):
+    found = []
+    g = _call_graph(parser_mod, tmp_path, """
+class Engine;                                  // only declared: its header not reached
+Engine* g_engine;
+typedef int (*Fn)(int);
+struct Ops { Fn read; };
+int fA(int x) { return x; }
+void start() { g_engine->run(); }
+int empty(Ops* o) { return o->read(1); }
+int fine() { return fA(2); }
+""", unresolved=found)
+    assert g == {"fine": ["fA"]}
+    assert sorted((rel, line, text, reason) for rel, line, text, reason in found) == [
+        ("t.cpp", 7, "g_engine->run", "a member call on a class the parse cannot see"),
+        ("t.cpp", 8, "o->read", "a function pointer no parsed code stores a function in"),
+    ]
+
+
+def test_a_pointer_call_that_reaches_a_function_is_not_listed(parser_mod, tmp_path):
+    found = []
+    _call_graph(parser_mod, tmp_path, _CPP, unresolved=found)
+    assert found == []
+
+
+def test_the_parse_summary_lists_each_call_that_reaches_no_function(parser_mod, monkeypatch):
+    P = parser_mod
+    monkeypatch.setattr(P, "_diag_unresolved_calls", [
+        ("Hil/Queue.cpp", 40, "e->run", "a member call on a class the parse cannot see"),
+        ("Hil/Queue.cpp", 52, "ops->read", "a function pointer no parsed code stores a function in"),
+        ("Hil/Queue.cpp", 40, "e->run", "a member call on a class the parse cannot see"),  # twice
+    ])
+    said = {"warning": [], "info": []}
+    monkeypatch.setattr(P._log, "warning", lambda msg, *a: said["warning"].append(msg % a))
+    monkeypatch.setattr(P._log, "info", lambda msg, *a: said["info"].append(msg % a))
+    P._log_unresolved_calls()
+    assert said["warning"] == [
+        "2 call(s) reach no function -- no arrow, no caller for them in the documents: "
+        "1 a member call on a class the parse cannot see; "
+        "1 a function pointer no parsed code stores a function in"]
+    assert said["info"] == [
+        "  call not linked: Hil/Queue.cpp:40 e->run -- a member call on a class the parse cannot see",
+        "  call not linked: Hil/Queue.cpp:52 ops->read -- a function pointer no parsed code stores a "
+        "function in"]
 
 
 # ---------------------------------------------------------------- the narrowed-parse merge
