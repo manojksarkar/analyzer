@@ -19,3 +19,17 @@ PUBLIC int cbFire(int x) {
 PUBLIC int cbApply(const CbOps* ops, int x) {
     return ops->onRead(x) + ops->add(x);
 }
+
+// Test: the table CallbackUser registers, called through `->` (see Callbacks.h).
+static const CbOps* s_ops = 0;
+
+PUBLIC void cbRegisterOps(const CbOps* ops) {
+    s_ops = ops;
+}
+
+PUBLIC int cbDispatch(int x) {
+    if (!s_ops) {
+        return 0;
+    }
+    return s_ops->onRead(x);
+}

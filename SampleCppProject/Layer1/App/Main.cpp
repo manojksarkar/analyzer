@@ -11,6 +11,7 @@
 #include "Sample/Util/Util.h"
 #include "Access/AccessVisibility.h"
 #include "Access/AccessMatrix.h"
+#include "Poly/Callbacks.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -131,6 +132,13 @@ PRIVATE int runMatrixTests() {
     return a + b + d + e + f + g;
 }
 
+// App is the other component calling into Cross: cbDispatch's dynamic behaviour entry exists
+// only because its call through `s_ops->onRead` is linked (review SWE3-V5-01, -02).
+PRIVATE int runCallbackTests() {
+    int r = cbUserRun(2);
+    return r + cbDispatch(3);
+}
+
 PUBLIC int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
@@ -144,6 +152,7 @@ PUBLIC int main() {
     int result10 = fnVeryLongLinearPipeline(7);
     int result11 = runAccessTests();
     int result12 = runMatrixTests();
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12;
+    int result13 = runCallbackTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13;
     return g_globalResult;
 }

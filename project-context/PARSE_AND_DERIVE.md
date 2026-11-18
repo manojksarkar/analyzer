@@ -453,7 +453,10 @@ after (2026-11-18, `--no-llm`, all 56 documents): only Cross and Math moved -- S
 (`cbUserOnRead`, `cbUserDouble` get `Cross/Callbacks`; Math `add` loses it, `subtract` gains
 `Cross/Dispatch`), their unit-diagram arrows, SWE.4 mocks (`cbFire`, `cbApply`, `applyWithCallback`),
 and `applyWithCallback`'s Output Name, which falls through to the global its new callees write
-(`UtilsCounter`, SWE3-FD-03.2).
+(`UtilsCounter`, SWE3-FD-03.2). Dynamic behaviour (review SWE3-V5-01): App's `runCallbackTests`
+calls `cbDispatch`, which reaches CallbackUser only through `s_ops->onRead`. With develop's code
+`cbDispatch`, `cbFire` and `cbApply` have no entry (they call nothing); with the link each gets one,
+and `cbUserRun`'s entry gains the pointer-reached arrows (measured in-process on both models).
 
 ### External data dictionary merge
 

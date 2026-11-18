@@ -16,5 +16,6 @@ static const CbOps s_userOps = { cbUserOnRead, cbUserDouble };
 
 PUBLIC int cbUserRun(int x) {
     cbRegister(cbUserOnRead);
+    cbRegisterOps(&s_userOps);
     return cbFire(x) + cbApply(&s_userOps, x);
 }

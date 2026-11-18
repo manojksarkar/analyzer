@@ -17,3 +17,10 @@ PUBLIC void cbRegister(CbFn fn);
 PUBLIC int cbFire(int x);
 PUBLIC int cbApply(const CbOps* ops, int x);
 PUBLIC int cbUserRun(int x);
+
+// Test: a dynamic behaviour that exists only through a pointer (review SWE3-V5-01). App calls
+// cbDispatch from another component; cbDispatch reaches CallbackUser (this component's other
+// unit) only through `s_ops->onRead`. Without the pointer link it calls nothing, so it got no
+// dynamic behaviour entry (SWE3-DB-01); with it, the entry draws the call into CallbackUser.
+PUBLIC void cbRegisterOps(const CbOps* ops);
+PUBLIC int cbDispatch(int x);
