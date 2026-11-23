@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-23 | Review fixes in develop; 13, 14, V5-05 fixed | [16](16-2026-10-30.md) |
 | 2026-11-18b | Review fixes: pointer calls, calls not linked, labels true to their code, behaviour descriptions tried again | [16](16-2026-10-30.md) |
 | 2026-11-18 | Review SWE3_V5: six issues in the one issue list and the fix plan | [16](16-2026-10-30.md) |
 | 2026-11-17 | Flowchart fixes in develop; review issues 09, 10, 11 verified | [16](16-2026-10-30.md) |

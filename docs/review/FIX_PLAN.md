@@ -15,12 +15,12 @@ as work moves. Verdicts: [REVIEW_TRIAGE_SPEC](../spec/REVIEW_TRIAGE_SPEC.md).
 
 | Verdict | Fixed | Open | Planned | Nothing to do | Total |
 |---|---|---|---|---|---|
-| Defect — flowchart | 3 | 5 | — | — | 8 |
-| Defect — other | 7 | 3 | — | — | 10 |
+| Defect — flowchart | 5 | 3 | — | — | 8 |
+| Defect — other | 8 | 2 | — | — | 10 |
 | Gap | — | 2 | — | — | 2 |
 | As per rule | — | — | 3 | 7 | 10 |
 | To check | — | 1 | — | — | 1 |
-| **Total** | **10** | **11** | **3** | **7** | **31** |
+| **Total** | **13** | **8** | **3** | **7** | **31** |
 
 ### Time — 11 to 13 days, then 4 to 5 for hide/show
 
@@ -43,8 +43,8 @@ Optimistic days. 1–3 run side by side, one person each: 8–10 days, then the 
 | SWE3-V4-10 | Text cluttered | Case labels piled up under the diamond.<br>1) Label in the middle of the arrow.<br>2) Constant only: `eVALUE`, not `case Type::eVALUE`.<br>3) Cases to the same box share one arrow | 1–2 d | verified |
 | SWE3-V4-11 | Return not joined to End | A `return` inside an extra `{ }` had an arrow to the next step.<br>1) Look inside nested `{ }` for how a branch ends.<br>2) No arrow on after `return`, `break`, `continue`, `goto`.<br>Also fixed: a `case X: { …; break; }` in braces fell into the next case; a `continue` in a `switch` case had no arrow back to its loop | 1–2 d | verified |
 | SWE3-V4-12 | One side of a branch missing | 1) Header not found: fixed by 08; check at the review site.<br>2) Macro off: 17.<br>3) An empty branch (an `#if` whose macro is off empties `{ }`) had no arrow: done.<br>4) Other causes: to find | 1–2 d | investigate |
-| SWE3-V4-13 | Wrong value on a branch | A branch's label keeps its code's numbers and constant names; else it reads the code: `Check: retry > 3?`. Cached labels too | 1–2 d | done (branch) |
-| SWE3-V4-14 | Both branches look the same | Two boxes with different code never share a label: the pass that evens out the labels now sees the code, and a clash goes back to the first-pass label or the code | 1 d | done (branch) |
+| SWE3-V4-13 | Wrong value on a branch | A branch's label keeps its code's numbers and constant names; else it reads the code: `Check: retry > 3?`. Cached labels too | 1–2 d | verified |
+| SWE3-V4-14 | Both branches look the same | Two boxes with different code never share a label: the pass that evens out the labels now sees the code, and a clash goes back to the first-pass label or the code | 1 d | verified |
 | SWE3-V4-15 | Wording or label should change | Reviewers correct it in the app | 0 d | open: the reviewing team |
 
 ### Defects — other
@@ -58,9 +58,9 @@ Optimistic days. 1–3 run side by side, one person each: 8–10 days, then the 
 | SWE3-V4-05 | Orphan header's function counted as another unit's | The header belongs to its own unit | — | verified |
 | SWE3-V4-06 | Globals not in the unit headers | Globals listed (SWE3-UH-01) | — | verified |
 | SWE3-V4-07 | Class: structs and classes missing | Struct, class and union listed | — | verified |
-| SWE3-V5-01 | Dynamic behaviour missing: calls through `->` | A `->` call to a method is found when its class is visible. Not found: a class only declared (its header not reached), or a function-pointer field `p->fn()` (that is V5-02).<br>1) Find which with one example.<br>2) Header not reached: the include paths, as for 08.<br>3) Log each call that is not found, with file and line: done (branch) | 0.5 d + 1 d | investigate |
-| SWE3-V5-02 | Indirect dispatch call not found | A call through a function pointer (a struct field, a variable, a table) links to nothing; worse, a field named like a function links to the first function of that name.<br>1) Rule: does such a call count, and to which functions? No rule says so today, so it may be a Gap; its Rule ID is empty until then.<br>2) Link it to the functions stored in that field or table; else to the functions of the same type whose address is taken.<br>3) Never link by name when the call names a field or a variable.<br>Done (branch), 1)–3); the rule is SWE3-UI-01.6, to agree | 2–3 d | done (branch) |
-| SWE3-V5-05 | Dynamic behaviour: descriptions not written by the LLM | `A calls B` without `to …` is the text without the LLM (SWE3-DB-03), used silently when: the LLM is off; one server check fails, for the whole run; neither function has a description; a call fails.<br>1) Find which: `analyzer.py llm-stats`, stage `behaviour.call_description`.<br>2) Log each fallback and its reason; check the server again, not once per run: done (branch), with 3 tries, a second round at the end of the step, and the code when neither function is described | 0.5 d + 1 d | done (branch) |
+| SWE3-V5-01 | Dynamic behaviour missing: calls through `->` | A `->` call to a method is found when its class is visible. Not found: a class only declared (its header not reached), or a function-pointer field `p->fn()` (that is V5-02).<br>1) Find which with one example.<br>2) Header not reached: the include paths, as for 08.<br>3) Log each call that is not found, with file and line: done (branch) | 0.5 d + 1 d | to verify |
+| SWE3-V5-02 | Indirect dispatch call not found | A call through a function pointer (a struct field, a variable, a table) links to nothing; worse, a field named like a function links to the first function of that name.<br>1) Rule: does such a call count, and to which functions? No rule says so today, so it may be a Gap; its Rule ID is empty until then.<br>2) Link it to the functions stored in that field or table; else to the functions of the same type whose address is taken.<br>3) Never link by name when the call names a field or a variable.<br>Done (branch), 1)–3); the rule is SWE3-UI-01.6, to agree | 2–3 d | to verify |
+| SWE3-V5-05 | Dynamic behaviour: descriptions not written by the LLM | `A calls B` without `to …` is the text without the LLM (SWE3-DB-03), used silently when: the LLM is off; one server check fails, for the whole run; neither function has a description; a call fails.<br>1) Find which: `analyzer.py llm-stats`, stage `behaviour.call_description`.<br>2) Log each fallback and its reason; check the server again, not once per run: done (branch), with 3 tries, a second round at the end of the step, and the code when neither function is described | 0.5 d + 1 d | verified |
 
 ### To check
 
