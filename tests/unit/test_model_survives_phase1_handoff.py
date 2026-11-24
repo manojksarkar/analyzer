@@ -33,7 +33,11 @@ def _src(rel):
 
 
 @pytest.mark.parametrize("field", ["params", "parameters", "className", "addressTakenByUnits",
-                                   "returnExpr", "syntheticFromVarDecl"])
+                                   "returnExpr", "syntheticFromVarDecl",
+                                   # SWE.4's out-parameters and mock write-backs
+                                   "readsFields", "writesParams",
+                                   # Direction: own members written, methods called on itself
+                                   "writesMembers", "selfCallIds"])
 def test_field_is_carried_by_the_store(field):
     """Each of these reaches Phase 2 only through the payload allow-list."""
     from core.model_store import _FN_PAYLOAD_FIELDS

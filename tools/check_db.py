@@ -25,6 +25,7 @@ Exit 0 = nothing wrong found. 1 = findings. 2 = could not run the checks.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -134,6 +135,7 @@ def main(argv=None) -> int:
 
     # ------------------------------------------------------- model completeness
     ev, cb, ent = s.entity_versions, s.content_blobs, s.entities
+    no_address_taken, no_pointer_calls, no_virtual_calls = [], [], []
     for v in versions:
         vid = v["id"]
         n_ev = scalar(sa.select(sa.func.count()).select_from(ev).where(ev.c.version_id == vid))
@@ -172,6 +174,44 @@ def main(argv=None) -> int:
         r.check(not gap, WARN, f"version {vid}: parse snapshot missing {len(gap)} artifact(s)",
                 sorted(gap),
                 "A narrowed parse against this baseline will fall back to a full parse.")
+        # Three snapshots that do not stop a narrowed parse: it runs on such a baseline and is
+        # wrong in a quieter way. Older versions lack them by date, not by damage, so they are
+        # collected and noted once below -- not a warning per version, which would fail
+        # `analyzer.py check` on every database that holds a version made before them.
+        if "functions.json" in snaps:
+            if "address_taken.json" not in snaps:
+                no_address_taken.append(vid)
+            if "pointer_calls.json" not in snaps:
+                no_pointer_calls.append(vid)
+            else:
+                pc = scalar(sa.select(s.parse_snapshots.c.payload).where(
+                    (s.parse_snapshots.c.version_id == vid)
+                    & (s.parse_snapshots.c.name == "pointer_calls.json")))
+                if isinstance(pc, str):
+                    try:
+                        pc = json.loads(pc)
+                    except ValueError:
+                        pc = None
+                if not isinstance(pc, dict) or "virtual" not in pc:
+                    no_virtual_calls.append(vid)
+
+    # INFO, not WARN: the exit code (and `analyzer.py check`) stays what the damage says.
+    r.check(not no_address_taken, INFO,
+            f"{len(no_address_taken)} version(s) with no address_taken parse snapshot",
+            no_address_taken,
+            "As an incremental baseline, a function published only through a pointer table "
+            "reads as private again. Run the next version with --full.")
+    r.check(not no_pointer_calls, INFO,
+            f"{len(no_pointer_calls)} version(s) with no pointer_calls parse snapshot "
+            "(made before 2026-11-18)", no_pointer_calls,
+            "As an incremental baseline, a call through a function pointer links only the "
+            "stores the narrowed parse re-reads (SWE3-027), and a virtual call is spread by "
+            "family (SWE3-028). Run the next version with --full.")
+    r.check(not no_virtual_calls, INFO,
+            f"{len(no_virtual_calls)} version(s) whose pointer_calls has no virtual calls "
+            "(made before 2026-11-24)", no_virtual_calls,
+            "As an incremental baseline, a virtual call is spread by family, not to the "
+            "overrides below the method named (SWE3-028). Run the next version with --full.")
 
     # -------------------------------------------------------------- description
     # Descriptions live in content_blobs payloads; count entities that have none.

@@ -6,6 +6,9 @@ Answers one question: re-render from the stored model, or re-parse it?
   7ae0d1d and the model itself is wrong -- re-run `generate ... --full`.
   A missing address_taken snapshot means this version is unsafe as an INCREMENTAL
   BASELINE (pointer-table functions would flip private); the version's own model is fine.
+  A version parsed before 2026-11-24 has no member facts (writesMembers / selfCallIds,
+  review SWE3-025) and no `virtual` calls in pointer_calls (SWE3-028): as a baseline, an
+  incremental run keeps its class methods' Direction and spreads virtual calls by family.
 
     python tools/check_model_health.py --project-id <pid> --version-id <vid>
 """
@@ -29,6 +32,8 @@ def main() -> int:
         funcs = model_store.load_functions(cx, a.version_id)
         snaps = [r[0] for r in cx.execute(sa.text(
             "select name from parse_snapshots where version_id=:v"), {"v": a.version_id})]
+        ptr = cx.execute(sa.text("select payload from parse_snapshots where version_id=:v "
+                                 "and name='pointer_calls.json'"), {"v": a.version_id}).first()
         row = cx.execute(sa.text("select decision, baseline_version_id from versions "
                                  "where id=:v"), {"v": a.version_id}).first()
     decision = (row[0] if row else None) or "full"
@@ -45,7 +50,10 @@ def main() -> int:
     checks = [("parameters", have("parameters")), ("returnExpr", have("returnExpr")),
               ("readsGlobalIds", have("readsGlobalIds")),
               ("writesGlobalIds", have("writesGlobalIds")),
-              ("addressTakenByUnits", have("addressTakenByUnits"))]
+              ("addressTakenByUnits", have("addressTakenByUnits")),
+              # Not "lost" when 0 -- C code has no methods -- read with the NOTE below.
+              ("writesMembers", have("writesMembers")),
+              ("selfCallIds", have("selfCallIds"))]
     print(f"version {a.version_id}: {n} functions, parsed as {decision!r}"
           + (f" off baseline {baseline!r}" if baseline else ""))
     # The parse_merge fixes only ever touch a NARROWED parse. A full parse never calls
@@ -79,6 +87,28 @@ def main() -> int:
         print("NOTE: no address_taken parse snapshot on this version.")
         print("  Its own model is fine, but do NOT use it as an incremental baseline --")
         print("  pointer-table functions would flip private. Use --full for the next version.")
+
+    methods = sum(1 for f in funcs.values() if f.get("className"))
+    if methods and not have("writesMembers") and not have("selfCallIds"):
+        print()
+        print(f"NOTE: {methods} class method(s) and no member facts (writesMembers, selfCallIds).")
+        print("  Parsed before 2026-11-24 (review SWE3-025), or no method writes a member: a")
+        print("  method writing only its own object's members reads Out here. As a baseline, an")
+        print("  incremental run keeps that for every file it does not re-parse. Use --full.")
+    payload = ptr[0] if ptr else None
+    if isinstance(payload, str):
+        import json
+        payload = json.loads(payload)
+    if not payload:
+        print()
+        print("NOTE: no pointer_calls parse snapshot on this version (before review SWE3-027).")
+        print("  As a baseline, calls through a function pointer link only the stores a narrowed")
+        print("  parse re-reads, and virtual calls are spread by family. Use --full.")
+    elif "virtual" not in payload:
+        print()
+        print("NOTE: pointer_calls has no `virtual` calls (parsed before 2026-11-24, SWE3-028).")
+        print("  As a baseline, a virtual call is spread by family -- every caller of any method")
+        print("  of the family reaches all of them. Use --full for the next version.")
     return 0
 
 

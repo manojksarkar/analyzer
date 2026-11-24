@@ -59,6 +59,11 @@ FUNCTIONS = {
            "addressTakenByUnits": ["Other"],
            "readsGlobalIds": ["g1"], "writesGlobalIds": ["g1"],
            "readsGlobalIdsTransitive": ["g1"], "writesGlobalIdsTransitive": ["g1"],
+           # No column and no edge for these four: the payload allow-list is their only way
+           # through, and a field left off it is dropped without a word.
+           "readsFields": [{"var": "p", "structType": "Pt", "field": "x"}],
+           "writesParams": ["out"],
+           "writesMembers": ["Calc::m_total"], "selfCallIds": ["f2"],
            "description": "Adds two numbers.", "callsIds": ["f2"], "calledByIds": []},
     "f2": {"name": "mul", "qualifiedName": "Calc::mul", "className": "Calc",
            "file": "src/calc.cpp", "line": 20, "endLine": 24, "unit": "Calc",
@@ -78,7 +83,8 @@ FN_VERBATIM = ("qualifiedName", "className", "visibility", "direction", "directi
                "inputName", "outputName", "addressTakenByUnits",
                "readsGlobalIds", "writesGlobalIds", "readsGlobalIdsTransitive",
                "writesGlobalIdsTransitive", "description", "callsIds", "calledByIds",
-               "syntheticFromVarDecl")
+               "syntheticFromVarDecl", "readsFields", "writesParams", "writesMembers",
+               "selfCallIds")
 GLOBAL_VERBATIM = ("type", "value", "className", "description")
 
 
