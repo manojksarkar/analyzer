@@ -645,7 +645,7 @@ build_dot(cfg)
             one edge per target box, its cases' constants joined a line each
             _case_value(): "case Type::eREAD" → "eREAD"; "default" as is
             label="..." (mid-edge, Graphviz makes room) -- taillabels at one
-            diamond piled up on top of each other (review SWE3-V4-10)
+            diamond piled up on top of each other (review SWE3-010)
     invisible push-down edges anchor Return/End at the bottom
 
 ━━━ STEP 9: Validate CFG ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

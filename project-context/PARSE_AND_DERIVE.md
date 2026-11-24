@@ -407,7 +407,7 @@ Fixture: `SampleCppProject/Layer1/Poly/OpsTable.cpp` (table + ops, deliberately 
 `OpsClient.cpp` (a different unit consuming the table via `extern`). Verified: `opsAdd`/
 `opsSub` get `IF_` ids with Source/Destination `Cross/OpsClient`; `opsSeed` stays private.
 
-### Calls through a function pointer (2026-11-18, review SWE3-V5-02)
+### Calls through a function pointer (2026-11-18, review SWE3-027)
 
 A call through a pointer names a **slot**, not a function: libclang resolves `o->read(x)` to
 the FIELD `read`, `fp(x)` to the variable, `cb(x)` to the parameter, `table[i](x)` to nothing.
@@ -438,7 +438,7 @@ function pointer is a call to every function stored in it anywhere.**
   recorded). A baseline without the artifact logs that it links only re-parsed stores.
 - Not followed: a pointer returned by a function, `void*` / casts through other types,
   constructor member-initializer lists, member-function pointers.
-- A call that reaches no function is listed at the end of Phase 1 (review SWE3-V5-01):
+- A call that reaches no function is listed at the end of Phase 1 (review SWE3-026):
   WARNING count by reason, each `call not linked: file:line text -- reason` at INFO (200, then
   DEBUG): a member call on a class the parse cannot see, a callee it cannot see, a function
   pointer no parsed code stores a function in (full parse only), a call through a field or
@@ -453,7 +453,7 @@ after (2026-11-18, `--no-llm`, all 56 documents): only Cross and Math moved -- S
 (`cbUserOnRead`, `cbUserDouble` get `Cross/Callbacks`; Math `add` loses it, `subtract` gains
 `Cross/Dispatch`), their unit-diagram arrows, SWE.4 mocks (`cbFire`, `cbApply`, `applyWithCallback`),
 and `applyWithCallback`'s Output Name, which falls through to the global its new callees write
-(`UtilsCounter`, SWE3-FD-03.2). Dynamic behaviour (review SWE3-V5-01): App's `runCallbackTests`
+(`UtilsCounter`, SWE3-FD-03.2). Dynamic behaviour (review SWE3-026): App's `runCallbackTests`
 calls `cbDispatch`, which reaches CallbackUser only through `s_ops->onRead`. With develop's code
 `cbDispatch`, `cbFire` and `cbApply` have no entry (they call nothing); with the link each gets one,
 and `cbUserRun`'s entry gains the pointer-reached arrows (measured in-process on both models).

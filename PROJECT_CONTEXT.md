@@ -99,7 +99,7 @@ newer entry and the code win.
 - **SWE3_WIKI rewritten** (2026-11-05i…k, `docs/swe3-rule-tables`, in develop 2026-11-06): 28 rules for three teams; details in
   [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md); decisions BACKLOG S3-10, S3-14…19; with the extension fix (S3-13);
   review triage: three verdicts, Defect / Gap / As per rule ([REVIEW_TRIAGE_SPEC](docs/spec/REVIEW_TRIAGE_SPEC.md)).
-- **Review SWE3_V4, V5**: [fix plan](docs/review/FIX_PLAN.md) -- 13 of 31 fixed; `fix/review-v5` in develop 2026-11-23 (V5-01, V5-02 to verify).
+- **Review SWE3_V4, V5**: [fix plan](docs/review/FIX_PLAN.md) -- 13 of 31 fixed; `fix/review-v5` in develop 2026-11-23 (SWE3-026, SWE3-027 to verify).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

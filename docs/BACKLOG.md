@@ -60,7 +60,7 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | S3-17 | Direction: `isSet` / `hasGet` match the word `set` / `get`; a function that returns a value **and** writes a global is `Out`. Kept as is (2026-11-05): no review comment yet | enhance | P3 | S | a review comment on it | parked | SWE3-UI-05 |
 | S3-18 | Flowcharts: a private function called only by another private function gets none -- print it under its caller's caller too? Kept as is (2026-11-05) | enhance | P3 | S | a review comment on it | parked | SWE3-FD-01 |
 | S3-19 | Fixed values to settle later (2026-11-05): Note; links to requirement IDs (SWE.1 / Polarion); the Introduction wording and the abbreviation list; Code Metrics and the Appendix; whether LLM text is part of the acceptance check | input | P3 | — | the teams | parked | SWE3-FX-01 |
-| S3-20 | Direction editable in the app: a correction (In / Out) that also changes the unit diagram's arrow, in the web page and the Word file; dropped when the function's code changes. For what SWE3-V4-25's rule change misses. Built with WA-1 | enhance | P3 | in WA-1's 5 d | SWE3-V4-25 built first | decide | `engine/review/`, `views/unit_diagrams.py`, web app |
+| S3-20 | Direction editable in the app: a correction (In / Out) that also changes the unit diagram's arrow, in the web page and the Word file; dropped when the function's code changes. For what SWE3-025's rule change misses. Built with WA-1 | enhance | P3 | in WA-1's 5 d | SWE3-025 built first | decide | `engine/review/`, `views/unit_diagrams.py`, web app |
 
 ## SWE.3 — review round 1 (received 2026-09-23; in develop)
 
@@ -172,7 +172,7 @@ How each issue is fixed, by Issue ID, with effort in days: [review/FIX_PLAN.md](
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
-| WA-1 | Function visibility end to end. Plan: one setting per function, Auto (the rule) / Show / Hide, kept as a review correction (carried to the next version, dropped when the code changes), read by the Word file and the web page. Show: the interface row and the entry; Source/Destination `-`, no arrow -- no links are made. Hide: no row, no entry, no arrows of its own; calls to it in other functions' flowcharts stay. For a function other units use without calling it by name (how: to check) and one nobody wants shown: SWE3-V4-21, SWE3-V4-19. The rule goes under SWE3-UI-01 once agreed. Built with S3-20. Today: three stores, none feeding the next; "Manage" disabled; the run dialog's "Pause after Phase 1" removed 2026-11-03 (never used) — back only with this; their clean-up later | issue | P3 | 5 d with S3-20 | how such a function is called; the rule agreed | decide | `job_functions`, `entity_versions.is_visible`, exporter `hidden` |
+| WA-1 | Function visibility end to end. Plan: one setting per function, Auto (the rule) / Show / Hide, kept as a review correction (carried to the next version, dropped when the code changes), read by the Word file and the web page. Show: the interface row and the entry; Source/Destination `-`, no arrow -- no links are made. Hide: no row, no entry, no arrows of its own; calls to it in other functions' flowcharts stay. For a function other units use without calling it by name (how: to check) and one nobody wants shown: SWE3-021, SWE3-019. The rule goes under SWE3-UI-01 once agreed. Built with S3-20. Today: three stores, none feeding the next; "Manage" disabled; the run dialog's "Pause after Phase 1" removed 2026-11-03 (never used) — back only with this; their clean-up later | issue | P3 | 5 d with S3-20 | how such a function is called; the rule agreed | decide | `job_functions`, `entity_versions.is_visible`, exporter `hidden` |
 | WA-2 | No user creation in the web app (CLI `analyzer.py user` only); a pending invite never becomes active | enhance | — | — | — | open | `api/routes/users.py` |
 | WA-3 | Project discovery, Profile, Help, SSO, forgot password | enhance | — | — | — | open | shell |
 | WA-19 | **Archive, then a soft delete** -- Archive is needed before the first deployment with real projects; today Delete removes everything at once | enhance | — | M | — | open | `api/routes/projects.py`, Projects page |
@@ -270,7 +270,7 @@ follow our rules. To answer with data:
 1. Done 2026-11-05: each SWE3_WIKI section has one rule table, `ID | Rule | Details`, ids DOC, SD, UH,
    UI, FD, DB, FX; 135 rules merged to 28, the drift fixed on the way.
 2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; TEST_INVENTORY lists the tests by the new rule ids.
-3. Each comment gets a section and one Issue ID (`SWE3-V4-11`); the issue list gives each issue its
+3. Each comment gets a section and one Issue ID (`SWE3-011`); the issue list gives each issue its
    verdict (Defect, Gap, As per rule) and rule, and Defect and Gap count against -- [REVIEW_TRIAGE_SPEC](spec/REVIEW_TRIAGE_SPEC.md) (2026-11-09).
 4. Per section: the review's score, the count per verdict, and the score with the comments that are not
    counted against given back -- the formula is in the same spec.

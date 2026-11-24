@@ -171,7 +171,7 @@ means the prompt isn't landing. Fix the prompt; the enforcement pass is the
 safety net, not the mechanism.
 
 **A label keeps its code's values and tells its box apart** (`generator.guard_labels`,
-review SWE3-V4-13, -14). A decision's or loop head's label names no number its code
+review SWE3-013, -014). A decision's or loop head's label names no number its code
 lacks, and every number but 0 and 1 and every constant name (`MAX_RETRY`, `eREAD`);
 two boxes with different code never share a label. A label that breaks either goes
 back to its first-pass label, else to the box's code ("Check: retry > 3?"). It runs on

@@ -288,7 +288,7 @@ Generates one `.mmd` per (current function, external caller) pair via
 > **Tests:** [tests/unit/test_behaviour_diagram_package.py](../tests/unit/test_behaviour_diagram_package.py) —
 > 19 tests, the package's first coverage. Mutation-checked: reintroducing the `_`/`/` bug fails 12 of 19.
 
-**A call bullet the LLM did not write is not left silently (2026-11-18, review SWE3-V5-05).** It fell
+**A call bullet the LLM did not write is not left silently (2026-11-18, review SWE3-030).** It fell
 back to `X calls Y` for good on any of: `llm.descriptions` off; ONE failed server check (memoised for
 the run); neither function described (no LLM call at all); a failed call (the exception swallowed).
 `CallDescriptionGenerator` now: tries a call `TRIES` (3) times, `WAIT_SECONDS` apart; after a failed
@@ -577,7 +577,7 @@ it (`parser._diag_missing_headers`, 2026-10-14k): `N header(s) not found -- add 
 stdio.h (12 files), ...`. Tests: `tests/unit/test_cfg_missing_header.py`; fixture
 `SampleCppProject/Layer1/Diag/MissingHeaderSwitch*.cpp`.
 
-### A block in braces, an empty branch, and the case labels (2026-11-12d, -e; review SWE3-V4-10, -11, -12)
+### A block in braces, an empty branch, and the case labels (2026-11-12d, -e; review SWE3-010, -011, -012)
 
 A `{ ... }` written inside a statement list (`_process_compound`, `_process_case_stmts`) was not
 in `_CONTROL_FLOW_KINDS`, so it was folded into an ACTION box with its text: a `return` or
@@ -603,7 +603,7 @@ chart (BACKLOG IN-7): the review site needs a fresh run to see either fix. Rules
 
 An empty branch (2026-11-12e): `_process_if` drew no arrow for a `then` or `else` with no statement --
 `{ }`, or one an `#if` whose macro is off or an ASSERT emptied -- so that side of the decision was
-missing (one cause of SWE3-V4-12's symptom). It now goes on to the next statement (an open exit with
+missing (one cause of SWE3-012's symptom). It now goes on to the next statement (an open exit with
 its Yes / No). An empty loop body (`while (!ready) { }`) loops on its head (a Yes self-edge, a back
 edge to `dot_builder`); an empty `do { } while (c);` used to return no entry, so the loop was cut out
 of the chart -- its head is now the entry. Only edges are added, never nodes: no node id moves, so no
@@ -619,7 +619,7 @@ continues and the switch hands them to the enclosing loop. Measured: 405 sample 
 fixture `fnSwitchContinue`; rule SWE3-FD-02.6. Seen at the same time, NOT changed: a switch with no
 `default` has no arrow for "no case matches" -- whether to draw one (and how SWE.4 reads it) is open.
 
-### Labels true to their code (2026-11-18, review SWE3-V4-13, -14)
+### Labels true to their code (2026-11-18, review SWE3-013, -014)
 
 A label is LLM text on a box of code; `llm/generator.guard_labels` keeps it true to that code. (1) A
 DECISION's or LOOP_HEAD's label may name no number its code lacks, and must name every number but 0
