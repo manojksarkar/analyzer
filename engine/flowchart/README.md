@@ -114,7 +114,7 @@ dot_builder.py          Converts a labeled CFG to a Graphviz DOT script
                         with views.flowcharts).
 
 mermaid/                LEGACY after the DOT switch (2026-07-27):
-  validator.py          validate_cfg() still used; validate_mermaid() is dead
+  validator.py          validate_cfg() and missing_sides() used; validate_mermaid() is dead
   normalizer.py         normalize_edge_label() still used by dot_builder
   builder.py            build_mermaid() — dead code (superseded by dot_builder)
 
@@ -443,6 +443,14 @@ If labels are falling back to raw code, the LLM context window may be too small.
 ```bash
 python flowchart_engine.py ... --llm-num-ctx 16384
 ```
+
+### A branch drawn without its arrow
+
+The run ends with a WARNING count of the decisions and loops missing their Yes or No arrow
+(and switches with no arrow), then one INFO line each, 200 at most:
+`branch missing: file:line function  code -- what` (the rest at DEBUG)
+(`mermaid/validator.missing_sides`, review SWE3-012). Nothing is repaired; read the list where
+the code is.
 
 ---
 

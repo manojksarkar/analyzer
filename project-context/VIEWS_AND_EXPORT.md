@@ -638,6 +638,19 @@ so the guard changes nothing there (measured: whole sample). Strict on constants
 (2026-11-18): `if (retry > MAX_RETRY)` written "above maximum?" falls back to the code. Fixture
 `fnRetrySpeed`; tests in `tests/unit/test_call_name_labels.py`.
 
+### A branch drawn without its arrow is listed (2026-11-24b, review SWE3-012, -008)
+
+`mermaid/validator.missing_sides(cfg)` lists each DECISION and LOOP_HEAD without both its Yes
+and No edge, and each SWITCH_HEAD with no edge. `flowchart_engine._finish_chart` notes them
+(`_note_missing_sides`, thread-safe) and the run ends with a WARNING count, then each one at INFO
+(200 at most, the rest at DEBUG): `branch missing: file:line function  code -- what`. Nothing is
+repaired: the list is what to read at a review site, where the code is. The sample's 424
+functions list none. SWE3-008 (a branch lost behind a header libclang cannot find): an `if` on
+any name from that header keeps both arrows -- an enum value, a macro, a function, a type, a
+`while`, an `else if` chain, measured; only an `#if` on its macro drops a branch, which is
+SWE3-017. Tests: `tests/unit/test_cfg_missing_header.py` (`test_every_decision_has_both_arrows`,
+`test_a_dropped_arrow_is_listed`, `test_an_if_on_a_missing_header_keeps_both_arrows`).
+
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 
 At import time, `flowchart_engine.py` checks `os.environ["LIBCLANG_PATH"]`.

@@ -79,6 +79,13 @@ After parsing flags, run.py:
 0. **Layer include paths** — resolves the selected layer (from `--selected-group` or `--selected-layer`), then walks only that layer's directories (or all layers if neither flag is set) and writes `model/clang_include_paths.json`. Phase 1 reads this to extend `CLANG_ARGS` with `-I<dir>` for each collected directory.
 1. Loads `engine/config/config.json` (+ `config.local.json`) via `load_config`.
 1a. **Collects layer include paths** — walks the relevant layer directory/directories under `<project_path>` recursively (skipping hidden dirs), stores result as `{LayerName: [abs_dir, …]}`, and writes it to `model/clang_include_paths.json` before any phase starts. When `--selected-group` or `--selected-layer` is set, only the targeted layer is walked. Read by Phase 1 (`parser.py`) and Phase 3 (`flowcharts.py`) — neither re-walks the filesystem.
+1b. **Layer macros from the build** (2026-11-24b, review SWE3-017) — every `-D` / `/D` flag of each
+   core's `compile_commands.json` (`core/compile_commands.load_defines`: per layer, the value most
+   files use where they differ, the differing names logged) is written to
+   `model/clang_build_macros.json` as `{layer: {name: value}}` (a bare `-DX` as `""`), or the file is
+   removed when no core gives one. `parser.py` reads it as its FIRST macro source, so every macros
+   file (`--macros`, `--macros-layer`, `clang.macrosFile`, `layers.<L>.macros`) wins on a name. It
+   needs the `compile_commands.json` of the build for the commit the run reads.
 2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
    `format_llm_config_banner` to the log so the operator sees exactly which
    provider, baseUrl, model, `numCtx`, resolved `maxContextTokens`, retries,

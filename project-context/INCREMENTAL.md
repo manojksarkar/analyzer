@@ -360,6 +360,10 @@ workspaces/<projectId>/
     absent. +6 unit tests. **Function-pointer dispatch = documented limitation** (target unknowable statically;
     dispatcher descriptions are generic → low staleness risk; use `mode:"full"` if guaranteed freshness needed).
     Details in doc 04 §5 checklist (Virtual dispatch / Function pointers rows).
+    **Since 2026-11-24b (review SWE3-028)** the family spread is the fallback only: a call reaches the
+    method it names and the overrides below it (`spread_virtual_calls`), from the `virtual` calls the
+    `pointer_calls` artifact keeps; a baseline without that key is spread by family as before
+    ([PARSE_AND_DERIVE](PARSE_AND_DERIVE.md) "Virtual calls").
   - **M3.10 unit-diagram incremental reuse — ✅ done.** `views/unit_diagrams.py` now gates on
     `incremental_plan.json`: carries forward the baseline version's unit diagrams (`.mmd`+`.png`), prunes orphans
     (renamed/deleted units), and regenerates only **affected units** = units of the impacted functions PLUS their

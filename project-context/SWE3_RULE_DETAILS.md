@@ -70,6 +70,12 @@
   `Reset`, `offset` do not. `void *` counts as a value. A class static member is a global however it is
   reached (`Foo::s_x`, `s_x`, `this->s_x`, `obj.s_x`), whatever its access. Each decision is kept in words
   in the tool's data (`In: function name 'FtlSetEntry' contains 'Set'`), not printed.
+- Direction, member variables (SWE3-025): `m_x`, `this->m_x`, `Base::m_x`, `m_tab[i]`, `m_obj.f`,
+  `m_ptr->f` are its own object's; a method called as `f()`, `this->f()` or `Base::f()` passes its member
+  writes up, `helper.f()` does not. A local pointer or reference counts when set from `&x`, an array, a
+  reference binding or another such local; not one a function returns, nor a copy of a pointer member. A
+  constructor, `memset(&m_x, …)` and a class-typed `=` (an `operator=` call) do not count. Fixture:
+  `Direction/MemberWrites.{h,cpp}`.
 - Source/Destination is separated by `, `; units of the same component count, the function's own unit is
   left out. Callers only, because each relationship between two units is written once, on the side that
   provides the function.

@@ -10,6 +10,8 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-24c | Direction: a method that writes its own object's member variables is In (review SWE3-025) | [16](16-2026-10-30.md) |
+| 2026-11-24b | Review fixes: virtual calls, a branch without its arrow listed, the build's macros | [16](16-2026-10-30.md) |
 | 2026-11-24 | SWE.3 review IDs: issues `SWE3-NNN`, comments `SWE3_V4_R1_05_P1` | [16](16-2026-10-30.md) |
 | 2026-11-23 | Review fixes in develop; 13, 14, V5-05 fixed | [16](16-2026-10-30.md) |
 | 2026-11-18b | Review fixes: pointer calls, calls not linked, labels true to their code, behaviour descriptions tried again | [16](16-2026-10-30.md) |

@@ -268,8 +268,35 @@ that applies — the parser's `build_metadata` value above is only the rule-3 fa
 2. **Non-void return** (`returnType` present and ≠ `"void"`; `void *` counts as a value)
    → **Out** (data flows out through the return value).
 3. **Global-access fallback (the 3.4 rule).** Writes a global directly or transitively
-   → **In**; else reads one → **Out**; else **Out** (pure). Reuses
+   → **In**; else writes a member variable of its own object (below) → **In**; else reads
+   a global → **Out**; else **Out** (pure). Reuses
    `writesGlobalIdsTransitive`/`readsGlobalIdsTransitive`.
+
+**Member variables (review SWE3-025, 2026-11-24).** The rule lives in `derive_directions`
+(moved out of `main()` so `tests/unit/test_class_static_field_writes.py` can call it). The
+parser records two facts per method, both in `model_store._FN_PAYLOAD_FIELDS`:
+- `writesMembers` — `"Class::field"` of each member of its OWN object the body writes:
+  `m_x = …`, `this->m_x++`, `m_tab[i] = 0`, `m_obj.f = 1`, `Base::m_x.a++`, `m_ptr->f = 1`
+  (the same "root of the left side" a global write already used). `other.m_x` and a
+  parameter's `p->m_x` are another object's. Found by `parser._lvalue_root` through `.`,
+  `->`, `[]`, `*` and casts, called at `=`, compound `op=`, `++`/`--`.
+- `selfCallIds` — the methods it calls on its own object (`f()`, `this->f()`, `Base::f()`;
+  a dispatching virtual one adds the overrides below it). `helper.f()` is not one.
+Phase 2 closes `writesMembers` over `selfCallIds` (a fixpoint) and the reason names the
+member and the method it came through.
+
+**Local pointers and references.** `parser._local_aliases` remembers what a local pointer
+or reference points at when it is set from `&x`, an array (`int* q = m_tab;`), a reference
+binding (`T& r = m_rows[i];`) or another such local (`q = p`). A write through it (`p->a`,
+`*p`, `p[i]`, `r.a`, `r = …`) writes that global or member; moving the pointer (`p = q`,
+`p++`) does not. A pointer a function returns (`p = find(id)`) and a copy of a pointer
+member (`p = m_ptr`) are not followed. A global written this way goes into
+`writesGlobalIds`, so it also reaches Input/Output Name and the LLM's prompts; publication
+does not move, because taking the address already counted as a read.
+
+Limits: a constructor is not walked (as for globals); `memset(&m_x, …)` and a class-typed
+`operator=` are calls, not writes. A version made before 2026-11-24 has neither field: an
+incremental run keeps those methods Out until a Fresh run.
 
 **`directionReason` (audit trail).** Alongside `direction`, the same loop writes a
 human-readable `directionReason` on every function and global so the decision is
@@ -282,6 +309,9 @@ field). Forms:
 - `In: writes global(s) transitively: <g> (via <callee(s)>); …` — rule 3, transitive-only
   write; names the direct callee(s) that actually write each global, so the chain
   is auditable.
+- `In: writes member variable(s) <names> directly.` — rule 3, own members.
+- `In: writes member variable(s) through its own methods: <m> (via <method(s)>); …` — rule 3,
+  own members written only by methods it calls on its own object.
 - `Out: reads global(s) <names> but writes none.` — rule 3.
 - `Out: accesses no globals (reads none, writes none).` — rule 3, pure function.
 - Globals: `In/Out: global variables are bidirectional interfaces.`
@@ -457,6 +487,24 @@ and `applyWithCallback`'s Output Name, which falls through to the global its new
 calls `cbDispatch`, which reaches CallbackUser only through `s_ops->onRead`. With develop's code
 `cbDispatch`, `cbFire` and `cbApply` have no entry (they call nothing); with the link each gets one,
 and `cbUserRun`'s entry gains the pointer-reached arrows (measured in-process on both models).
+
+### Virtual calls (2026-11-24b, review SWE3-028)
+
+A call to a virtual method reaches the method it names and every override below it, never one
+found by name. `visit_calls` records each dispatching call in `_virtual_calls` (caller key,
+method named) and links the method named when it is defined; a call naming its class
+(`Base::f()`, `this->Base::f()`; `_names_its_class`, `::` before the name in its tokens) does
+not dispatch and reaches that one only. `build_metadata` runs
+`incremental/virtual_dispatch.spread_virtual_calls` (over `overrides_below(_override_pairs)`)
+before the ids mapping. D7's `spread_virtual_families` linked every caller of any member of a
+family to all of them -- the base and the siblings too; it is kept only for a baseline whose
+`pointer_calls` artifact has no `virtual` key (`parse_merge._recompute_call_edges`). The
+artifact keeps the calls at fid level (`virtual`), merged by caller file in a narrowed parse.
+Fixture `Layer1/Poly/{Devices.h, Device.cpp, NandDevice.cpp, NorDevice.cpp, DeviceUser.cpp}`:
+`devReadAny` (through `Device*`) reaches Device, Nand and Nor; `devReadNand` (through
+`NandDevice&`) Nand only; `NandDevice::read`'s `Device::read()` Device only. A pure virtual
+method (`portSend`) reaches its overrides, not the free function `send`. Tests:
+`tests/unit/test_incremental_virtual_dispatch.py`.
 
 ### External data dictionary merge
 
