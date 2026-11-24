@@ -21,7 +21,10 @@ then compare verN against verF entity by entity. They must agree.
 Deliberately checks the CROSS-FILE call edge as well: `uart_send` calls `timer_wait`, defined in
 a file the narrowed parse does NOT re-read. Resolving that depends on the baseline func-key map
 arriving from `parse_snapshots`; if it does not, the edge silently disappears and only a check
-like this one notices.
+like this one notices. The same for a class (reviews SWE3-025, -028): `NandDevice::clear` calls
+`Device::reset` on its own object, defined in an un-read file, so it must stay In through
+`selfCallIds`; `devRead` (un-read) calls `Device::read` through a `Device*`, so it must still
+reach the override in the re-read file.
 
     python tools/verify_narrowed_parse.py
 
@@ -41,8 +44,8 @@ sys.path[:0] = [_ROOT, os.path.join(_ROOT, "engine")]
 
 PID = "verify-narrowed"
 
-# Three files. Commit 2 changes ONLY uart.cpp, so timer.cpp and storage.cpp must survive the
-# merge untouched — and uart_send's call into timer.cpp must still resolve.
+# Six files. Commit 2 changes ONLY uart.cpp and nand.cpp, so timer.cpp, storage.cpp, device.cpp
+# and user.cpp must survive the merge untouched — and the calls into them must still resolve.
 TIMER_H = "#pragma once\nvoid timer_wait(int ms);\n"
 TIMER_CPP = """#include "timer.h"
 void timer_wait(int ms) {
@@ -69,6 +72,36 @@ void uart_send(int byte) {
     timer_wait(2);
     timer_wait(3);
 }
+"""
+DEVICE_H = """#pragma once
+class Device {
+public:
+    virtual int read(int lba);
+protected:
+    void reset();
+    int m_used;
+};
+class NandDevice : public Device {
+public:
+    int read(int lba) override;
+    void clear();
+};
+int devRead(Device* d);
+"""
+DEVICE_CPP = """#include "device.h"
+int Device::read(int lba) { return lba; }
+void Device::reset() { m_used = 0; }
+"""
+USER_CPP = """#include "device.h"
+int devRead(Device* d) { return d->read(1); }
+"""
+NAND_V1 = """#include "device.h"
+int NandDevice::read(int lba) { return Device::read(lba) + 1; }
+void NandDevice::clear() { reset(); }
+"""
+NAND_V2 = """#include "device.h"
+int NandDevice::read(int lba) { return Device::read(lba) + 2; }
+void NandDevice::clear() { reset(); }
 """
 
 
@@ -153,13 +186,16 @@ def main() -> int:
     _git(repo, "symbolic-ref", "HEAD", "refs/heads/main")
     for rel, body in (("src/timer.h", TIMER_H), ("src/timer.cpp", TIMER_CPP),
                       ("src/storage.h", STORAGE_H), ("src/storage.cpp", STORAGE_CPP),
-                      ("src/uart.h", UART_H), ("src/uart.cpp", UART_V1)):
+                      ("src/uart.h", UART_H), ("src/uart.cpp", UART_V1),
+                      ("src/device.h", DEVICE_H), ("src/device.cpp", DEVICE_CPP),
+                      ("src/user.cpp", USER_CPP), ("src/nand.cpp", NAND_V1)):
         _write(os.path.join(repo, rel), body)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "v1")
     sha1 = _git(repo, "rev-parse", "HEAD")
 
-    _write(os.path.join(repo, "src/uart.cpp"), UART_V2)      # ONLY uart.cpp changes
+    _write(os.path.join(repo, "src/uart.cpp"), UART_V2)      # ONLY uart.cpp and nand.cpp change
+    _write(os.path.join(repo, "src/nand.cpp"), NAND_V2)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "v2")
     sha2 = _git(repo, "rev-parse", "HEAD")
@@ -186,7 +222,7 @@ def main() -> int:
     from incremental.generate import generate_full
     from incremental.engine import generate_incremental
 
-    print(f"commit 1 {sha1[:10]}   commit 2 {sha2[:10]}   (only src/uart.cpp changed)")
+    print(f"commit 1 {sha1[:10]}   commit 2 {sha2[:10]}   (only uart.cpp, nand.cpp changed)")
     print("\n=== baseline: FULL(commit 1) ===")
     generate_full(PID, "main", sha1, {"type": "project"}, workspaces_root=ws_root,
                   no_llm=True, repo_url=repo, version_id="ver1")
@@ -251,6 +287,25 @@ def main() -> int:
     elif wait not in (got_m["functions"][send].get("callsIds") or []):
         fails.append("uart_send -> timer_wait edge LOST — the baseline func-key map did not "
                      "reach the partial parse, so calls into un-parsed files do not resolve")
+
+    # A method of the re-read file calling one of its own object's, defined in an un-read file:
+    # the member write travels up only through `selfCallIds` (SWE3-025). And a dispatcher in an
+    # un-read file reaches the override in the re-read one (SWE3-028).
+    def _fn(name):
+        return next((k for k in got_m["functions"] if k.split("|")[2:3] == [name]), None)
+    clear, reset = _fn("NandDevice::clear"), _fn("Device::reset")
+    dev_read, nand_read = _fn("devRead"), _fn("NandDevice::read")
+    if not (clear and reset and dev_read and nand_read):
+        fails.append(f"class fixture missing: clear={clear!r} reset={reset!r} "
+                     f"devRead={dev_read!r} NandDevice::read={nand_read!r}")
+    else:
+        fc = got_m["functions"][clear]
+        if reset not in (fc.get("selfCallIds") or []) or fc.get("direction") != "In":
+            fails.append(f"NandDevice::clear lost its own-object call into the un-read file: "
+                         f"selfCallIds={fc.get('selfCallIds')} direction={fc.get('direction')}")
+        if nand_read not in (got_m["functions"][dev_read].get("callsIds") or []):
+            fails.append("devRead -> NandDevice::read LOST — the virtual call in the un-read "
+                         "file no longer reaches the override in the re-read one")
 
     if not got_m["functions"]:
         fails.append("the narrowed parse produced NO functions at all")

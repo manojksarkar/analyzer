@@ -183,7 +183,8 @@ for m in restricted + carried + full_regen + rendered:
 # incremental one was not.
 MODEL_JSON = {"functions.json", "globalVariables.json", "dataDictionary.json", "edges.json",
               "hashes.json", "tu_includes.json", "entity_files.json", "func_keys.json",
-              "override_pairs.json", "metadata.json"}
+              "override_pairs.json", "address_taken.json", "pointer_calls.json",
+              "metadata.json"}
 for _v in (VID, VID2):
     _md = os.path.join(ws, PID, "versions", _v, "model")
     _pd = os.path.join(ws, PID, "versions", _v, "parse")

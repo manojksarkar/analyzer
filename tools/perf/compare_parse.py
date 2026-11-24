@@ -1,6 +1,7 @@
-"""Compare two versions' Phase 1 output exactly: every parse snapshot (functions, globals, data
-dictionary, hashes, edges, func_keys, entity_files, override_pairs, address_taken) and the include
-lists -- the parse alone, whatever the LLM did after it. `metadata.json` is compared without its
+"""Compare two versions' Phase 1 output exactly: every parse snapshot the version has, by name
+(functions, globals, data dictionary, hashes, edges, func_keys, entity_files, override_pairs,
+address_taken, pointer_calls) and the include lists -- the parse alone, whatever the LLM did
+after it. `metadata.json` is compared without its
 timestamp.
 
     python tools/perf/compare_parse.py <version-id-a> <version-id-b>      (needs DATABASE_URL)
