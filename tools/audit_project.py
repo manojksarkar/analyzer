@@ -609,6 +609,82 @@ def check_include_map(ctx, rep):
                 ask="this number and whether a compile_commands.json is configured for the "
                     "project's cores.")
 
+    # The build's own -D flags (review SWE3-017): run.py writes them beside each version's
+    # model from every core's compile_commands.json, and the parse reads them first, under
+    # the macros files. None means every #if followed the macros files alone.
+    for v in ctx.versions:
+        mdir = _version_model_dir(ctx, v["id"])
+        if mdir is None:
+            rep.add(INFO, "F3", "%s: model folder not on this machine; build macros not "
+                                "checked" % v["id"], examined="0 folders")
+            continue
+        try:
+            build = _read_json(os.path.join(mdir, "clang_build_macros.json"))
+            flags = _read_json(os.path.join(mdir, "clang_macros.json"))
+        except (OSError, ValueError) as exc:
+            rep.add(WARN, "F3", "%s: build macros unreadable (%s)" % (v["id"], exc),
+                    examined="1 folder")
+            continue
+        if not build:
+            rep.add(INFO, "F3", "%s: no -D flags from the build" % v["id"],
+                    examined="1 folder",
+                    why="No core's compile_commands.json gave a -D flag, or the run is older "
+                        "than 2026-11-24. Each #if followed the macros files alone.",
+                    ask="whether the project's cores name the compile_commands.json of the "
+                        "build for this commit.")
+            continue
+        overridden = _overridden_build_macros(build, flags or {})
+        rep.add(OK, "F3", "%s: -D flags from the build, per layer: %s; %d overridden by a "
+                          "macros file" % (
+                    v["id"], ", ".join("%s %d" % (k, len(d or {}))
+                                       for k, d in sorted(build.items())), len(overridden)),
+                examined="%d layer(s)" % len(build),
+                examples=overridden,
+                why="A macros file wins on a name, so an overridden flag is the file's value, "
+                    "not the build's. The run log also lists any name whose value differs "
+                    "between the build's own files.")
+
+
+def _version_model_dir(ctx, vid):
+    """The version's model folder on disk, under today's workspaces root or the repository's
+    own `workspaces/`; None when neither has it."""
+    dirs = []
+    try:
+        from core.paths import workspaces_root
+        dirs.append(os.path.join(workspaces_root(), ctx.project_id, "versions", vid))
+    except Exception:                                   # noqa: BLE001 - fall back below
+        pass
+    dirs.append(ctx.version_dir(vid))
+    for d in dirs:
+        if os.path.isdir(os.path.join(d, "model")):
+            return os.path.join(d, "model")
+    return None
+
+
+def _read_json(path):
+    """The file's JSON, or None when there is no such file."""
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _overridden_build_macros(build, flags):
+    """`layer: NAME` for each build -D flag whose final value in the run's flag list
+    (`clang_macros.json`: the build's first, then the macros files'; clang keeps the last)
+    is not the build's."""
+    out = []
+    for layer, names in sorted(build.items()):
+        final = {}
+        for flag in flags.get(layer) or []:
+            if isinstance(flag, str) and flag.startswith("-D"):
+                name, _, value = flag[2:].partition("=")
+                final[name] = value
+        for name, value in sorted((names or {}).items()):
+            if name in final and final[name] != ("" if value is None else str(value)):
+                out.append("%s: %s" % (layer, name))
+    return out
+
 
 # ---------------------------------------------------------------------------
 # G. output vs database
