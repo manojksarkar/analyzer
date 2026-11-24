@@ -19,13 +19,66 @@ header-only units says nothing about a SWE.4 document.
 """
 from __future__ import annotations
 
-from .model import P3, is_placeholder, normalise_key
+import re
+
+from .model import P3, canonical_enum, is_placeholder, normalise_key, normalise_text
 
 # Section anchors, so a reader can go and check the claim.
 WIKI = "docs/spec/SWE3_WIKI.md"
 WIKI4 = "docs/spec/SWE4_WIKI.md"
 
 EXPLAINED, POSSIBLE = True, False
+
+# The engine's word split for SWE3-UI-05 row 1 (`model_deriver._WORD_RE`, `_name_words`):
+# camelCase and snake_case into words, so `coreSetResult` holds `set` and `Setup` does not.
+# Copied, not imported -- this tool reads documents, not the engine -- and kept equal by
+# tests/unit/test_doccheck_compare.py.
+_WORD_RE = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+')
+
+
+def _name_words(name):
+    return {w.lower() for w in _WORD_RE.findall(name or "")}
+
+
+def _direction_from_the_documents(rows):
+    """(direction, why) that SWE3-UI-05 gives a function from what its rows show -- the name
+    (row 1) and the return type (row 2) -- or (None, "") when it turns on what the code
+    writes (rows 3-4), which no document shows."""
+    name = next((r.name for r in rows if r.name), "")
+    short = name.split("(")[0].strip().rsplit("::", 1)[-1]
+    words = _name_words(short)
+    if "set" in words:
+        return "In", "its name holds the word Set"
+    if "get" in words:
+        return "Out", "its name holds the word Get"
+    returns = {(r.fields.get("dataTypeReturn") or "").strip() for r in rows} - {""}
+    if len(returns) != 1:                    # not shown, or the two documents disagree on it
+        return None, ""
+    ret = returns.pop()
+    if ret.casefold() == "void" or is_placeholder(ret):
+        return None, ""
+    return "Out", "it returns a value (%s)" % ret
+
+
+def _function_direction(f, rows):
+    """The direction rule for one function row, as far as the documents can take it."""
+    said = [canonical_enum("direction", v) for v in (f.left, f.right)]
+    if "In/Out" in said:
+        return ("In/Out is a global variable's Direction; a function is In or Out "
+                "(%s, SWE3-UI-05)" % WIKI)
+    want, why = _direction_from_the_documents(rows)
+    if want is not None:
+        wrong = [s for s in said if s != want]
+        return ("SWE3-UI-05 gives %s here, before anything the code writes: %s; the document "
+                "that says %s breaks it (%s, SWE3-UI-05)" % (want, why, " / ".join(wrong), WIKI))
+    # A void function with neither word: what decides it is in the code. Since 2026-11-24
+    # (review SWE3-025) a method that writes its own object's member variables is In, so a
+    # document made before then says Out for it.
+    return ("it returns nothing and its name has neither Set nor Get, so its Direction turns "
+            "on what the code writes: a global, or a member variable of its own object -- by "
+            "itself, by a function it calls or through a local pointer -- makes it In; nothing "
+            "written, Out. A method that writes its own object's member variables is In since "
+            "2026-11-24; a document made before then says Out (%s, SWE3-UI-05)" % WIKI)
 
 
 def _index(doc):
@@ -105,9 +158,12 @@ def _swe3(f, li, ri):
                     "source (%s, SWE3-UI-04)" % WIKI), POSSIBLE
 
     if f.kind == "differs" and f.field == "direction":
-        iface = li["interfaces"].get(unit_key, {}).get(leaf)
-        if iface is not None and (iface.fields.get("interfaceType") or "").casefold().startswith("global"):
+        rows = [r for r in (li["interfaces"].get(unit_key, {}).get(leaf),
+                            ri["interfaces"].get(unit_key, {}).get(leaf)) if r is not None]
+        if any(canonical_enum("interfaceType", r.fields.get("interfaceType")) == "Global Variable"
+               for r in rows):
             return "a global variable is always In/Out (%s, SWE3-UI-05)" % WIKI, POSSIBLE
+        return _function_direction(f, rows), POSSIBLE
 
     if f.kind in ("missing", "extra") and f.entity == "headerdef":
         # RV-4: an orphan header's symbols are listed ONCE, in the header's owner unit.
@@ -178,6 +234,17 @@ def _swe4(f, li, ri):
     if f.kind == "differs" and f.field in _CONFIGURED4:
         return ("%s comes from the configuration, not from the code (%s, 'Table B')"
                 % (_CONFIGURED4[f.field], WIKI4)), EXPLAINED
+
+    if f.kind == "differs" and f.field == "expected":
+        # Only an `updated` entry one side has: that is what a write the code makes decides.
+        left = {normalise_text(x) for x in (f.left or [])}
+        right = {normalise_text(x) for x in (f.right or [])}
+        if any("successfully updated" in x for x in left ^ right):
+            return ("Expected Results has one entry per out-parameter and per global the "
+                    "function writes. Since 2026-11-24 a global written through a local pointer "
+                    "or reference to it (`p = &g_tab[i]; p->a = 1;`) counts as written "
+                    "(SWE3-UI-05 row 4), so a document made before then lacks that entry "
+                    "(%s, 'Expected Results')" % WIKI4), POSSIBLE
 
     if f.kind == "missing" and f.entity == "testcase":
         return ("a public function defined in a header gets no spec of its own; it is "

@@ -91,6 +91,18 @@ and function it names are in its component.
 A rule comes in three strengths: *explained* (P3), *possible reason* (a lead, the
 priority stays) and *the rule* (the one a pairing finding breaks).
 
+A function whose Direction differs carries SWE3-UI-05 as a possible reason, always P1 (one of
+the two documents is wrong). Where the documents decide it -- the word Set or Get in the name,
+or a return value in Data Type -- the reason says which document breaks the rule. A void
+function with neither word turns on what the code writes, which no document shows; since
+2026-11-24 a method that writes its own object's member variables is In, so a document made
+before then says Out for it. `In/Out` on a function is reported as a global's Direction. The
+word split is the engine's (`model_deriver._name_words`), copied and kept equal by a test.
+
+In SWE.4, an Expected Results difference where one side has a `Successfully updated` entry the
+other lacks carries the same date as a possible reason: since then a global written through a
+local pointer or reference to it counts as written.
+
 ## Reading the reports
 
 - **Markdown**: a summary table per level is always shown; the details sit in

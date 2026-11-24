@@ -480,6 +480,80 @@ def test_a_fixed_placeholder_drifting_is_explained():
     assert differs[0].explained and differs[0].was == P2
 
 
+def _direction_rule(left_row, right_row):
+    """The rule attached to the one Direction finding between two copies of one unit."""
+    left = document([component("Diag", [unit("U", [left_row], functions=[left_row.name])])])
+    right = document([component("Diag", [unit("U", [right_row], functions=[right_row.name])])])
+    differs = [f for f in run(left, right).findings if f.field == "direction"]
+    assert len(differs) == 1
+    # A lead in every case, never P3: one of the two documents breaks the rule.
+    assert differs[0].priority == P1 and not differs[0].explained
+    return differs[0].rule
+
+
+@pytest.mark.parametrize("name, ret, ours, theirs, want, wrong", [
+    ("FtlSetEntry", "int", "In", "Out", "In", "Out"),          # Set wins over the return value
+    ("coreSetResult", "VOID", "Out", "In", "In", "Out"),       # the word inside camelCase
+    ("ftl_get_ppn", "VOID", "In", "Out", "Out", "In"),         # snake_case
+    ("MwTable::mwFind", "MwEntry*", "In", "Out", "Out", "In"),  # a value: the class prefix is not the name
+    ("scale(int, int)", "int", "In", "Out", "Out", "In"),      # an overload's parameter list
+])
+def test_a_function_direction_the_documents_can_decide_names_the_side_that_breaks_it(
+        name, ret, ours, theirs, want, wrong):
+    rule = _direction_rule(iface(name, dataTypeReturn=ret, direction=ours),
+                           iface(name, dataTypeReturn=ret, direction=theirs))
+    assert "gives %s here" % want in rule and "that says %s breaks it" % wrong in rule
+    assert "SWE3-UI-05" in rule
+
+
+@pytest.mark.parametrize("name", ["Setup", "reset", "offsetOf", "Settings"])
+def test_set_inside_another_word_does_not_decide_it(name):
+    rule = _direction_rule(iface(name, dataTypeReturn="VOID", direction="In"),
+                           iface(name, dataTypeReturn="VOID", direction="Out"))
+    assert "turns on what the code writes" in rule
+
+
+def test_a_void_function_points_at_what_the_code_writes_including_own_members():
+    """SWE3-025: a void method writing its own members became In on 2026-11-24, so a document
+    made before says Out. The documents cannot show what the code writes: a lead, not P3."""
+    rule = _direction_rule(iface("MwTable::mwDeleteEntry", dataTypeReturn="VOID", direction="In"),
+                           iface("MwTable::mwDeleteEntry", dataTypeReturn="VOID", direction="Out"))
+    assert "member variable of its own object" in rule and "2026-11-24" in rule
+
+
+def test_a_return_type_the_documents_disagree_on_decides_nothing():
+    rule = _direction_rule(iface("mwRun", dataTypeReturn="VOID", direction="In"),
+                           iface("mwRun", dataTypeReturn="int", direction="Out"))
+    assert "turns on what the code writes" in rule
+
+
+def test_in_out_on_a_function_is_a_global_s_direction():
+    rule = _direction_rule(iface("mwRun", dataTypeReturn="VOID", direction="In/Out"),
+                           iface("mwRun", dataTypeReturn="VOID", direction="Out"))
+    assert "a function is In or Out" in rule
+
+
+def test_a_global_row_is_always_in_out_even_when_only_one_side_types_it():
+    left = iface("g_x", interfaceType="Function", direction="In", dataTypeReturn=None)
+    right = iface("g_x", interfaceType="Global Variable", direction="In/Out",
+                  dataTypeReturn=None)
+    rule = _direction_rule(left, right)
+    assert "always In/Out" in rule
+
+
+@pytest.mark.parametrize("name", ["FtlSetEntry", "coreSetResult", "ftl_get_ppn", "SET_X",
+                                  "isSet", "Setup", "Settings", "reset", "offset", "HTTPServer",
+                                  "mw2Get", "_set_", "getX99", ""])
+def test_the_word_split_is_the_engine_s(name):
+    """Copied, not imported: this test keeps the copy equal to the rule the engine applies."""
+    _engine = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "engine")
+    if _engine not in sys.path:
+        sys.path.insert(0, _engine)
+    from model_deriver import _name_words as engine_words
+    assert rules._name_words(name) == engine_words(name)
+
+
 def test_an_unresolved_data_range_points_at_the_data_dictionary():
     right = sample()
     row = right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface")[0]

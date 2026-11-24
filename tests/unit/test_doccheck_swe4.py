@@ -289,6 +289,29 @@ def test_reworded_test_steps_are_a_review_item():
     assert len(differs) == 1 and differs[0].priority == P2 and differs[0].level == "L5"
 
 
+def _expected_finding(left_expected, right_expected):
+    left, right = sample4(), sample4()
+    for doc, expected in ((left, left_expected), (right, right_expected)):
+        doc.of_kind("component")[0].of_kind("unit")[0].of_kind("testcase")[0]             .fields["expected"] = expected
+    differs = [f for f in run4(left, right).findings if f.field == "expected"]
+    assert len(differs) == 1
+    return differs[0]
+
+
+def test_a_global_update_one_side_lacks_points_at_writes_through_a_local_pointer():
+    """SWE3-025: since 2026-11-24 `p = &s_block.xa[i]; p->a = 1;` writes s_block, so a
+    specification made before then says "no global side effects" where ours names it."""
+    f = _expected_finding(["No return value; no global side effects"],
+                          ["Successfully updated MwBlock s_block"])
+    assert "local pointer" in (f.rule or "") and f.priority == P2 and not f.explained
+
+
+def test_an_expected_difference_with_no_update_entry_carries_no_rule():
+    f = _expected_finding(["Successfully returned 0 in step 2"],
+                          ["Successfully returned 1 in step 2"])
+    assert not f.rule
+
+
 def test_flattening_the_nesting_is_caught_even_when_every_sentence_survives():
     """The wording is identical; only the control flow the steps describe changed."""
     right = sample4()
