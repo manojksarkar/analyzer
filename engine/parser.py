@@ -31,7 +31,7 @@ from core.macro_input import (
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
-from incremental.virtual_dispatch import spread_virtual_families
+from incremental.virtual_dispatch import spread_virtual_calls
 from incremental.pointer_calls import (FN as _PTR_FN, SLOT as _PTR_SLOT, link_pointer_calls,
                                        slot_contents)
 from core.logging_setup import get_logger
@@ -693,8 +693,8 @@ _func_key_to_fid = {}              # internal func_key -> model fid (filled in b
 _visited_usage_keys = set()        # dedup for visit_usage across header includes
 call_graph = defaultdict(list)  # caller -> [callees]
 reverse_call_graph = defaultdict(list)  # callee -> [callers]
-# (override_funcKey, base_funcKey) pairs from get_overridden_cursors — drives the D7
-# virtual-dispatch over-approximation (spread_virtual_families) in build_metadata.
+# (override_funcKey, base_funcKey) pairs from get_overridden_cursors — drive the
+# virtual calls' link to the overrides below the method named (spread_virtual_calls).
 _override_pairs = []
 # (override_fid, base_fid|base_funcKey) pairs (fid-level), built in build_metadata and
 # written to model/override_pairs.json so a narrowed parse (M4.6) can re-spread virtual
@@ -734,7 +734,11 @@ _address_taken_fid = []
 # narrowed parse can link again with the stores of the files it does not re-parse.
 _ptr_stores = set()
 _ptr_calls = set()
-_pointer_calls_fid = {"stores": [], "calls": [], "edges": []}
+# Virtual calls (review SWE3-028): (caller func_key, method named), only the calls that
+# dispatch -- not `Base::f()`. build_metadata links each to the overrides below the method
+# named; model/pointer_calls.json keeps them at fid level as `virtual`, for a narrowed parse.
+_virtual_calls = set()
+_pointer_calls_fid = {"stores": [], "calls": [], "edges": [], "virtual": []}
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -1754,6 +1758,28 @@ def _is_fn_ptr_type(t) -> bool:
         return False
 
 
+def _is_virtual(method):
+    """A virtual method, declared so or overriding one (review SWE3-028)."""
+    try:
+        return method.is_virtual_method()
+    except Exception:
+        return False
+
+
+def _names_its_class(call):
+    """`Base::f()`, `this->Base::f()`, `o.Base::f()`: the call names the method's class, so it
+    does not dispatch. Read from the callee's tokens: `::` just before the method's name. A
+    call written through a macro reads as dispatching -- it then reaches more, never fewer."""
+    try:
+        callee = next(iter(call.get_children()), None)
+        if callee is None:
+            return False
+        toks = [t.spelling for t in callee.get_tokens()]
+        return len(toks) >= 2 and toks[-1] == call.spelling and toks[-2] == "::"
+    except Exception:
+        return False
+
+
 def _strip_ptr_expr(cursor):
     """The expression under casts, parentheses, `*fp` and `&fn`."""
     for _ in range(32):
@@ -2527,6 +2553,23 @@ def visit_calls(cursor, current_key=None):
                 for child in cursor.get_children():
                     visit_calls(child, current_key)
                 return
+        # A virtual call (review SWE3-028) reaches the method it names and the overrides below
+        # it, linked in build_metadata -- never a function found by NAME below, which picked
+        # the first `read` anywhere when the method named was pure virtual. A call naming the
+        # class (`Base::f()`) does not dispatch: it is not recorded, so it reaches that one.
+        if _ref is not None and _ref.kind == cindex.CursorKind.CXX_METHOD and _is_virtual(_ref):
+            _named = get_function_key(_ref)
+            if _named:
+                if not _names_its_class(cursor):
+                    _virtual_calls.add((current_key, _named))
+                if _named in functions or _named in _baseline_func_keys:
+                    if _named not in call_graph[current_key]:
+                        call_graph[current_key].append(_named)
+                    if current_key not in reverse_call_graph[_named]:
+                        reverse_call_graph[_named].append(current_key)
+            for child in cursor.get_children():
+                visit_calls(child, current_key)
+            return
         if cursor.referenced:
             called_key = get_function_key(cursor.referenced)
             # M4.4 narrowed parse: a callee defined in an UN-parsed file isn't in `functions`;
@@ -2850,7 +2893,7 @@ def build_metadata():
     # In-body address-takes become ordinary call edges (`pFunc = &helper` => taker -> helper),
     # so calledByIds, Source/Destination, unit diagrams and behaviour diagrams all pick the
     # relationship up with no further change. Same over-approximation shape as D7 below.
-    # Must run BEFORE spread_virtual_families and the call_graph -> ids mapping.
+    # Must run BEFORE spread_virtual_calls and the call_graph -> ids mapping.
     _n_addr_edges = 0
     for _taker, _target in sorted(_address_taken_in_body):
         if _taker not in functions or _target not in functions or _taker == _target:
@@ -2870,15 +2913,16 @@ def build_metadata():
         print(f"  pointer calls: {len(_ptr_calls)} call(s) through a function pointer, "
               f"linked {len(_ptr_edges)} edge(s) from {len(_ptr_stores)} store(s)")
         _note_empty_pointer_calls()
-    # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
-    # to ALL members, so a call that may dynamically dispatch to any override impacts the
-    # whole family (never stale) and calledByIds is accurate. Must run before the
-    # call_graph -> calledByIds/callsIds mapping below.
-    _n_edges, _n_fams = spread_virtual_families(call_graph, reverse_call_graph,
-                                                _override_pairs, set(functions))
+    # A virtual call reaches the method it names and every override below it (review
+    # SWE3-028; D7's family spread linked every caller of any member to all of them, the
+    # base and the siblings too). A call through a `Base*` still reaches every override, so
+    # changing one still impacts the dispatcher. Must run before the call_graph ->
+    # calledByIds/callsIds mapping below.
+    _n_edges, _n_calls = spread_virtual_calls(call_graph, reverse_call_graph, _override_pairs,
+                                              _virtual_calls, set(functions))
     if _n_edges:
-        print(f"  virtual-dispatch: linked {_n_edges} caller->override edge(s) across "
-              f"{_n_fams} family(ies)")
+        print(f"  virtual calls: linked {_n_edges} caller->override edge(s) from "
+              f"{_n_calls} call(s)")
     functions_dict = {}
     global_variables_dict = {}
 
@@ -3015,7 +3059,12 @@ def build_metadata():
     _pointer_calls_fid["edges"] = sorted(
         {(func_key_to_fid[c], func_key_to_fid[t]) for c, t in _ptr_edges
          if c in func_key_to_fid and t in func_key_to_fid})
-    for _k in ("stores", "calls", "edges"):
+    # The virtual calls (SWE3-028): caller fid -> the method named, its fid when defined,
+    # else its key (like a base in override_pairs).
+    _pointer_calls_fid["virtual"] = sorted(
+        {(func_key_to_fid[c], func_key_to_fid.get(m, m)) for c, m in _virtual_calls
+         if c in func_key_to_fid})
+    for _k in ("stores", "calls", "edges", "virtual"):
         _pointer_calls_fid[_k] = [list(r) for r in _pointer_calls_fid[_k]]
 
     # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is

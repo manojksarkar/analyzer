@@ -15,11 +15,67 @@ links more, never fewer (D7).
 
 Pure: it mutates the two call-graph dicts it is handed (no globals), so it is unit-
 testable; `parser.py` calls it with its `call_graph` / `reverse_call_graph`.
+
+`spread_virtual_calls` is the exact form (review SWE3-028), used whenever the parse
+recorded its virtual calls: a call reaches the method it names and every override BELOW
+it -- never the base above it or a sibling -- and a call that names the class
+(`Base::f()`) does not dispatch, so it is not recorded and reaches that method only. A
+call through a `Base*` still reaches every override, so changing one still impacts the
+dispatcher. `spread_virtual_families` stays for a baseline made before the parse
+recorded its virtual calls.
 """
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
+
+
+def overrides_below(override_pairs: Iterable[Tuple[str, str]]) -> Dict[str, Set[str]]:
+    """{method -> every override of it, at any depth below}, from (override, base) pairs."""
+    children: Dict[str, Set[str]] = defaultdict(set)
+    for ov, base in override_pairs:
+        if ov != base:
+            children[base].add(ov)
+    below: Dict[str, Set[str]] = {}
+    for top in list(children):
+        seen: Set[str] = set()
+        todo = list(children[top])
+        while todo:
+            m = todo.pop()
+            if m not in seen:
+                seen.add(m)
+                todo.extend(children.get(m, ()))
+        below[top] = seen
+    return below
+
+
+def spread_virtual_calls(call_graph: Dict[str, List[str]],
+                         reverse_call_graph: Dict[str, List[str]],
+                         override_pairs: Iterable[Tuple[str, str]],
+                         virtual_calls: Iterable[Tuple[str, str]],
+                         function_keys: Iterable[str]) -> Tuple[int, int]:
+    """Link each virtual call (caller, method named) to every override below that method.
+
+    `virtual_calls` holds only the calls that dispatch: a call naming its class
+    (`Base::f()`) is left out by the parser. The method named keeps its own edge, made
+    where the call was seen (when it is defined). Returns (edges_added, calls_spread)."""
+    below = overrides_below(override_pairs)
+    fkeys = set(function_keys)
+    edges_added = calls_spread = 0
+    for caller, named in sorted(set(virtual_calls)):
+        targets = sorted(m for m in below.get(named, ()) if m in fkeys)
+        if not targets:
+            continue
+        calls_spread += 1
+        cg = call_graph.setdefault(caller, [])
+        for m in targets:
+            if m not in cg:
+                cg.append(m)
+                edges_added += 1
+            rg = reverse_call_graph.setdefault(m, [])
+            if caller not in rg:
+                rg.append(caller)
+    return edges_added, calls_spread
 
 
 def spread_virtual_families(call_graph: Dict[str, List[str]],

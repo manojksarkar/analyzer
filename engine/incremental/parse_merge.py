@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Set
 
-from incremental.virtual_dispatch import spread_virtual_families
+from incremental.virtual_dispatch import spread_virtual_calls, spread_virtual_families
 from incremental.pointer_calls import link_pointer_calls, strip_edges
 
 
@@ -207,16 +207,28 @@ def _merge_pointer_calls(baseline_pc, fresh_pc, entity_files, drop) -> Dict[str,
     for c in fresh.get("calls") or []:
         if len(c) >= 2 and _file_of(c[0], entity_files) in drop:
             calls.add(tuple(c))
-    return {"stores": [list(s) for s in sorted(stores)],
-            "calls": [list(c) for c in sorted(calls)], "edges": []}
+    merged = {"stores": [list(s) for s in sorted(stores)],
+              "calls": [list(c) for c in sorted(calls)], "edges": []}
+    # The virtual calls (SWE3-028), by their caller's file too. A baseline made before they
+    # were recorded has no `virtual`: the merge then spreads by family, as that baseline did.
+    if "virtual" in base:
+        virtual: Set[tuple] = set()
+        for c in base.get("virtual") or []:
+            if len(c) >= 2 and _file_of(c[0], entity_files) not in drop:
+                virtual.add(tuple(c))
+        for c in fresh.get("virtual") or []:
+            if len(c) >= 2 and _file_of(c[0], entity_files) in drop:
+                virtual.add(tuple(c))
+        merged["virtual"] = [list(c) for c in sorted(virtual)]
+    return merged
 
 
 def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list],
                           pointer_calls: Dict[str, list] = None, stale_pointer_edges=(),
                           ) -> None:
     """Mutate `functions`: drop callsIds to entities no longer in the model, link the calls
-    through function pointers again, re-run the virtual-dispatch family spread (D7/M3.13),
-    then recompute calledByIds by inverting the merged callsIds.
+    through function pointers again, link the virtual calls again (SWE3-028; by family,
+    D7, for a baseline that did not record them), then recompute calledByIds by inverting the merged callsIds.
     readsGlobalIds/writesGlobalIds/direction are forward fields and survive the by-file merge
     unchanged.
 
@@ -240,7 +252,11 @@ def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list]
                                    pointer_calls.get("calls") or [], valid)
         pointer_calls["edges"] = [list(e) for e in sorted(added)]
 
-    spread_virtual_families(call_graph, reverse, override_pairs, valid)
+    if pointer_calls is not None and "virtual" in pointer_calls:
+        spread_virtual_calls(call_graph, reverse, override_pairs,
+                             [tuple(c) for c in pointer_calls["virtual"] if len(c) >= 2], valid)
+    else:
+        spread_virtual_families(call_graph, reverse, override_pairs, valid)
 
     # write back callsIds; recompute calledByIds as the inversion of callsIds.
     called_by: Dict[str, List[str]] = {fid: [] for fid in functions}
