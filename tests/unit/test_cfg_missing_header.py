@@ -421,3 +421,34 @@ int f(int n)
 }
 """, "f")
     assert _next(cfg, _node(cfg, "continue")) == {"for (int i = 0; i < n; ++i)"}
+
+
+# Review SWE3-012: a branch the chart drops is listed with its file and line, so the review
+# run shows each case left. The builder gives every decision both arrows: no list is the norm.
+
+ALL_BRANCHES = '''int g;
+int f(int n, int *p)
+{
+    if (n > 3) { g = 1; } else { g = 2; }
+    if (p == 0) { return -1; }
+    if (n == 7) { }
+    while (n > 0) { n--; if (n == 2) break; }
+    for (int i = 0; i < n; ++i) { if (i == 5) continue; g += i; }
+    do { g--; } while (g > 10);
+    switch (n) { case 1: g = 3; break; case 2: return 2; default: break; }
+    return g;
+}
+'''
+
+
+def test_every_decision_has_both_arrows(graph):
+    from mermaid.validator import missing_sides
+    assert missing_sides(graph(ALL_BRANCHES, "f")) == []
+
+
+def test_a_dropped_arrow_is_listed(graph):
+    from mermaid.validator import missing_sides
+    cfg = graph(ALL_BRANCHES, "f")
+    dec = _node(cfg, "n > 3")
+    cfg.edges = [e for e in cfg.edges if not (e.source == dec.node_id and e.label == "No")]
+    assert [(n.raw_code, what) for n, what in missing_sides(cfg)] == [("n > 3", 'no "No" arrow')]

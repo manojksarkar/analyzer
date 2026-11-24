@@ -86,6 +86,24 @@ def validate_cfg(cfg: ControlFlowGraph) -> ValidationResult:
     return result
 
 
+def missing_sides(cfg: ControlFlowGraph) -> List[Tuple[object, str]]:
+    """Each branch the chart drops (review SWE3-012): a decision or a loop head with no
+    "Yes" or no "No" arrow, a switch with no case arrow. [(node, what is missing)], in line
+    order. The builder gives every one of them its arrows, so each entry is a case it does
+    not handle yet -- a fix starts from its file and line."""
+    sides: dict = {}
+    for edge in cfg.edges:
+        sides.setdefault(edge.source, set()).add(edge.label)
+    found = []
+    for node in sorted(cfg.nodes.values(), key=lambda n: (n.start_line, n.node_id)):
+        labels = sides.get(node.node_id, set())
+        if node.node_type in (NodeType.DECISION, NodeType.LOOP_HEAD):
+            found += [(node, f'no "{side}" arrow') for side in ("Yes", "No") if side not in labels]
+        elif node.node_type == NodeType.SWITCH_HEAD and not labels:
+            found.append((node, "no case arrow"))
+    return found
+
+
 def validate_mermaid(script: str) -> ValidationResult:
     """Validate a rendered Mermaid script for basic syntax.
 

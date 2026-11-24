@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -51,7 +52,7 @@ from enrichment.enricher import NodeEnricher
 from llm_core.client import LlmClient
 from llm.generator import LabelGenerator, guard_labels
 from dot_builder import build_dot
-from mermaid.validator import validate_cfg
+from mermaid.validator import missing_sides, validate_cfg
 from models import FileResult, FlowchartResult, FunctionEntry, NodeType, ProjectMeta, serialize_cfg
 from output.writer import OutputWriter
 from pkb.builder import ProjectKnowledgeBase
@@ -776,11 +777,43 @@ def _build_cfg(func_entry: FunctionEntry, pkb, source_extractor, tu_parser, conf
     return cfg, source_code
 
 
+# Each branch a chart drops (review SWE3-012), for one list at the end of the run:
+# (file, line, function, code, what is missing). Charts are finished on several threads.
+_MISSING_SIDES: List[tuple] = []
+_MISSING_SIDES_LOCK = threading.Lock()
+_MISSING_SIDES_SHOWN = 200          # each one at INFO up to this many, the rest at DEBUG
+
+
+def _note_missing_sides(cfg, func_entry: FunctionEntry) -> None:
+    rows = [(func_entry.file, node.start_line, func_entry.qualified_name,
+             " ".join((node.raw_code or "").split())[:80], what)
+            for node, what in missing_sides(cfg)]
+    if rows:
+        with _MISSING_SIDES_LOCK:
+            _MISSING_SIDES.extend(rows)
+
+
+def _log_missing_sides() -> None:
+    """One WARNING with the count, then each dropped branch with its file and line. None is
+    the norm: the builder gives every decision both arrows."""
+    if not _MISSING_SIDES:
+        return
+    rows = sorted(set(_MISSING_SIDES))
+    logger.warning("%d branch(es) missing from the charts -- a diamond, loop or switch drawn "
+                   "without an arrow:", len(rows))
+    for i, (file, line, qn, code, what) in enumerate(rows):
+        (logger.info if i < _MISSING_SIDES_SHOWN else logger.debug)(
+            "  branch missing: %s:%s %s  %s -- %s", file, line, qn, code, what)
+    if len(rows) > _MISSING_SIDES_SHOWN:
+        logger.info("  ... %d more at DEBUG", len(rows) - _MISSING_SIDES_SHOWN)
+
+
 def _finish_chart(cfg, func_entry: FunctionEntry) -> "FlowchartResult":
     """Steps 7-9 of a chart: validate it, draw it, keep the graph beside the picture."""
     key = func_entry.key
     qn = func_entry.qualified_name
     # 7. Validate CFG
+    _note_missing_sides(cfg, func_entry)
     cfg_validation = validate_cfg(cfg)
     if not cfg_validation.is_valid:
         logger.warning("CFG validation errors for '%s':\n%s", qn, cfg_validation)
@@ -1286,6 +1319,7 @@ def run(config: EngineConfig) -> None:
     # Write output
     written = writer.write_all(file_results)
     writer.write_summary(file_results, total_ok + total_err, total_err)
+    _log_missing_sides()
 
     logger.debug("=" * 60)
     logger.info("Done.  ✓ %d  ✗ %d  |  %d file(s) written",
