@@ -269,9 +269,9 @@ if _extra:
 _macro_sources: list = []
 # The build's own -D flags, per layer (review SWE3-017), written by run.py from each core's
 # compile_commands.json. FIRST, so every macros file below wins on a name.
-_build_macros_json = os.path.join(MODEL_DIR, "clang_build_macros.json")
-if os.path.isfile(_build_macros_json):
-    _macro_sources.append((None, _build_macros_json))
+_build_defines_file = os.path.join(MODEL_DIR, "clang_build_macros.json")
+if os.path.isfile(_build_defines_file):
+    _macro_sources.append((None, _build_defines_file))
 _cfg_macros_file = _clang.get("macrosFile")
 if isinstance(_cfg_macros_file, str) and _cfg_macros_file.strip():
     _macro_sources.append((None, _cfg_macros_file.strip()))
