@@ -287,7 +287,7 @@ def test_overlong_label_is_not_grown_further():
 
 
 # ---------------------------------------------------------------------------
-# Labels true to their code (review SWE3-V4-13, SWE3-V4-14) -- `guard_labels`
+# Labels true to their code (review SWE3-013, SWE3-014) -- `guard_labels`
 # ---------------------------------------------------------------------------
 
 from llm.generator import guard_labels, label_keeps_values  # noqa: E402

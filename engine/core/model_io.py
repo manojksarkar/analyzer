@@ -73,7 +73,7 @@ OVERRIDE_PAIRS = "override_pairs"
 ADDRESS_TAKEN = "address_taken"
 # POINTER_CALLS = {"stores": [[site_file, slot, value]], "calls": [[caller_fid, slot]],
 # "edges": [[caller_fid, target_fid]]} -- calls through a function pointer and what each
-# pointer can hold (incremental/pointer_calls.py, review SWE3-V5-02). A narrowed parse links
+# pointer can hold (incremental/pointer_calls.py, review SWE3-027). A narrowed parse links
 # them again with the stores of the files it does not re-parse; `edges` are the ones the parse
 # added, which the merge takes back out first. Not in ALL_MODEL_NAMES.
 POINTER_CALLS = "pointer_calls"

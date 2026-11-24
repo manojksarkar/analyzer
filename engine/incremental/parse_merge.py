@@ -189,7 +189,7 @@ def _apply_address_taken(functions: Dict[str, dict], records: List[list],
 
 
 def _merge_pointer_calls(baseline_pc, fresh_pc, entity_files, drop) -> Dict[str, list]:
-    """Calls through function pointers (SWE3-V5-02): the baseline's stores and calls whose file
+    """Calls through function pointers (SWE3-027): the baseline's stores and calls whose file
     was not re-parsed, plus the fresh ones from the files that were. `edges` is filled by
     `_recompute_call_edges`, which links them again."""
     base, fresh = baseline_pc or {}, fresh_pc or {}
@@ -347,7 +347,7 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         # Function-pointer table registrations, replayed because a narrowed parse may not
         # re-parse the file holding the table. Same reasoning as func_keys above.
         "address_taken": address_taken,
-        # Calls through function pointers and their stores, linked again above (SWE3-V5-02).
+        # Calls through function pointers and their stores, linked again above (SWE3-027).
         "pointer_calls": pointer_calls,
     }
 

@@ -353,7 +353,7 @@ class TestBehaviourRows:
 
     def test_a_stored_bullet_the_llm_did_not_write_is_asked_again(self, eng, src, llm):
         """`ns::c calls ns::f` is the text without the LLM (it did not answer that run): kept,
-        it would be taught to the cache as the LLM's words for good (review SWE3-V5-05)."""
+        it would be taught to the cache as the LLM's words for good (review SWE3-030)."""
         asked, _ = llm
         _store_row(eng, ["ns::c calls ns::f"] + self.STORED[1:])
         _queue(eng, (slot.BEHAVIOUR_DESCRIPTION, slot.for_behaviour_row(F, EXT)))

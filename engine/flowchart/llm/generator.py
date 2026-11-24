@@ -660,7 +660,7 @@ class LabelGenerator:
         """
         # Build ordered list of (node_id, label, type, code) for the prompt. The code is there
         # so the pass can tell boxes apart: shown labels alone, it evened out "Set speed to 10"
-        # and "Set speed to 2" into one label (review SWE3-V4-14).
+        # and "Set speed to 2" into one label (review SWE3-014).
         ordered_pairs = [
             (n.node_id, label_map[n.node_id], n.node_type.value,
              " ".join((n.raw_code or "").split())[:160])
@@ -894,7 +894,7 @@ def enforce_call_names(cfg: ControlFlowGraph) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Labels true to their code (review SWE3-V4-13, SWE3-V4-14)
+# Labels true to their code (review SWE3-013, SWE3-014)
 # ---------------------------------------------------------------------------
 #
 # A label is LLM text; the box it sits on is code. Two things the LLM must not change:

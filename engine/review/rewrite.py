@@ -597,7 +597,7 @@ def _row_bullets(gen, real, world: _World, fid: str, drawn_for: str, stored: Lis
         a, b = calls[i]
         # A stored "A calls B" is the text WITHOUT the LLM -- it did not answer that run: kept and
         # taught to the cache as the LLM's words, it would be served under this prompt for good
-        # (review SWE3-V5-05). It is asked instead.
+        # (review SWE3-030). It is asked instead.
         if (aligned and not moved[i] and stored[pos]
                 and stored[pos] != real.fallback_text(a, b, name)):
             # Its prompt did not move: its words stay, and the cache learns them under the prompt

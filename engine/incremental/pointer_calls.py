@@ -1,4 +1,4 @@
-"""Calls through a function pointer: which functions each one can reach (review SWE3-V5-02).
+"""Calls through a function pointer: which functions each one can reach (review SWE3-027).
 
 A call through a pointer names a SLOT, not a function -- a struct field (`ops->read(lba)`), a
 variable (`fp(x)`, `table[i](x)`) or a parameter (`cb(x)`) -- so libclang resolves it to that

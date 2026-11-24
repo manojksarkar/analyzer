@@ -146,7 +146,7 @@ def test_no_llm_configured_means_no_llm_call():
 
 
 # ---------------------------------------------------------------------------
-# A call bullet the LLM did not write is not left that way silently (review SWE3-V5-05)
+# A call bullet the LLM did not write is not left that way silently (review SWE3-030)
 # ---------------------------------------------------------------------------
 
 _LLM_CFG = {"llm": {"descriptions": True}}

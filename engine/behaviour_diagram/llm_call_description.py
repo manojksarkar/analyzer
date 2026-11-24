@@ -5,7 +5,7 @@ import time
 from collections import Counter
 from typing import Callable, Dict, List, Optional, Tuple
 
-# Why a call's bullet was written without the LLM (review SWE3-V5-05). Only the first is a
+# Why a call's bullet was written without the LLM (review SWE3-030). Only the first is a
 # choice; the others are counted, logged, and asked again at the end of the step.
 LLM_OFF = "the LLM is off (llm.descriptions)"
 NO_SERVER = "the LLM server did not answer"

@@ -259,7 +259,7 @@ def run(model, output_dir, model_dir, config):
             })
             count += 1
 
-    # Review SWE3-V5-05: a call bullet the LLM did not write ("A calls B") is asked once more
+    # Review SWE3-030: a call bullet the LLM did not write ("A calls B") is asked once more
     # now, when an outage during the step may be over -- before the reviewers' corrections go on.
     _second_round(gen, docx_rows)
 

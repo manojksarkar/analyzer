@@ -223,7 +223,7 @@ class SequenceDiagramGenerator:
         )
 
     def retry_call_descriptions(self) -> Dict[str, str]:
-        """Ask once more for the call bullets written without the LLM (review SWE3-V5-05).
+        """Ask once more for the call bullets written without the LLM (review SWE3-030).
         {bullet as written ("A calls B"): the LLM's bullet} for the ones it now wrote."""
         done = self._call_description.retry_fallbacks(self.get_function_name, self.functions)
         return {self._call_description.fallback_text(a, b, self.get_function_name): text

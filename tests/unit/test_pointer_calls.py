@@ -1,4 +1,4 @@
-"""Calls through a function pointer reach what the pointer can hold (review SWE3-V5-02).
+"""Calls through a function pointer reach what the pointer can hold (review SWE3-027).
 
     something->somesome = d.k;     // one place
     something->somesome(7);        // another place: a call to the function d.k holds

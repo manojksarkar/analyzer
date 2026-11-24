@@ -70,8 +70,8 @@ Every issue any review raised, one row each, As per rule included, in a CSV file
 | As per rule | the rules that answer it |
 
 - No status: whether an issue is fixed is the tool's [output](#output).
-- `Old ID`, in the CSV only: the ID an issue had before 2026-11-24 (`SWE3-V4-11`), so older notes,
-  commits and mails still find it. Empty for later issues.
+- Before 2026-11-24 an ID named its review: `SWE3-V4-NN` is now `SWE3-0NN`, `SWE3-V5-NN` is
+  `SWE3-0NN` + 25 (`SWE3-V5-02` = `SWE3-027`). History entries and commits keep the old form.
 - The list only grows; no row is deleted.
 - Similar comments share one issue. A problem not on the list is added first, with the next ID.
 - Same problem, same verdict: the same ID, even when an earlier review raised it. Same problem, a new

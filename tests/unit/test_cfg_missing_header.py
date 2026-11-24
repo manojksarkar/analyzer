@@ -301,7 +301,7 @@ def _next(cfg, node):
 
 
 def test_a_return_in_an_extra_block_goes_to_end(graph):
-    """SWE3-V4-11: the `else` of an #if whose macro is off leaves `{ return -1; }` inside the if."""
+    """SWE3-011: the `else` of an #if whose macro is off leaves `{ return -1; }` inside the if."""
     cfg = graph(RETURN_IN_BRACES, "f")
     ret = _node(cfg, "return -1")
     assert ret.node_type.name == "RETURN"
@@ -339,7 +339,7 @@ int f(int x)
 
 
 def test_case_arrows_show_the_constant_in_the_middle(graph):
-    """SWE3-V4-10: a plain label, which Graphviz makes room for, not a taillabel at the diamond;
+    """SWE3-010: a plain label, which Graphviz makes room for, not a taillabel at the diamond;
     only the constant; one arrow for the cases that go to one box. The graph keeps every case."""
     from dot_builder import build_dot
     cfg = graph(BRACED_CASE, "f")
@@ -368,7 +368,7 @@ def test_what_a_case_arrow_shows(label, shown):
 
 # -- an empty branch, an empty loop body ---------------------------------------------------------
 # A `{ }` -- or one an #if whose macro is off emptied -- gave no arrow at all: that side of the
-# decision was missing from the chart (review SWE3-V4-12 names the symptom).
+# decision was missing from the chart (review SWE3-012 names the symptom).
 
 def _sides(cfg, code):
     """{edge label: what it leads to} for the decision or loop head written `code`."""

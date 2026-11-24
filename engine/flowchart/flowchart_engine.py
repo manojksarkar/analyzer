@@ -462,7 +462,7 @@ def _label_chart(cfg, func_entry: FunctionEntry, source_code: str, base_path: st
     rewrite = func_entry.key in config.rewrite_keys
     with guard:
         if not rewrite and _apply_cached_labels(cfg, key, config):
-            # Cached labels pass the same check as new ones (SWE3-V4-13, -14): the cache is
+            # Cached labels pass the same check as new ones (SWE3-013, -014): the cache is
             # keyed by the source, so labels stored before the check would be served for good.
             if guard_labels(cfg):
                 logger.info("'%s': cached labels put back to their code's values or told apart",

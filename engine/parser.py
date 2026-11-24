@@ -724,7 +724,7 @@ _address_taken_in_body = set()
 # model/address_taken.json so a narrowed parse (which may not re-parse the file holding the
 # table) can replay the registrations instead of silently demoting the function to private.
 _address_taken_fid = []
-# Calls through a function pointer (review SWE3-V5-02; incremental/pointer_calls.py). A SLOT is
+# Calls through a function pointer (review SWE3-027; incremental/pointer_calls.py). A SLOT is
 # where a function's address can be kept -- `f:<field usr>`, `v:<variable usr>` or
 # `p:<function key>#<index>` for a parameter -- and a call through it reaches every function
 # any store puts there:
@@ -803,7 +803,7 @@ _MISSING_HEADER_RE = re.compile(r"^'([^']+)' file not found")
 _diag_tu_defs: dict = {}                       # rel_path -> definitions contributed
 _diag_unrecorded: list = []                    # (rel_path, line, name) text-scan misses
 _diag_decl_only: dict = {}                     # func_key -> "rel:line name", resolved at summary
-# Calls Phase 1 could not link to any function (review SWE3-V5-01): such a call draws no arrow
+# Calls Phase 1 could not link to any function (review SWE3-026): such a call draws no arrow
 # and adds no caller, so a dynamic behaviour or an interface row can be missing with nothing
 # said. (rel_path, line, call text, reason), each logged at the end; a call through a pointer
 # is listed only when nothing is stored in it (`_ptr_call_sites`, checked in build_metadata).
@@ -960,7 +960,7 @@ def _note_empty_pointer_calls() -> None:
 
 
 def _log_unresolved_calls() -> None:
-    """Every call that reaches no function, with file and line (review SWE3-V5-01). The count
+    """Every call that reaches no function, with file and line (review SWE3-026). The count
     and reasons as a WARNING, each call as INFO up to a cap, every one at DEBUG."""
     rows = sorted(set(_diag_unresolved_calls))
     if not rows:
@@ -1725,7 +1725,7 @@ def _walk_address_taken(cursor, on_hit, in_callee=False):
         _walk_address_taken(child, on_hit, still_callee)
 
 
-# --- calls through a function pointer (review SWE3-V5-02) ---------------------------------
+# --- calls through a function pointer (review SWE3-027) ---------------------------------
 # What a slot is and how its calls are linked: incremental/pointer_calls.py. These helpers
 # only READ the AST: which slot an expression names, which values it stores, where.
 
@@ -2074,7 +2074,7 @@ def visit_definitions(cursor):
             cursor, lambda target, _t=func_key: _address_taken_in_body.add((_t, target))
         )
         # Function pointers this body stores (`o->read = fn`, `register(fn)`), for the calls
-        # through them (SWE3-V5-02). Once per function, like the address-takes above.
+        # through them (SWE3-027). Once per function, like the address-takes above.
         _walk_ptr_stores(cursor, _rel_site(cursor.location.file.name),
                          lambda s, sl, v: _ptr_stores.add((s, sl, v)))
         # Record virtual override -> base relations for the D7 virtual-dispatch
@@ -2144,7 +2144,7 @@ def visit_definitions(cursor):
         # Nothing calls fn1 by name, but the table publishes it — so membership alone makes
         # it public, regardless of which file the table is in. Which entry `table[i]()`
         # reaches is statically unknowable, so the call is linked to every entry
-        # (SWE3-V5-02, `_walk_ptr_stores` below).
+        # (SWE3-027, `_walk_ptr_stores` below).
         # _get_var_init_value only slices ONE declaration line, so a multi-line table is
         # invisible to it — the AST walk is what actually sees these.
         try:
@@ -2862,7 +2862,7 @@ def build_metadata():
             reverse_call_graph[_target].append(_taker)
     if _n_addr_edges:
         print(f"  address-taken: linked {_n_addr_edges} in-body address-of-function edge(s)")
-    # Calls through a function pointer reach what the pointer can hold (SWE3-V5-02). Before
+    # Calls through a function pointer reach what the pointer can hold (SWE3-027). Before
     # the virtual spread and the ids mapping below, like the address-taken edges above.
     _ptr_edges = link_pointer_calls(call_graph, reverse_call_graph, _ptr_stores, _ptr_calls,
                                     set(functions) | set(_baseline_func_keys))
@@ -2999,7 +2999,7 @@ def build_metadata():
         print(f"  address-taken: {len(_address_taken_fid)} function/unit registration(s) "
               f"from file-scope initializers")
 
-    # SWE3-V5-02: the pointer facts at fid level, for a narrowed parse to link again with the
+    # SWE3-027: the pointer facts at fid level, for a narrowed parse to link again with the
     # stores of files it does not re-parse. Slots stay as they are (opaque, stable names);
     # a function a store names, and every caller, becomes its fid. `edges` are the ones this
     # parse ADDED, which a merge takes back out before it links again.
