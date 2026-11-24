@@ -7,11 +7,12 @@ compiles the same headers under several roots (`04_FIL`, `05_CTRL`,
 what the compiler was actually given, so reading it turns that guess into
 ground truth.
 
-Scope of this module: **include paths only**. A real entry also carries `-D`,
+Scope of this module: **include paths and `-D` macros**. A real entry also carries
 `--target`, `-mcpu` and friends; those are deliberately ignored here (see
-`_INCLUDE_FLAGS`) so the first integration cannot regress a parse through a
-flag libclang rejects. Macros keep coming from `core.macro_input` - a build
-database cannot see header-defined macros, so it supplements that file rather
+`_INCLUDE_FLAGS`, `_DEFINE_FLAGS`) so a parse cannot regress through a flag libclang
+rejects. The `-D` flags (review SWE3-017) are each layer's first macro source; the
+project's macros file (`core.macro_input`) is loaded after them and wins on a name - a
+build database cannot see header-defined macros, so it supplements that file rather
 than replacing it.
 
 One database per **core**, declared in the top-level `cores` section beside that
@@ -147,6 +148,78 @@ def include_args(arguments: Sequence[str]) -> List[str]:
                 break
         i += 1
     return out
+
+
+# Review SWE3-017: code under an `#if` on a macro the build defines was missing, because
+# the parse defined only what the project's macros file names. The build's `-D` flags are
+# now read too -- they become each layer's FIRST macro source, so a project's own macros
+# file still wins on a name. `-U` is counted, not applied.
+_DEFINE_FLAGS = ("-D", "/D")
+
+
+def define_args(arguments: Sequence[str]) -> List[Tuple[str, Optional[str]]]:
+    """The `-D` operands of one `arguments` array as (name, value or None), in order."""
+    out: List[Tuple[str, Optional[str]]] = []
+    args = [str(a) for a in (arguments or [])]
+    i = 0
+    while i < len(args):
+        arg, operand = args[i], None
+        for flag in _DEFINE_FLAGS:
+            if arg == flag:
+                if i + 1 < len(args):
+                    operand = args[i + 1]
+                    i += 1
+                break
+            if arg.startswith(flag) and len(arg) > len(flag):
+                operand = arg[len(flag):]
+                break
+        if operand:
+            name, eq, value = operand.partition("=")
+            if name and "(" not in name:            # function-like: fragile as a -D
+                out.append((name, value if eq else None))
+        i += 1
+    return out
+
+
+def entry_defines(entries: Iterable[Dict[str, Any]]) -> Tuple[Dict[str, Optional[str]], List[str]]:
+    """Every `-D` across `entries`: {name: value}, and the names whose value differs between
+    files. One value per name, the one most files use (the first seen on a tie): one parse
+    defines one set per layer."""
+    seen: Dict[str, Counter] = {}
+    for entry in entries:
+        args = entry.get("arguments")
+        if args is None and entry.get("command"):
+            args = str(entry["command"]).split()
+        for name, value in dict(define_args(args or [])).items():
+            seen.setdefault(name, Counter())[value] += 1
+    defines = {name: counts.most_common(1)[0][0] for name, counts in seen.items()}
+    differ = sorted(name for name, counts in seen.items() if len(counts) > 1)
+    return defines, differ
+
+
+def load_defines(sources: Sequence["CoreSource"]) -> Tuple[Dict[str, Dict[str, Optional[str]]],
+                                                           List[str]]:
+    """Each layer's `-D` flags from its cores' databases: ({layer: {name: value}}, log lines).
+    Cores sharing a layer: the first core's value wins on a name."""
+    by_layer: Dict[str, Dict[str, Optional[str]]] = {}
+    lines: List[str] = []
+    for src in sources:
+        try:
+            entries = read_entries(src.path)
+        except (OSError, ValueError):
+            continue                                # load_sources already said so
+        defines, differ = entry_defines(entries)
+        if not defines:
+            continue
+        bucket = by_layer.setdefault(src.layer, {})
+        for name, value in defines.items():
+            bucket.setdefault(name, value)
+        line = f"  {src.layer} ({src.core}): {len(defines)} macro(s) from compile_commands"
+        if differ:
+            line += (f"; {len(differ)} differ between files, the most used value kept: "
+                     + ", ".join(differ[:10]) + (" ..." if len(differ) > 10 else ""))
+        lines.append(line)
+    return by_layer, lines
 
 
 def read_entries(path: str) -> List[Dict[str, Any]]:

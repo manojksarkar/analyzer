@@ -12,6 +12,7 @@
 #include "Access/AccessVisibility.h"
 #include "Access/AccessMatrix.h"
 #include "Poly/Callbacks.h"
+#include "Flow/BuildMacros.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -133,7 +134,7 @@ PRIVATE int runMatrixTests() {
 }
 
 // App is the other component calling into Cross: cbDispatch's dynamic behaviour entry exists
-// only because its call through `s_ops->onRead` is linked (review SWE3-V5-01, -02).
+// only because its call through `s_ops->onRead` is linked (review SWE3-026, -027).
 PRIVATE int runCallbackTests() {
     int r = cbUserRun(2);
     return r + cbDispatch(3);
@@ -153,6 +154,7 @@ PUBLIC int main() {
     int result11 = runAccessTests();
     int result12 = runMatrixTests();
     int result13 = runCallbackTests();
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13;
+    int result14 = flowBuildConfig(5);
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13 + result14;
     return g_globalResult;
 }

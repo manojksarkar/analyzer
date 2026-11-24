@@ -402,3 +402,45 @@ def test_the_examples_cover_every_dir_the_project_walk_would_find():
         assert not walked - from_db, (
             f"{layer}: compile_commands.*.example.json is missing "
             f"{sorted(os.path.basename(d) for d in walked - from_db)}")
+
+
+# ---------------------------------------------------------------------------
+# define_args / load_defines - the build's macros (review SWE3-017)
+# ---------------------------------------------------------------------------
+
+def test_define_args_reads_the_defines_and_nothing_else():
+    assert cc.define_args(_entry("a.cpp", ["../x"])["arguments"]) == [
+        ("__CONTROLLER_TARGET__", "37"), ("_NAND_DENSITY", "512"), ("_CONFIG_ASIC", None)]
+
+
+def test_define_args_takes_the_separate_form_and_skips_function_like():
+    assert cc.define_args(["-D", "A=1", "/DB", "-DMAX(a,b)=a", "-D"]) == [("A", "1"), ("B", None)]
+
+
+def test_a_value_that_differs_between_files_keeps_the_most_used(tmp_path):
+    entries = [{"directory": BUILD_DIR, "file": f, "arguments": ["armclang", "-DMODE=" + v, "-c"]}
+               for f, v in (("a.cpp", "2"), ("b.cpp", "1"), ("c.cpp", "2"))]
+    defines, differ = cc.entry_defines(entries)
+    assert defines == {"MODE": "2"} and differ == ["MODE"]
+
+
+def test_load_defines_per_layer_first_core_wins(tmp_path):
+    fcore = _write_db(tmp_path / "fcore.json", [_entry("a.cpp", ["../x"])])
+    hcore = _write_db(tmp_path / "hcore.json", [{"directory": BUILD_DIR, "file": "b.cpp",
+                                                  "arguments": ["armclang", "-D_NAND_DENSITY=256",
+                                                                "-DHOST_ONLY"]}])
+    by_layer, lines = cc.load_defines([cc.CoreSource("FCore", fcore, "Layer1"),
+                                       cc.CoreSource("HCore", hcore, "Layer1")])
+    assert by_layer == {"Layer1": {"__CONTROLLER_TARGET__": "37", "_NAND_DENSITY": "512",
+                                   "_CONFIG_ASIC": None, "HOST_ONLY": None}}
+    assert len(lines) == 2
+
+
+def test_the_written_file_loads_as_the_layers_macros(tmp_path):
+    """run.py writes {layer: {name: value}}, a bare -D as ""; the macros reader takes it as is."""
+    from engine.core.macro_input import load_macro_defs, scoped_args
+    path = tmp_path / "clang_build_macros.json"
+    path.write_text(json.dumps({"Layer1": {"_NAND_DENSITY": "512", "_CONFIG_ASIC": ""}}),
+                    encoding="utf-8")
+    defs, _report = load_macro_defs(str(path))
+    assert scoped_args(defs) == {"Layer1": ["-D_NAND_DENSITY=512", "-D_CONFIG_ASIC"]}

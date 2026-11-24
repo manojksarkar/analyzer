@@ -756,11 +756,29 @@ if _selected_layers:
 _walk_counts = {_l: len(_d) for _l, _d in _layer_inc.items()}
 _cc_counts: dict = {}
 _cc_added: dict = {}
+# The build's -D flags, per layer (review SWE3-017): Phase 1 loads this file before the
+# project's macros files, so those still win on a name. Rewritten -- or removed -- every
+# run, so an earlier run's macros never outlive the databases they came from.
+_build_macros_file = os.path.join(_model_dir, "clang_build_macros.json")
+_build_macros: dict = {}
 if _cc_sources:
     _cc_by_layer, _cc_reports = _cc.load_sources(_cc_sources, resolved)
     for _rep in _cc_reports:
         for _line in _cc.format_report(_rep):
             log(_line, component="run")
+    _build_macros, _define_lines = _cc.load_defines(_cc_sources)
+    if _define_lines:
+        log("Layer macros from compile_commands (a macros file wins on a name):", component="run")
+        for _line in _define_lines:
+            log(_line, component="run")
+if _build_macros:
+    with open(_build_macros_file, "w", encoding="utf-8") as _f:
+        # A bare `-DNAME` is an empty value, as the macros files write it.
+        _json.dump({_l: {_n: ( if _v is None else _v) for _n, _v in _d.items()}
+                    for _l, _d in _build_macros.items()}, _f, indent=2)
+elif os.path.isfile(_build_macros_file):
+    os.remove(_build_macros_file)
+if _cc_sources:
     # Compare on a case- and separator-normalized key: the walk yields native
     # Windows paths (`...\Layer1\Math`) while the loader normalizes to forward
     # slashes, so a raw string compare matches nothing and re-appends every dir
