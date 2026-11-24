@@ -452,3 +452,21 @@ def test_a_dropped_arrow_is_listed(graph):
     dec = _node(cfg, "n > 3")
     cfg.edges = [e for e in cfg.edges if not (e.source == dec.node_id and e.label == "No")]
     assert [(n.raw_code, what) for n, what in missing_sides(cfg)] == [("n > 3", 'no "No" arrow')]
+
+
+# Review SWE3-008's `if` part: a condition on a name from the missing header stays in the tree
+# as text, so the decision keeps both arrows. What can still drop a branch is an `#if` on such a
+# name -- the preprocessor reads it as 0 -- which is SWE3-017 (the build's macros).
+@pytest.mark.parametrize("body, decision", [
+    ("if (cfg->mode == MODE_FAST) { g = 1; } else { g = 2; }", "cfg->mode == MODE_FAST"),
+    ("if (n > MAX_RETRY) { g = 1; }", "n > MAX_RETRY"),
+    ("if (isReady(n)) { g = 1; } else { g = 2; }", "isReady(n)"),
+    ("while (n < LIMIT) { n++; }", "n < LIMIT"),
+    ("if (n == MODE_FAST) { g = 1; } else if (n == MODE_SLOW) { g = 2; }", "n == MODE_SLOW"),
+])
+def test_an_if_on_a_missing_header_keeps_both_arrows(graph, body, decision):
+    from mermaid.validator import missing_sides
+    cfg = graph('#include "modes.h"\nint g;\nint f(DeviceCfg *cfg, int n)\n{\n    ' + body
+                + "\n    return g;\n}\n", "f")
+    assert set(_sides(cfg, decision)) == {"Yes", "No"}
+    assert missing_sides(cfg) == []
