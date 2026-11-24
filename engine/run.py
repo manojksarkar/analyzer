@@ -774,7 +774,7 @@ if _cc_sources:
 if _build_macros:
     with open(_build_macros_file, "w", encoding="utf-8") as _f:
         # A bare `-DNAME` is an empty value, as the macros files write it.
-        _json.dump({_l: {_n: ( if _v is None else _v) for _n, _v in _d.items()}
+        _json.dump({_l: {_n: ("" if _v is None else _v) for _n, _v in _d.items()}
                     for _l, _d in _build_macros.items()}, _f, indent=2)
 elif os.path.isfile(_build_macros_file):
     os.remove(_build_macros_file)
