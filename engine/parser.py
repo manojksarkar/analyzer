@@ -31,7 +31,7 @@ from core.macro_input import (
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
-from incremental.virtual_dispatch import spread_virtual_calls
+from incremental.virtual_dispatch import overrides_below, spread_virtual_calls
 from incremental.pointer_calls import (FN as _PTR_FN, SLOT as _PTR_SLOT, link_pointer_calls,
                                        slot_contents)
 from core.logging_setup import get_logger
@@ -762,6 +762,16 @@ field_access_reads = defaultdict(set)
 # parameter's TYPE, which wrongly asserted "Successfully updated" for pointers a
 # function merely reads or calls through.
 param_writes = defaultdict(set)
+# Direction (review SWE3-025, SWE3-UI-05): func_key -> the member variables of its OWN object
+# the body writes (`m_x = 1`, `this->m_x++`, `m_tab[i] = 0`, `m_obj.f = 2`), as
+# "Class::field"; another object's member (`other.m_x`, `p->m_x`) is not one.
+member_writes = defaultdict(set)
+# func_key -> {(callee key, dispatches)}: the methods it calls on its own object (`f()`,
+# `this->f()`, `Base::f()`), the calls a member write travels up (Phase 2).
+self_calls = defaultdict(set)
+# (func_key, local variable) -> what a local pointer or reference points at: a global or an
+# own member (`T* p = &g_tab[i];`), so a write through it writes that (SWE3-UI-05 row 4).
+_local_aliases = defaultdict(set)
 # First non-trivial return expression per function (for its output name)
 function_return_expr = {}
 
@@ -2408,6 +2418,9 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
         if pure_write or compound:
             children = list(cursor.get_children())
             if len(children) >= 2:
+                _note_object_write(children[0], current_key)
+                if pure_write:
+                    _note_pointer_set(children[0], children[1], current_key)
                 visit_global_access(children[0], current_key, is_write=True, is_compound=compound)
                 visit_global_access(children[1], current_key, is_write=False, is_compound=False)
             return
@@ -2415,14 +2428,20 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
         # +=, -=, etc: LHS is both read and write
         children = list(cursor.get_children())
         if len(children) >= 2:
+            _note_object_write(children[0], current_key)
             visit_global_access(children[0], current_key, is_write=True, is_compound=True)
             visit_global_access(children[1], current_key, is_write=False, is_compound=False)
         return
     elif kind == cindex.CursorKind.UNARY_OPERATOR:
         if _is_inc_dec_op(cursor):
             for child in cursor.get_children():
+                _note_object_write(child, current_key)
                 visit_global_access(child, current_key, is_write=True, is_compound=False)
             return
+    elif kind == cindex.CursorKind.VAR_DECL and current_key:
+        # A local pointer or reference set from a global or an own member; its initializer
+        # is still walked below.
+        _note_local_alias(cursor, current_key)
     elif kind == cindex.CursorKind.RETURN_STMT and current_key:
         # Capture first return expression as text (e.g. 'release_status')
         if current_key not in function_return_expr:
@@ -2520,6 +2539,209 @@ def _names_an_object(cursor):
     return cursor.kind in (cindex.CursorKind.DECL_REF_EXPR, cindex.CursorKind.CXX_THIS_EXPR)
 
 
+# The wrappers an lvalue sits under: implicit conversions, parentheses, casts.
+_LVALUE_WRAPPERS = (
+    cindex.CursorKind.UNEXPOSED_EXPR, cindex.CursorKind.PAREN_EXPR,
+    cindex.CursorKind.CSTYLE_CAST_EXPR, cindex.CursorKind.CXX_STATIC_CAST_EXPR,
+    cindex.CursorKind.CXX_REINTERPRET_CAST_EXPR, cindex.CursorKind.CXX_CONST_CAST_EXPR,
+)
+
+
+def _expr_kids(cursor):
+    """The expression children: a qualifier (`Base::` -> TYPE_REF) is not one."""
+    return [k for k in cursor.get_children() if k.kind.is_expression()]
+
+
+def _unwrapped(cursor):
+    while cursor.kind in _LVALUE_WRAPPERS:
+        kids = _expr_kids(cursor)
+        if len(kids) != 1:
+            break
+        cursor = kids[0]
+    return cursor
+
+
+def _is_pointer_expr(cursor):
+    """True when indexing or `->` on `cursor` goes through a pointer: an array that decays to
+    one (`m_tab[i]`) is the object itself."""
+    inner = _unwrapped(cursor)
+    try:
+        return inner.type.get_canonical().kind == cindex.TypeKind.POINTER
+    except Exception:
+        return False
+
+
+def _is_own_object(cursor):
+    """The object of a member expression is the method's own: `m_x` (no object written),
+    `this->m_x`, `Base::m_x`."""
+    kids = _expr_kids(cursor)
+    return not kids or (len(kids) == 1 and _unwrapped(kids[0]).kind == cindex.CursorKind.CXX_THIS_EXPR)
+
+
+def _lvalue_root(cursor):
+    """The variable a write lands in, through `.`, `->`, `[]` and `*`: ("member", field) for a
+    member of the method's own object, ("global", var) for a global or a static member,
+    ("local", var, through_pointer) for a local variable; None for anything else."""
+    through = False
+    for _ in range(64):
+        cursor = _unwrapped(cursor)
+        kind = cursor.kind
+        ref = cursor.referenced
+        if kind == cindex.CursorKind.MEMBER_REF_EXPR:
+            if ref is not None and ref.kind == cindex.CursorKind.VAR_DECL:
+                return ("global", ref)
+            if ref is None or ref.kind != cindex.CursorKind.FIELD_DECL:
+                return None
+            if _is_own_object(cursor):
+                return ("member", ref)
+            base = _expr_kids(cursor)[0]
+            through = through or _is_pointer_expr(base)
+            cursor = base
+        elif kind == cindex.CursorKind.ARRAY_SUBSCRIPT_EXPR:
+            kids = _expr_kids(cursor)
+            if not kids:
+                return None
+            through = through or _is_pointer_expr(kids[0])
+            cursor = kids[0]
+        elif kind == cindex.CursorKind.UNARY_OPERATOR:
+            kids = _expr_kids(cursor)
+            try:
+                first = next(iter(cursor.get_tokens())).spelling
+            except Exception:
+                first = ""
+            if first != "*" or len(kids) != 1:
+                return None
+            through = True
+            cursor = kids[0]
+        elif kind == cindex.CursorKind.DECL_REF_EXPR:
+            if ref is None or ref.kind != cindex.CursorKind.VAR_DECL:
+                return None
+            par = ref.semantic_parent
+            if par and (par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
+                        or par.kind in _CLASS_PARENT_KINDS):
+                return ("global", ref)
+            return ("local", ref, through)
+        else:
+            return None
+    return None
+
+
+def _local_id(var):
+    return (var.spelling, var.location.line, var.location.column)
+
+
+def _is_reference(var):
+    try:
+        return var.type.get_canonical().kind in (cindex.TypeKind.LVALUEREFERENCE,
+                                                 cindex.TypeKind.RVALUEREFERENCE)
+    except Exception:
+        return False
+
+
+def _record_member_write(field, current_key):
+    par = field.semantic_parent
+    member_writes[current_key].add(f"{par.spelling if par else ''}::{field.spelling}")
+
+
+def _note_object_write(lhs, current_key):
+    """A write to a member of the method's own object, or one through a local pointer or
+    reference to a global or an own member (SWE3-UI-05). A global written by name is
+    recorded by visit_global_access itself, as before."""
+    if not current_key:
+        return
+    root = _lvalue_root(lhs)
+    if not root:
+        return
+    if root[0] == "member":
+        _record_member_write(root[1], current_key)
+    elif root[0] == "local":
+        var, through = root[1], root[2]
+        # `p = q` moves the pointer; only `*p`, `p->a`, `p[i]` write what it points at. A
+        # reference cannot be moved, so `r = x` writes its target.
+        if not (through or _is_reference(var)):
+            return
+        for target in _local_aliases.get((current_key, _local_id(var)), ()):
+            if target[0] == "member":
+                _record_member_write(target[1], current_key)
+            else:
+                _record_global_use(target[1], current_key, True, False)
+
+
+def _alias_target(var, init, current_key):
+    """What the local `var` points at when set from `init`: the root of `&x`, of an array
+    that decays (`int* q = m_tab;`), of the variable a reference binds to, or what another
+    local pointer points at (`q = p`). A pointer a function returns is not followed."""
+    init = _unwrapped(init)
+    kids = _expr_kids(init)
+    try:
+        first = next(iter(init.get_tokens())).spelling
+    except Exception:
+        first = ""
+    if _is_reference(var):
+        root = _lvalue_root(init)
+    elif init.kind == cindex.CursorKind.UNARY_OPERATOR and first == "&" and len(kids) == 1:
+        root = _lvalue_root(kids[0])
+    else:
+        root = _lvalue_root(init)
+        try:
+            decays = init.type.get_canonical().kind in (cindex.TypeKind.CONSTANTARRAY,
+                                                        cindex.TypeKind.INCOMPLETEARRAY)
+        except Exception:
+            decays = False
+        # `T* p = m_ptr;` points where m_ptr points, not at m_ptr: only an array, or a copy
+        # of another local pointer, says where p points.
+        if root and root[0] != "local" and not decays:
+            return set()
+    if not root:
+        return set()
+    if root[0] == "local":
+        return set(_local_aliases.get((current_key, _local_id(root[1])), ()))
+    return {root}
+
+
+def _note_local_alias(var, current_key):
+    try:
+        kind = var.type.get_canonical().kind
+    except Exception:
+        return
+    if kind not in (cindex.TypeKind.POINTER, cindex.TypeKind.LVALUEREFERENCE,
+                    cindex.TypeKind.RVALUEREFERENCE):
+        return
+    kids = _expr_kids(var)
+    if not kids:
+        return
+    targets = _alias_target(var, kids[-1], current_key)
+    if targets:
+        _local_aliases[(current_key, _local_id(var))] |= targets
+
+
+def _note_pointer_set(lhs, rhs, current_key):
+    """`p = &g_tab[i];` points the local pointer `p` at `g_tab` from here on."""
+    if not current_key:
+        return
+    root = _lvalue_root(lhs)
+    if not root or root[0] != "local" or root[2]:
+        return
+    var = root[1]
+    try:
+        if var.type.get_canonical().kind != cindex.TypeKind.POINTER:
+            return
+    except Exception:
+        return
+    targets = _alias_target(var, rhs, current_key)
+    if targets:
+        _local_aliases[(current_key, _local_id(var))] |= targets
+
+
+def _called_on_this(call):
+    """`f()`, `this->f()`, `Base::f()` inside a method: a call on its own object."""
+    callee = next(iter(call.get_children()), None)
+    if callee is None:
+        return False
+    callee = _unwrapped(callee)
+    return callee.kind == cindex.CursorKind.MEMBER_REF_EXPR and _is_own_object(callee)
+
+
 def visit_calls(cursor, current_key=None):
     if cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
@@ -2535,6 +2757,14 @@ def visit_calls(cursor, current_key=None):
     elif cursor.kind == cindex.CursorKind.CALL_EXPR and current_key:
         called_key = None
         _ref = cursor.referenced
+        # A method called on its own object: the member variables it writes are its
+        # caller's too (SWE3-UI-05). A virtual one may run an override below it.
+        if _ref is not None and _ref.kind == cindex.CursorKind.CXX_METHOD \
+                and not _ref.is_static_method() and _called_on_this(cursor):
+            _self_key = get_function_key(_ref)
+            if _self_key:
+                self_calls[current_key].add(
+                    (_self_key, _is_virtual(_ref) and not _names_its_class(cursor)))
         # A call through a function pointer names a field, a variable or a parameter, not a
         # function (`o->read(x)`, `table[i](x)`, `cb(x)`). It is recorded against that slot and
         # linked in build_metadata to what the slot holds -- and never matched by NAME below:
@@ -3080,6 +3310,7 @@ def build_metadata():
         if _ov_fid:
             _override_pairs_fid.append([_ov_fid, func_key_to_fid.get(_base_fk, _base_fk)])
 
+    _below = overrides_below(_override_pairs)
     # Add precise caller/callee ids, global read/write ids and direction (In/Out) from global read/write analysis
     for func_key, f in functions.items():
         fid = func_key_to_fid.get(func_key)
@@ -3118,6 +3349,18 @@ def build_metadata():
         written_params = param_writes.get(func_key, set())
         if written_params:
             functions_dict[fid]["writesParams"] = sorted(written_params)
+
+        # Direction (SWE3-UI-05): its own object's member variables it writes, and the
+        # methods it calls on that object -- Phase 2 follows them, as it does globals.
+        if member_writes.get(func_key):
+            functions_dict[fid]["writesMembers"] = sorted(member_writes[func_key])
+        _self_ids = set()
+        for _callee, _dispatches in self_calls.get(func_key, ()):
+            for _k in [_callee] + (sorted(_below.get(_callee, ())) if _dispatches else []):
+                if _k in func_key_to_fid and _k != func_key:
+                    _self_ids.add(func_key_to_fid[_k])
+        if _self_ids:
+            functions_dict[fid]["selfCallIds"] = sorted(_self_ids)
 
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
         if write_raw:

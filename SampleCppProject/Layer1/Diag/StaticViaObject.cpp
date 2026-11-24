@@ -32,7 +32,7 @@ void ViaCounters::bumpPairThis(void) {
 }
 
 // CONTROL: `this->m_count` is a FIELD of the object, not a static member. It must stay out
-// of the global sets -> Out, accesses no globals.
+// of the global sets; it is In because it writes a member of its own object (SWE3-025).
 void ViaCounters::touchField(void) {
     this->m_count = 1;
 }

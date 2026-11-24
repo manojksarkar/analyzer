@@ -294,3 +294,155 @@ class TestTheFieldFormIsUnchanged:
     def test_a_named_protected_member_through_a_field_is_still_a_write(self, access):
         writes, reads = access["bumpNsPlain"]
         assert writes == {"NsCounters::var"} and not reads
+
+
+# ---------------------------------------------------------------------------------------
+# A method's own member variables (review SWE3-025, SWE3_WIKI SWE3-UI-05 rows 3-4): a void
+# method that writes one -- itself, through a method it calls on its own object, or through
+# a local pointer it points there -- is In, like one that writes a global. Fixture:
+# Direction/MemberWrites.{h,cpp}; App/Main.cpp calls every public method of MwTable.
+# ---------------------------------------------------------------------------------------
+
+MW_DIR = os.path.join(PROJECT_ROOT, "SampleCppProject", "Layer1", "Direction")
+MW = os.path.join(MW_DIR, "MemberWrites.cpp")
+
+
+def _clear_member_state(P):
+    for store in (P.globals_data, P.functions, P.global_access_reads, P.global_access_writes,
+                  P.param_writes, P.member_writes, P.self_calls, P._local_aliases,
+                  P.call_graph, P.reverse_call_graph):
+        store.clear()
+    P._visited_global_access_keys.clear()
+    P._visited_call_keys.clear()
+
+
+@pytest.fixture(scope="module")
+def members(parser_mod):
+    """{method: {"members", "globals", "self", "returnType"}} over the real fixture: the own
+    members it writes, the globals it writes, the methods it calls on its own object."""
+    from clang import cindex
+
+    P = parser_mod
+    tu = cindex.Index.create().parse(MW, args=["-x", "c++", "-std=c++14", f"-I{MW_DIR}"])
+    fatal = [d.spelling for d in tu.diagnostics if d.severity >= 3]
+    assert not fatal, f"fixture does not compile: {fatal}"
+    real = P.is_project_file
+    P.is_project_file = lambda _p: True
+    try:
+        _clear_member_state(P)
+        P.visit_definitions(tu.cursor)
+        P.visit_global_access(tu.cursor)
+        P.visit_calls(tu.cursor)
+        names = {}
+        for c in tu.cursor.walk_preorder():
+            if c.kind == cindex.CursorKind.CXX_METHOD and c.is_definition():
+                names[P.get_function_key(c)] = (c.spelling, c.result_type.spelling)
+        out = {}
+        for k, (name, ret) in names.items():
+            out[name] = {
+                "members": set(P.member_writes.get(k, ())),
+                "globals": {P.globals_data.get(v, {}).get("qualifiedName", v)
+                            for v in P.global_access_writes.get(k, ())},
+                "self": {names.get(c, (c,))[0] for c, _ in P.self_calls.get(k, ())},
+                "returnType": ret,
+            }
+    finally:
+        P.is_project_file = real
+        _clear_member_state(P)
+    return out
+
+
+class TestOwnMemberWrites:
+    """Every method's EXACT sets: what must stay out -- another object's member, a pointer a
+    function returns -- is as much the point as what goes in."""
+
+    @pytest.mark.parametrize("fn, written", [
+        ("mwDeleteEntry", {"MwTable::m_table", "MwTable::m_used"}),   # m_x[i] = 0, m_x--
+        ("mwBumpBase",    {"MwBase::m_cx"}),                          # MwBase::m_cx.a++
+        ("mwMarkRow",     {"MwTable::m_rows"}),                       # a local reference to it
+        ("mwBaseReset",   {"MwBase::m_baseCount"}),
+        ("mwHelperReset", {"MwHelper::m_n"}),
+        ("mwClearAll",    set()),     # only through mwDeleteEntry: Phase 2 follows it
+        ("mwResetAll",    set()),     # only through MwBase::mwBaseReset
+        ("mwInsertX",     set()),     # a global, not a member (below)
+        ("mwDump",        set()),     # reads only
+        ("mwCopyTo",      set()),     # other.m_used: another object's
+        ("mwResetHelper", set()),     # helper.mwHelperReset(): another object's
+        ("mwFind",        set()),     # returns &m_rows[id]: an address, no write
+        ("mwMarkFound",   set()),     # through a pointer mwFind returns: not followed
+    ])
+    def test_the_members_written(self, members, fn, written):
+        assert members[fn]["members"] == written, fn
+
+    def test_a_global_written_through_a_local_pointer(self, members):
+        """`MwEntry* bbx = &MwBase::s_block.xa[id]; bbx->a = id;` writes the static member."""
+        assert members["mwInsertX"]["globals"] == {"MwBase::s_block"}
+
+    def test_no_other_method_writes_a_global(self, members):
+        assert {fn for fn, m in members.items() if m["globals"]} == {"mwInsertX"}
+
+    @pytest.mark.parametrize("fn, called", [
+        ("mwClearAll",    {"mwDeleteEntry"}),   # f()
+        ("mwResetAll",    {"mwBaseReset"}),     # Base::f()
+        ("mwMarkFound",   {"mwFind"}),
+        ("mwResetHelper", set()),               # helper.f(): not its own object
+    ])
+    def test_the_methods_called_on_its_own_object(self, members, fn, called):
+        assert members[fn]["self"] == called, fn
+
+
+class TestMemberWritesDecideDirection:
+    """Phase 2 (`derive_directions`) over the parser's facts for the fixture."""
+
+    @pytest.fixture(scope="class")
+    def directions(self, members):
+        from model_deriver import derive_directions
+
+        functions = {
+            fn: {"qualifiedName": f"MwTable::{fn}", "returnType": m["returnType"],
+                 "writesMembers": sorted(m["members"]),
+                 "selfCallIds": sorted(m["self"]),
+                 "writesGlobalIds": sorted(m["globals"])}
+            for fn, m in members.items()
+        }
+        for f in functions.values():
+            for k in ("writesMembers", "selfCallIds", "writesGlobalIds"):
+                if not f[k]:
+                    del f[k]
+        derive_directions(functions, {})
+        return functions
+
+    @pytest.mark.parametrize("fn, direction", [
+        ("mwDeleteEntry", "In"),
+        ("mwClearAll",    "In"),
+        ("mwResetAll",    "In"),
+        ("mwBumpBase",    "In"),
+        ("mwInsertX",     "In"),
+        ("mwMarkRow",     "In"),
+        ("mwDump",        "Out"),
+        ("mwCopyTo",      "Out"),
+        ("mwResetHelper", "Out"),
+        ("mwMarkFound",   "Out"),
+        ("mwFind",        "Out"),    # returns a value
+    ])
+    def test_direction(self, directions, fn, direction):
+        assert directions[fn]["direction"] == direction, directions[fn]["directionReason"]
+
+    def test_the_reason_names_the_members(self, directions):
+        assert directions["mwDeleteEntry"]["directionReason"] == \
+            "In: writes member variable(s) m_table, m_used directly."
+        assert directions["mwClearAll"]["directionReason"] == \
+            "In: writes member variable(s) through its own methods: " \
+            "m_table (via mwDeleteEntry); m_used (via mwDeleteEntry)."
+
+    def test_a_global_still_comes_first(self, directions):
+        assert directions["mwInsertX"]["directionReason"].startswith("In: writes global(s)")
+
+    def test_a_value_returned_still_means_out(self):
+        """Rule 2 is before the member rule: writing a member does not make it In."""
+        from model_deriver import derive_directions
+
+        fns = {"f": {"qualifiedName": "C::count", "returnType": "int",
+                     "writesMembers": ["C::m_n"]}}
+        derive_directions(fns, {})
+        assert fns["f"]["direction"] == "Out"

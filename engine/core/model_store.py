@@ -69,6 +69,9 @@ _FN_PAYLOAD_FIELDS = (
     #     Without it `_mock_writeback_entries` returns [] and those Input rows disappear.
     # Invisible in the sample until `utilSplit` added the group's only pointer parameter.
     "readsFields", "writesParams",
+    # Direction (SWE3-UI-05): the own object's member variables a method writes and the
+    # methods it calls on that object. Dropped here, every class method reads as Out again.
+    "writesMembers", "selfCallIds",
 )
 # `description` is LLM-generated (llm.enrichment.variableEnrichment) and renders in the DOCX
 # unit-header table, so losing it costs real document content — yet it was absent here, so

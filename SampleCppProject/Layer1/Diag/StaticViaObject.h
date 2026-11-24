@@ -40,7 +40,7 @@ public:
     void peekThis(void);       // reads this->s_mark, writes nothing    -> Out, reason names s_mark
     void orThis(void);         // this->s_mark |= 1                     -> In, s_mark read AND written
     void bumpPairThis(void);   // this->s_pair.hits++, through a field  -> In
-    void touchField(void);     // this->m_count = 1: a FIELD, no global -> Out, no globals (control)
+    void touchField(void);     // this->m_count = 1: a FIELD, no global; In by its own member (control)
     void callsBumpThis(void);  // writes only through bumpThis()        -> In, transitively
     int getAndBump(void);      // Get in the name decides first         -> Out (rule 1, unchanged)
     int bumpAndReturn(void);   // a returned value decides second       -> Out (rule 2, unchanged)

@@ -13,6 +13,7 @@
 #include "Access/AccessMatrix.h"
 #include "Poly/Callbacks.h"
 #include "Flow/BuildMacros.h"
+#include "Direction/MemberWrites.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -140,6 +141,24 @@ PRIVATE int runCallbackTests() {
     return r + cbDispatch(3);
 }
 
+// Calls every public MwTable method from another unit, so each has an interface row
+// and its Direction can be read (SWE3-025).
+PUBLIC int runMemberWriteTests() {
+    MwTable table;
+    MwTable copy;
+    table.mwDeleteEntry(1);
+    table.mwClearAll();
+    table.mwResetAll();
+    table.mwBumpBase();
+    table.mwInsertX(2);
+    table.mwMarkRow(3);
+    table.mwDump();
+    table.mwCopyTo(copy);
+    table.mwResetHelper();
+    table.mwMarkFound(0);
+    return 0;
+}
+
 PUBLIC int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
@@ -155,6 +174,7 @@ PUBLIC int main() {
     int result12 = runMatrixTests();
     int result13 = runCallbackTests();
     int result14 = flowBuildConfig(5);
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13 + result14;
+    int result15 = runMemberWriteTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13 + result14 + result15;
     return g_globalResult;
 }

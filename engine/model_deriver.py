@@ -1530,6 +1530,126 @@ def _generate_knowledge_base(
     )
 
 
+def derive_directions(functions_data: dict, global_variables_data: dict) -> None:
+    """Set `direction` and `directionReason` on every function and global (SWE3-UI-05)."""
+    # Functions: In/Out direction by precedence (roadmap 3.17):
+    #   1. Name match — Set (write) tested FIRST, then Get (read). "Set dominates" mirrors the
+    #      both-read-and-write -> In rule of the global-access fallback. See _name_words/_WORD_RE.
+    #   2. else a non-void return value -> Out.
+    #   3. else the global-access rule (3.4): writes a global (directly OR transitively) -> In,
+    #      else writes a member variable of its own object (review SWE3-025) -> In,
+    #      else reads one -> Out, else Out. This is also the default when nothing above matches.
+    # Runs after _propagate_global_access, so writesGlobalIdsTransitive is populated — a function
+    # that writes a global only via a callee (e.g. indirectWrite, directionAdd) is correctly In,
+    # not Out (the parser's direct-write-only value at parser.py:1308 is preliminary; refined here).
+    # directionReason records WHY each direction was chosen so it can be verified in the interface
+    # tables (which already surface f["directionReason"]); keep it human-readable and auditable.
+    def _gname(gid):
+        return short_name(global_variables_data.get(gid, {}).get("qualifiedName", "")) or gid
+
+    def _fname(fid):
+        return short_name(functions_data.get(fid, {}).get("qualifiedName", "")) or fid
+
+    _callee_writes: dict = {}
+
+    def _writers_by_global(fentry):
+        # {gid: sorted names of fentry's direct callees that write it (directly or transitively)}
+        # -- the ones responsible for fentry inheriting that global as a transitive write. One pass
+        # over the callees, each callee's set built once: per (global, callee) as before, it took
+        # 19 s at 2,947 functions x 268 globals (2026-10-29, identical result).
+        by_g: dict = {}
+        for cid in (fentry.get("callsIds") or []):
+            cw = _callee_writes.get(cid)
+            if cw is None:
+                c = functions_data.get(cid) or {}
+                cw = _callee_writes[cid] = set(c.get("writesGlobalIdsTransitive")
+                                               or c.get("writesGlobalIds") or [])
+            for gid in cw:
+                by_g.setdefault(gid, set()).add(_fname(cid))
+        return {gid: sorted(names) for gid, names in by_g.items()}
+
+    # Member variables of its own object a method writes, itself or through the methods it
+    # calls on that object (`selfCallIds`; SWE3-UI-05 rows 3-4). A fixpoint, so recursion
+    # and long chains settle; only the methods with member facts take part.
+    _members_of = {fid: set(f.get("writesMembers") or []) for fid, f in functions_data.items()
+                   if f.get("writesMembers") or f.get("selfCallIds")}
+    _changed = True
+    while _changed:
+        _changed = False
+        for fid in _members_of:
+            for cid in functions_data[fid].get("selfCallIds") or []:
+                extra = _members_of.get(cid, set()) - _members_of[fid]
+                if extra:
+                    _members_of[fid] |= extra
+                    _changed = True
+
+    def _member(name):
+        return name.rsplit("::", 1)[-1]
+
+    for _fid, fentry in functions_data.items():
+        name = short_name(fentry.get("qualifiedName", "")) or ""
+        words = _name_words(name)
+        ret = (fentry.get("returnType") or "").strip()
+        returns_value = bool(ret) and ret != "void"  # "void *" is a value; "" falls through to rule 3
+
+        # Rule 1: name-based Set/Get. Set tested first so a write intent wins.
+        if "set" in words:
+            fentry["direction"] = "In"
+            fentry["directionReason"] = f"In: function name '{name}' contains 'Set' (writes/updates state)."
+        elif "get" in words:
+            fentry["direction"] = "Out"
+            fentry["directionReason"] = f"Out: function name '{name}' contains 'Get' (reads/returns state)."
+        # Rule 2: a non-void return value is data flowing out.
+        elif returns_value:
+            fentry["direction"] = "Out"
+            fentry["directionReason"] = f"Out: returns a value ({ret})."
+        # Rule 3 (3.4 fallback): global access. Also the default when nothing above matched.
+        else:
+            direct_w = list(fentry.get("writesGlobalIds") or [])
+            trans_w = list(fentry.get("writesGlobalIdsTransitive") or [])
+            reads = list(fentry.get("readsGlobalIdsTransitive") or fentry.get("readsGlobalIds") or [])
+            if direct_w or trans_w:
+                fentry["direction"] = "In"
+                if direct_w:
+                    names = ", ".join(_gname(g) for g in sorted(direct_w))
+                    fentry["directionReason"] = f"In: writes global(s) {names} directly."
+                else:
+                    # transitive-only: written by a callee, not by this function's own body.
+                    # Name the responsible callee(s) per global so the chain is verifiable.
+                    parts = []
+                    writers_of = _writers_by_global(fentry)
+                    for g in sorted(trans_w):
+                        writers = writers_of.get(g, [])
+                        via = ", ".join(writers) if writers else "a callee"
+                        parts.append(f"{_gname(g)} (via {via})")
+                    fentry["directionReason"] = f"In: writes global(s) transitively: {'; '.join(parts)}."
+            elif _members_of.get(_fid):
+                fentry["direction"] = "In"
+                own = sorted(fentry.get("writesMembers") or [])
+                if own:
+                    names = ", ".join(_member(m) for m in own)
+                    fentry["directionReason"] = f"In: writes member variable(s) {names} directly."
+                else:
+                    parts = []
+                    for m in sorted(_members_of[_fid]):
+                        via = sorted(_fname(c) for c in (fentry.get("selfCallIds") or [])
+                                     if m in _members_of.get(c, ()))
+                        parts.append(f"{_member(m)} (via {', '.join(via) or 'a method'})")
+                    fentry["directionReason"] = (
+                        f"In: writes member variable(s) through its own methods: {'; '.join(parts)}.")
+            else:
+                fentry["direction"] = "Out"
+                if reads:
+                    names = ", ".join(_gname(g) for g in sorted(reads))
+                    fentry["directionReason"] = f"Out: reads global(s) {names} but writes none."
+                else:
+                    fentry["directionReason"] = "Out: accesses no globals (reads none, writes none)."
+    # Globals: In/Out
+    for g in global_variables_data.values():
+        g["direction"] = "In/Out"
+        g["directionReason"] = "In/Out: global variables are bidirectional interfaces."
+
+
 def main():
     llm_summarize = "--llm-summarize" in sys.argv
 
@@ -1596,89 +1716,7 @@ def main():
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
-    # Functions: In/Out direction by precedence (roadmap 3.17):
-    #   1. Name match — Set (write) tested FIRST, then Get (read). "Set dominates" mirrors the
-    #      both-read-and-write -> In rule of the global-access fallback. See _name_words/_WORD_RE.
-    #   2. else a non-void return value -> Out.
-    #   3. else the global-access rule (3.4): writes a global (directly OR transitively) -> In,
-    #      else reads one -> Out, else Out. This is also the default when nothing above matches.
-    # Runs after _propagate_global_access, so writesGlobalIdsTransitive is populated — a function
-    # that writes a global only via a callee (e.g. indirectWrite, directionAdd) is correctly In,
-    # not Out (the parser's direct-write-only value at parser.py:1308 is preliminary; refined here).
-    # directionReason records WHY each direction was chosen so it can be verified in the interface
-    # tables (which already surface f["directionReason"]); keep it human-readable and auditable.
-    def _gname(gid):
-        return short_name(global_variables_data.get(gid, {}).get("qualifiedName", "")) or gid
-
-    def _fname(fid):
-        return short_name(functions_data.get(fid, {}).get("qualifiedName", "")) or fid
-
-    _callee_writes: dict = {}
-
-    def _writers_by_global(fentry):
-        # {gid: sorted names of fentry's direct callees that write it (directly or transitively)}
-        # -- the ones responsible for fentry inheriting that global as a transitive write. One pass
-        # over the callees, each callee's set built once: per (global, callee) as before, it took
-        # 19 s at 2,947 functions x 268 globals (2026-10-29, identical result).
-        by_g: dict = {}
-        for cid in (fentry.get("callsIds") or []):
-            cw = _callee_writes.get(cid)
-            if cw is None:
-                c = functions_data.get(cid) or {}
-                cw = _callee_writes[cid] = set(c.get("writesGlobalIdsTransitive")
-                                               or c.get("writesGlobalIds") or [])
-            for gid in cw:
-                by_g.setdefault(gid, set()).add(_fname(cid))
-        return {gid: sorted(names) for gid, names in by_g.items()}
-
-    for fentry in functions_data.values():
-        name = short_name(fentry.get("qualifiedName", "")) or ""
-        words = _name_words(name)
-        ret = (fentry.get("returnType") or "").strip()
-        returns_value = bool(ret) and ret != "void"  # "void *" is a value; "" falls through to rule 3
-
-        # Rule 1: name-based Set/Get. Set tested first so a write intent wins.
-        if "set" in words:
-            fentry["direction"] = "In"
-            fentry["directionReason"] = f"In: function name '{name}' contains 'Set' (writes/updates state)."
-        elif "get" in words:
-            fentry["direction"] = "Out"
-            fentry["directionReason"] = f"Out: function name '{name}' contains 'Get' (reads/returns state)."
-        # Rule 2: a non-void return value is data flowing out.
-        elif returns_value:
-            fentry["direction"] = "Out"
-            fentry["directionReason"] = f"Out: returns a value ({ret})."
-        # Rule 3 (3.4 fallback): global access. Also the default when nothing above matched.
-        else:
-            direct_w = list(fentry.get("writesGlobalIds") or [])
-            trans_w = list(fentry.get("writesGlobalIdsTransitive") or [])
-            reads = list(fentry.get("readsGlobalIdsTransitive") or fentry.get("readsGlobalIds") or [])
-            if direct_w or trans_w:
-                fentry["direction"] = "In"
-                if direct_w:
-                    names = ", ".join(_gname(g) for g in sorted(direct_w))
-                    fentry["directionReason"] = f"In: writes global(s) {names} directly."
-                else:
-                    # transitive-only: written by a callee, not by this function's own body.
-                    # Name the responsible callee(s) per global so the chain is verifiable.
-                    parts = []
-                    writers_of = _writers_by_global(fentry)
-                    for g in sorted(trans_w):
-                        writers = writers_of.get(g, [])
-                        via = ", ".join(writers) if writers else "a callee"
-                        parts.append(f"{_gname(g)} (via {via})")
-                    fentry["directionReason"] = f"In: writes global(s) transitively: {'; '.join(parts)}."
-            else:
-                fentry["direction"] = "Out"
-                if reads:
-                    names = ", ".join(_gname(g) for g in sorted(reads))
-                    fentry["directionReason"] = f"Out: reads global(s) {names} but writes none."
-                else:
-                    fentry["directionReason"] = "Out: accesses no globals (reads none, writes none)."
-    # Globals: In/Out
-    for g in global_variables_data.values():
-        g["direction"] = "In/Out"
-        g["directionReason"] = "In/Out: global variables are bidirectional interfaces."
+    derive_directions(functions_data, global_variables_data)
 
     # Unit and struct descriptions (REQ-PRE-01). Generated HERE, not in the DOCX exporter,
     # and stored -- the unit description is built FROM the function and global descriptions,
