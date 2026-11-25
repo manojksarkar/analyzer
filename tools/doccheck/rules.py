@@ -72,13 +72,16 @@ def _function_direction(f, rows):
         return ("SWE3-UI-05 gives %s here, before anything the code writes: %s; the document "
                 "that says %s breaks it (%s, SWE3-UI-05)" % (want, why, " / ".join(wrong), WIKI))
     # A void function with neither word: what decides it is in the code. Since 2026-11-24
-    # (review SWE3-025) a method that writes its own object's member variables is In, so a
+    # (review SWE3-025) a method that writes its own object's member variables is In, and
+    # since 2026-11-25 a function that writes through a pointer or reference parameter, so a
     # document made before then says Out for it.
     return ("it returns nothing and its name has neither Set nor Get, so its Direction turns "
-            "on what the code writes: a global, or a member variable of its own object -- by "
-            "itself, by a function it calls or through a local pointer -- makes it In; nothing "
+            "on what the code writes: a global, a member variable of its own object, or what a "
+            "pointer or reference parameter points at -- by itself or through a local pointer, "
+            "and a global or a member also by a function it calls -- makes it In; nothing "
             "written, Out. A method that writes its own object's member variables is In since "
-            "2026-11-24; a document made before then says Out (%s, SWE3-UI-05)" % WIKI)
+            "2026-11-24, a function that writes through a parameter since 2026-11-25; a "
+            "document made before then says Out (%s, SWE3-UI-05)" % WIKI)
 
 
 def _index(doc):
@@ -243,8 +246,10 @@ def _swe4(f, li, ri):
             return ("Expected Results has one entry per out-parameter and per global the "
                     "function writes. Since 2026-11-24 a global written through a local pointer "
                     "or reference to it (`p = &g_tab[i]; p->a = 1;`) counts as written "
-                    "(SWE3-UI-05 row 4), so a document made before then lacks that entry "
-                    "(%s, 'Expected Results')" % WIKI4), POSSIBLE
+                    "(SWE3-UI-05 row 4), so a document made before then lacks that entry; since "
+                    "2026-11-25 an out-parameter counts when the code writes through it "
+                    "(`*(p + i) = x`, `*p++ = x` included), not when it only moves the pointer "
+                    "(`p = p->next`) (%s, 'Expected Results')" % WIKI4), POSSIBLE
 
     if f.kind == "missing" and f.entity == "testcase":
         return ("a public function defined in a header gets no spec of its own; it is "

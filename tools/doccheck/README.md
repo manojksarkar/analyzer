@@ -95,8 +95,9 @@ A function whose Direction differs carries SWE3-UI-05 as a possible reason, alwa
 the two documents is wrong). Where the documents decide it -- the word Set or Get in the name,
 or a return value in Data Type -- the reason says which document breaks the rule. A void
 function with neither word turns on what the code writes, which no document shows; since
-2026-11-24 a method that writes its own object's member variables is In, so a document made
-before then says Out for it. `In/Out` on a function is reported as a global's Direction. The
+2026-11-24 a method that writes its own object's member variables is In, and since 2026-11-25
+a function that writes through a pointer or reference parameter, so a document made before
+then says Out for it. `In/Out` on a function is reported as a global's Direction. The
 word split is the engine's (`model_deriver._name_words`), copied and kept equal by a test.
 
 In SWE.4, an Expected Results difference where one side has a `Successfully updated` entry the

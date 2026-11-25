@@ -521,6 +521,14 @@ def test_a_void_function_points_at_what_the_code_writes_including_own_members():
     assert "member variable of its own object" in rule and "2026-11-24" in rule
 
 
+def test_a_void_function_points_at_what_the_code_writes_including_parameters():
+    """A write through a pointer or reference parameter (`pNode->length = ...`) is In since
+    2026-11-25; a document made before says Out."""
+    rule = _direction_rule(iface("PwList::pwDeleteNode", dataTypeReturn="VOID", direction="In"),
+                           iface("PwList::pwDeleteNode", dataTypeReturn="VOID", direction="Out"))
+    assert "pointer or reference parameter" in rule and "2026-11-25" in rule
+
+
 def test_a_return_type_the_documents_disagree_on_decides_nothing():
     rule = _direction_rule(iface("mwRun", dataTypeReturn="VOID", direction="In"),
                            iface("mwRun", dataTypeReturn="int", direction="Out"))

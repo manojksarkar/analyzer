@@ -306,6 +306,14 @@ def test_a_global_update_one_side_lacks_points_at_writes_through_a_local_pointer
     assert "local pointer" in (f.rule or "") and f.priority == P2 and not f.explained
 
 
+def test_an_out_parameter_update_one_side_lacks_points_at_writes_through_it():
+    """Since 2026-11-25 `p = p->next` no longer counts as writing p, and `*(p + i) = x` does:
+    an older specification may assert, or miss, the out-parameter's update."""
+    f = _expected_finding(["Successfully updated Node * p"],
+                          ["No return value; no global side effects"])
+    assert "moves the pointer" in (f.rule or "") and f.priority == P2 and not f.explained
+
+
 def test_an_expected_difference_with_no_update_entry_carries_no_rule():
     f = _expected_finding(["Successfully returned 0 in step 2"],
                           ["Successfully returned 1 in step 2"])
