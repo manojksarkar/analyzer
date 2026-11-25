@@ -126,7 +126,7 @@ def npm_global_root():
 def check_node():
     if shutil.which("node") is None:
         return Check("node", FAIL, "not on PATH",
-                     "Install Node.js 18+ (https://nodejs.org)", category="node")
+                     "Install Node.js 20.19+ or 22.12+ (https://nodejs.org)", category="node")
     rc, out, _ = _run(["node", "--version"])
     if rc != 0:
         return Check("node", FAIL, "found on PATH but failed to run", category="node")
@@ -325,6 +325,34 @@ def check_llm_server():
 
 
 # ---------------------------------------------------------------------------
+# The compiler that builds the code (armCompiler.path, 2026-11-25). Optional: never blocks a run.
+# ---------------------------------------------------------------------------
+
+def check_arm_compiler():
+    path = str((_server_settings().get("armCompiler") or {}).get("path") or "").strip()
+    if not path:
+        return Check("arm compiler", OK, "not set (optional: its header folders and macros are "
+                     f"added to the parse when armCompiler.path in {_LOCAL} names it)",
+                     required=False)
+    if not os.path.isfile(path):
+        return Check("arm compiler", WARN, f"not found: {path}",
+                     f"Correct armCompiler.path in {_LOCAL}: the compiler on THIS machine",
+                     required=False)
+    try:
+        done = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=30)
+        text_out = ((done.stdout or "") + "\n" + (done.stderr or "")).strip()
+        rc = done.returncode
+    except (OSError, subprocess.SubprocessError) as exc:
+        text_out, rc = str(exc), 127
+    first = next((l.strip() for l in text_out.splitlines() if l.strip()), "")
+    if rc != 0:
+        return Check("arm compiler", WARN, f"{path}: --version failed ({first or rc})",
+                     "Run it by hand; a license or a missing part of the install is the usual cause",
+                     required=False)
+    return Check("arm compiler", OK, f"{path} ({first})", required=False)
+
+
+# ---------------------------------------------------------------------------
 # The workspaces, and the paths the database stored in them (BACKLOG NW-5). Report only:
 # `collect_checks` is also every run's preflight, which must not wait on a database.
 # ---------------------------------------------------------------------------
@@ -385,6 +413,7 @@ def collect_checks():
     checks.append(check_chromium())
     checks.append(check_mmdc())
     checks.append(check_libclang())
+    checks.append(check_arm_compiler())
     checks.append(check_llm_server())
     return checks
 

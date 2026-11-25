@@ -230,6 +230,7 @@ class TestWhichFileASettingIsIn:
         assert set(example) == set(SERVER_BLOCKS)
         assert set(example["llmServer"]) <= set(LLM_SERVER_KEYS)
         assert set(example["llvm"]) == set(LLVM_KEYS_BEFORE.values())
+        assert example["armCompiler"] == {"path": None}            # optional: none asked
         assert not set(example) & set(self._shipped("config.defaults.json")), "a block in both files"
         load_llm_config({"llmServer": example["llmServer"]})      # the example is a valid server
 
@@ -311,7 +312,7 @@ class TestWhichFileASettingIsIn:
         root = _config_root(tmp_path, local={"llvm": _LLVM})
         cfg = with_server_settings({"llmServer": {"baseUrl": "stale"}, "views": {}}, root)
         assert cfg == {"views": {}, "llvm": _LLVM}
-        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "speedups"}
+        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "armCompiler", "speedups"}
 
     def test_how_many_files_are_parsed_at_once_is_this_machines(self, tmp_path, monkeypatch):
         """`speedups.parseWorkers` follows the cores and memory of the machine that parses, not
@@ -815,6 +816,7 @@ class TestRunSettingsSnapshot:
                                   {"customHeaders": {"x-dep-ticket": "lane-ticket"}}],
                          "parseWorkers": 6},
             "llvm": {"libPath": "C:/LLVM/bin/libclang.dll", "includePath": "C:/LLVM/include"},
+            "armCompiler": {"path": "C:/Arm/bin/armclang.exe"},
         }
 
     def test_no_key_header_value_or_url_credential_is_recorded(self):
@@ -835,6 +837,7 @@ class TestRunSettingsSnapshot:
             {"name": "lane2", "maxConcurrent": 1, "customHeaders": ["x-dep-ticket"]}]
         assert snap["speedups"]["parseWorkers"] == "6"
         assert snap["llvm"]["libPath"] == "C:/LLVM/bin/libclang.dll"
+        assert snap["armCompiler"] == {"path": "C:/Arm/bin/armclang.exe"}
         assert run_settings_line(snap) == ("anthropic / claude-sonnet-5-5 at https://api.example.com/v1; "
                                            "a x2, lane2 x1; pacing after; parseWorkers 6")
 

@@ -7,13 +7,13 @@ compiles the same headers under several roots (`04_FIL`, `05_CTRL`,
 what the compiler was actually given, so reading it turns that guess into
 ground truth.
 
-Scope of this module: **include paths and `-D` macros**. A real entry also carries
-`--target`, `-mcpu` and friends; those are deliberately ignored here (see
-`_INCLUDE_FLAGS`, `_DEFINE_FLAGS`) so a parse cannot regress through a flag libclang
-rejects. The `-D` flags (review SWE3-017) are each layer's first macro source; the
-project's macros file (`core.macro_input`) is loaded after them and wins on a name - a
-build database cannot see header-defined macros, so it supplements that file rather
-than replacing it.
+Scope of this module: **include paths, `-D` macros and the target flags**. The `-D`
+flags (review SWE3-017) are each layer's first macro source; the project's macros file
+(`core.macro_input`) is loaded after them and wins on a name - a build database cannot
+see header-defined macros, so it supplements that file rather than replacing it. The
+target flags (`--target`, `-mcpu`, `-fshort-enums`, ... - `target_args`) and `-include`
+files are read since 2026-11-25; every other flag is ignored, and the parser checks the
+ones read with libclang before it uses them, so a flag libclang rejects cannot stop a parse.
 
 One database per **core**, declared in the top-level `cores` section beside that
 core's `macros` and `dataDictionary`; a layer names the cores it is built from
@@ -219,6 +219,154 @@ def load_defines(sources: Sequence["CoreSource"]) -> Tuple[Dict[str, Dict[str, O
             line += (f"; {len(differ)} differ between files, the most used value kept: "
                      + ", ".join(differ[:10]) + (" ..." if len(differ) > 10 else ""))
         lines.append(line)
+    return by_layer, lines
+
+
+# How the code READS depends on more than -I and -D: the CPU sets `__ARM_ARCH` and friends,
+# `-fshort-enums` the size of an enum, `-ffreestanding` whether <stdint.h> reaches the C
+# library (2026-11-25). Measured one by one on libclang 21: these change its predefined macros
+# or what it accepts. Not taken: `-O` and position independence (code generation),
+# `-fno-rtti` / `-fno-exceptions` (they reject `typeid` / `try` rather than change how code
+# reads, and code built with them has none), `-std` / `-x` (the parser reads every file as
+# C++14), warnings, outputs, response files.
+_TARGET_VALUE_FLAGS = ("--target=", "-mcpu=", "-march=", "-mfpu=", "-mfloat-abi=")
+_TARGET_SWITCHES = frozenset((
+    "-mthumb", "-marm", "-mbig-endian", "-mlittle-endian", "-mno-unaligned-access",
+    "-munaligned-access", "-mcmse",
+    "-fshort-enums", "-fno-short-enums", "-fshort-wchar", "-fno-short-wchar",
+    "-funsigned-char", "-fno-unsigned-char", "-fsigned-char", "-fno-signed-char",
+    "-ffreestanding", "-fms-extensions", "-fno-ms-extensions", "-fdeclspec", "-fno-declspec",
+))
+
+
+def target_args(arguments: Sequence[str]) -> List[str]:
+    """The flags of one `arguments` array that change how the code reads, in order; the
+    separate `-target X` as `--target=X`, so every flag is one argument."""
+    out: List[str] = []
+    args = [str(a) for a in (arguments or [])]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("-target", "--target"):
+            if i + 1 < len(args):
+                out.append("--target=" + args[i + 1])
+                i += 1
+        elif arg.startswith(_TARGET_VALUE_FLAGS) or arg in _TARGET_SWITCHES:
+            out.append(arg)
+        i += 1
+    return out
+
+
+def include_file_args(arguments: Sequence[str]) -> List[str]:
+    """The `-include <file>` operands (a file the build reads before the source), in order."""
+    out: List[str] = []
+    args = [str(a) for a in (arguments or [])]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "-include":
+            if i + 1 < len(args):
+                out.append(args[i + 1])
+                i += 1
+        elif arg.startswith("-include") and len(arg) > len("-include"):
+            out.append(arg[len("-include"):])
+        i += 1
+    return out
+
+
+def _entry_args(entry: Dict[str, Any]) -> List[str]:
+    args = entry.get("arguments")
+    if args is None and entry.get("command"):
+        args = str(entry["command"]).split()
+    return [str(a) for a in (args or [])]
+
+
+def compiler_name(sources: Sequence["CoreSource"]) -> str:
+    """The compiler the build runs, as the first argument of its databases names it
+    (`armclang`, or a path on the build machine); "" when none names one."""
+    for src in sources:
+        try:
+            entries = read_entries(src.path)
+        except (OSError, ValueError):
+            continue
+        for entry in entries:
+            args = _entry_args(entry)
+            if args and not args[0].startswith("-"):
+                return args[0]
+    return ""
+
+
+def _map_file(path: str, prefix: Optional[str], project_root: str) -> Optional[str]:
+    """A file of the build machine, on this one: under the derived prefix, moved onto
+    `project_root`; relative, joined to it. None when it is elsewhere or not here."""
+    local_root = normalize(project_root)
+    if prefix:
+        pref = normalize(prefix).rstrip("/")
+        if path == pref or path.startswith(pref + "/"):
+            mapped = normalize(posixpath.join(local_root, path[len(pref):].lstrip("/")))
+            return mapped if os.path.isfile(mapped) else None
+    if not _is_absolute(path):
+        mapped = normalize(posixpath.join(local_root, path))
+        return mapped if os.path.isfile(mapped) else None
+    return None
+
+
+def load_flags(sources: Sequence["CoreSource"],
+               project_root: str) -> Tuple[Dict[str, List[str]], List[str]]:
+    """Each layer's target flags (`target_args`) and `-include` files from its cores' databases:
+    ({layer: [arg, ...]}, log lines). One set per layer, as one parse takes one: the set most
+    files use (the first seen on a tie), the files with another named in the log. Cores sharing
+    a layer: the first core's set. A `-include` file moves onto `project_root` like an include
+    dir; one that is not here is left out and named."""
+    by_layer: Dict[str, List[str]] = {}
+    lines: List[str] = []
+    for src in sources:
+        try:
+            entries = read_entries(src.path)
+        except (OSError, ValueError):
+            continue                                # load_sources already said so
+        root = src.root_prefix
+        if root is None and any(include_file_args(_entry_args(e)) for e in entries):
+            derived = derive_root_prefix(entry_include_dirs(entries), project_root)
+            root = derived.prefix if derived else None
+        sets: Counter = Counter()
+        first_file: Dict[Tuple[str, ...], str] = {}
+        not_here: List[str] = []
+        for entry in entries:
+            args = _entry_args(entry)
+            flags = target_args(args)
+            directory = normalize(entry.get("directory") or "")
+            for raw in include_file_args(args):
+                build_path = _resolve(directory, raw)
+                mapped = _map_file(build_path, root, project_root)
+                if mapped:
+                    flags.append("-include" + mapped)
+                elif build_path not in not_here:
+                    not_here.append(build_path)
+            key = tuple(flags)
+            sets[key] += 1
+            first_file.setdefault(key, str(entry.get("file") or ""))
+        if not sets or not any(sets):
+            continue
+        chosen = max(sets, key=lambda k: (sets[k], -list(sets).index(k)))
+        if not chosen:
+            continue
+        if src.layer in by_layer:
+            if list(chosen) != by_layer[src.layer]:
+                lines.append(f"  {src.layer} ({src.core}): other flags than the layer's first core "
+                             f"-- not used: {' '.join(chosen)}")
+            continue
+        by_layer[src.layer] = list(chosen)
+        line = (f"  {src.layer} ({src.core}): {' '.join(chosen)} "
+                f"({sets[chosen]} of {sum(sets.values())} files)")
+        others = [k for k in sets if k != chosen]
+        if others:
+            line += "; other flags in: " + ", ".join(
+                f"{first_file[k] or '?'} ({' '.join(k) or 'none'})" for k in others[:3])
+            line += " ..." if len(others) > 3 else ""
+        lines.append(line)
+        for path in not_here:
+            lines.append(f"    -include not found here, left out: {path}")
     return by_layer, lines
 
 

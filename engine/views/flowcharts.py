@@ -1038,6 +1038,23 @@ def _maybe_slice_tall_png(png_path: str) -> int:
 
     return n_parts
 
+def _target_args_for_layers(stored: dict, layers: list) -> list:
+    """The target args of model/clang_target_args.json for `layers`, in order, each once: a
+    layer's own, else the "*" set. No layer known: the first layer's by name, as Phase 1 gives a
+    file with no layer."""
+    if not isinstance(stored, dict) or not stored:
+        return []
+    if not layers:
+        named = sorted(k for k in stored if k != "*")
+        layers = named[:1] or ["*"]
+    out: list = []
+    for layer in layers:
+        for arg in stored.get(layer, stored.get("*")) or []:
+            if arg and arg not in out:
+                out.append(str(arg))
+    return out
+
+
 def _resolve_layer_names(config, group_name, allowed_components=None) -> list:
     """Every layer this Phase-3 run covers, in order. Empty means "could not tell".
 
@@ -1519,6 +1536,20 @@ def run(model, output_dir, model_dir, config):
 
     if not isinstance(clang_args, list):
         clang_args = [clang_args] if clang_args else []
+
+    # The target args Phase 1 parsed each layer with (2026-11-25): the build's flags, checked,
+    # and the compiler's header folders and macros. Before clang.clangArgs, as in Phase 1, so
+    # a project's own flags still win.
+    target_args_file = os.path.join(model_dir_abs, "clang_target_args.json")
+    if os.path.isfile(target_args_file):
+        try:
+            with open(target_args_file, "r", encoding="utf-8") as f:
+                stored_target = json.load(f) or {}
+            layer_target = _target_args_for_layers(
+                stored_target, _resolve_layer_names(config, group_name, allowed_components))
+            clang_args = layer_target + [a for a in clang_args if a not in layer_target]
+        except (json.JSONDecodeError, OSError, AttributeError):
+            pass
 
     # Read base_path from metadata.json and layer-scoped include paths from
     # clang_include_paths.json (both written by run.py / Phase 1).

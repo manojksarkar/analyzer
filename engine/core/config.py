@@ -137,7 +137,8 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 # Two files, two jobs (config.local.json.example has the long form):
 #
 #   config.local.json     THIS SERVER: its database, sign-in, repository folders, LLM server,
-#                         LLVM install and its speed-ups. Read from that file only, by every
+#                         LLVM install, the compiler that builds the code (`armCompiler`) and
+#                         its speed-ups. Read from that file only, by every
 #                         process, when it loads its config: not from the defaults, a project
 #                         or a version.
 #   config.defaults.json  HOW DOCUMENTS ARE MADE: the parse flags, the views, what the LLM writes
@@ -147,11 +148,12 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 
 #: This server's blocks. Not in config.defaults.json, and never written into a project's or a
 #: version's config (`without_server_settings`).
-SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "speedups", "paths")
+SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "armCompiler", "speedups",
+                 "paths")
 #: The server blocks a run reads through its config: laid over it when it is loaded
 #: (`with_server_settings`). The others have readers of their own, on the same file:
 #: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`.
-RUN_SERVER_BLOCKS = ("llmServer", "llvm", "speedups")
+RUN_SERVER_BLOCKS = ("llmServer", "llvm", "armCompiler", "speedups")
 #: The keys of `llmServer` -- develop's. Until 2026-10-13 they were in `llm`, where they are not
 #: read any more.
 LLM_SERVER_KEYS = ("provider", "baseUrl", "defaultModel", "customHeaders", "apiKey",
@@ -797,6 +799,8 @@ def run_settings_snapshot(config: Dict[str, Any]) -> Dict[str, Any]:
                      "parseWorkers": parse_workers_note(config) or "1",
                      "pictureBatches": s["pictureBatches"], "fastNullCheck": s["fastNullCheck"]},
         "llvm": {"libPath": lib, "includePath": inc},
+        "armCompiler": {"path": str((config.get("armCompiler") or {}).get("path") or "")
+                        if isinstance(config.get("armCompiler"), dict) else ""},
     }
 
 

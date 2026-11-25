@@ -778,6 +778,28 @@ if _build_macros:
                     for _l, _d in _build_macros.items()}, _f, indent=2)
 elif os.path.isfile(_build_macros_file):
     os.remove(_build_macros_file)
+# The build's target flags, per layer (2026-11-25): the CPU, enum size, ... -- how the code
+# reads beyond -I and -D. Phase 1 and the flowchart engine put them before clang.clangArgs, so
+# a project's own flags still win. Rewritten -- or removed -- every run, like the macros.
+_build_flags_file = os.path.join(_model_dir, "clang_build_flags.json")
+_build_flags: dict = {}
+if _cc_sources:
+    _build_flags, _flag_lines = _cc.load_flags(_cc_sources, resolved)
+    if _flag_lines:
+        log("Layer target flags from compile_commands (clang.clangArgs wins):", component="run")
+        for _line in _flag_lines:
+            log(_line, component="run")
+    from core.toolchain import configured_path as _compiler_path
+    _build_compiler = _cc.compiler_name(_cc_sources)
+    if _build_compiler and not _compiler_path(cfg):
+        log(f"The build runs {_build_compiler} (compile_commands.json). To read its own header "
+            f"folders and macros, set armCompiler.path in config.local.json to it on this "
+            f"machine.", component="run")
+if _build_flags:
+    with open(_build_flags_file, "w", encoding="utf-8") as _f:
+        _json.dump(_build_flags, _f, indent=2)
+elif os.path.isfile(_build_flags_file):
+    os.remove(_build_flags_file)
 if _cc_sources:
     # Compare on a case- and separator-normalized key: the walk yields native
     # Windows paths (`...\Layer1\Math`) while the loader normalizes to forward

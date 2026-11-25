@@ -192,3 +192,38 @@ class TestClangArgsFileLocation:
     def test_it_is_not_in_the_shared_model_dir(self):
         from views.flowcharts import clang_args_file
         assert "model" not in clang_args_file(os.path.join("v1", "output", "Layer1.Math"))
+
+
+class TestLayerTargetArgs:
+    """model/clang_target_args.json -- the build's flags and the compiler's folders and macros
+    Phase 1 parsed each layer with (2026-11-25) -- reaches the flowchart parse for the same
+    layer, before clang.clangArgs."""
+
+    STORED = {
+        "Layer1": ["--target=arm-arm-none-eabi", "-mcpu=cortex-m7", "-D__ARMCC_VERSION=6160001"],
+        "Layer2": ["--target=arm-arm-none-eabi", "-mcpu=cortex-m4"],
+        "*": ["-isystem/arm/include"],
+    }
+
+    def test_a_layer_gets_its_own(self):
+        from views.flowcharts import _target_args_for_layers
+        assert _target_args_for_layers(self.STORED, ["Layer1"]) == self.STORED["Layer1"]
+
+    def test_a_layer_with_none_of_its_own_gets_the_star_set(self):
+        from views.flowcharts import _target_args_for_layers
+        assert _target_args_for_layers(self.STORED, ["Layer3"]) == ["-isystem/arm/include"]
+
+    def test_two_layers_give_each_arg_once_in_order(self):
+        from views.flowcharts import _target_args_for_layers
+        assert _target_args_for_layers(self.STORED, ["Layer1", "Layer2"]) == [
+            "--target=arm-arm-none-eabi", "-mcpu=cortex-m7", "-D__ARMCC_VERSION=6160001",
+            "-mcpu=cortex-m4"]
+
+    def test_no_layer_known_takes_the_first_layer_by_name_as_phase_1_does(self):
+        from views.flowcharts import _target_args_for_layers
+        assert _target_args_for_layers(self.STORED, []) == self.STORED["Layer1"]
+
+    def test_no_file_content_gives_nothing(self):
+        from views.flowcharts import _target_args_for_layers
+        assert _target_args_for_layers({}, ["Layer1"]) == []
+        assert _target_args_for_layers([], ["Layer1"]) == []

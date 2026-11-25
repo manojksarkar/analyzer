@@ -102,6 +102,20 @@
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
 
+  // The compiler that builds the code, on this machine -- optional. libclang reads the code; this
+  // compiler is asked once at the start of each run, with the build's target flags, for what it
+  // brings by itself: its header folders (stdio.h, string.h, <cstring>: LLVM's folder above has
+  // only stddef.h, stdint.h and the like) and the macros it defines (__ARMCC_VERSION). They are
+  // added to every parse; a macro libclang defines too keeps libclang's value. A clang- or
+  // gcc-style compiler: armclang (Arm Compiler 6), clang, arm-none-eabi-gcc -- not armcc (Arm
+  // Compiler 5). For example "C:\\<Arm Compiler 6 folder>\\bin\\armclang.exe"; on Linux its
+  // Linux build, "/<Arm Compiler 6 folder>/bin/armclang".
+  // null: none is asked; when compile_commands.json names a compiler, the run's log says so.
+  // The run's log says what it added (Phase 1: "armCompiler [<layer>]: ...").
+  "armCompiler": {
+    "path": null
+  },
+
   // Where this server keeps each project's workspace: its checkouts, every version's documents
   // and diagrams, the approved copies. Absolute, or relative to the installation. Not set:
   // <installation>/workspaces. The environment's ANALYZER_WORKSPACES_DIR wins. Moving the folder:

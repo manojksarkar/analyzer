@@ -251,9 +251,29 @@ _VISIBILITY_KEYWORDS = set(DEFAULT_VISIBILITY_MACROS) - {"__OVLYINIT"}
 for _arg in default_clang_macro_defs():
     if _arg not in CLANG_ARGS:
         CLANG_ARGS.append(_arg)
+# The fixed args, without clang.clangArgs: a layer's target args (below) go between the two,
+# so a project's own flags still win (clang honours the last --target, -mcpu, -D).
+_CLANG_BASE = list(CLANG_ARGS)
 _extra = _clang.get("clangArgs")
-if _extra:
-    CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
+_CLANG_EXTRA = list(_extra if isinstance(_extra, list) else [_extra]) if _extra else []
+CLANG_ARGS.extend(_CLANG_EXTRA)
+
+# The build's target flags, per layer (2026-11-25): written by run.py from each core's
+# compile_commands.json (`core.compile_commands.load_flags`) -- the CPU, enum size, ... Checked
+# with libclang and joined by what the compiler that builds the code adds (`core.toolchain`) in
+# `_settle_target_args`, at the start of main(), into _TARGET_ARGS_BY_LAYER: what clang_args_for
+# gives every TU of that layer, and what model/clang_target_args.json hands the flowchart engine.
+_BUILD_FLAG_ARGS_BY_LAYER: dict = {}
+_build_flags_file = os.path.join(MODEL_DIR, "clang_build_flags.json")
+if os.path.isfile(_build_flags_file):
+    try:
+        with open(_build_flags_file, "r", encoding="utf-8") as _f:
+            _BUILD_FLAG_ARGS_BY_LAYER = {str(_l): [str(_a) for _a in (_v or [])]
+                                         for _l, _v in (json.load(_f) or {}).items()}
+    except (json.JSONDecodeError, OSError, AttributeError):
+        _BUILD_FLAG_ARGS_BY_LAYER = {}
+#: {layer: [arg, ...]} and "*" for a layer with none of its own; filled by _settle_target_args.
+_TARGET_ARGS_BY_LAYER: dict = {}
 
 
 # Macro -D flags, scope-keyed ("*" = every layer). The file may be a CSV or any
@@ -525,7 +545,7 @@ def clang_args_for(file_path: str) -> list:
     against another layer's headers. A file outside every configured component (an
     orphan header, say) resolves to no layer and is parsed with the global set only.
     """
-    if not _MACRO_ARGS_BY_SCOPE and not _LAYER_INCLUDE_ARGS:
+    if not _MACRO_ARGS_BY_SCOPE and not _LAYER_INCLUDE_ARGS and not _TARGET_ARGS_BY_LAYER:
         return CLANG_ARGS
     component = get_component_name(file_path)
     layer = (_get_component_layer_name(_config, component)
@@ -539,11 +559,113 @@ def clang_args_for(file_path: str) -> list:
             _inc = _LAYER_INCLUDE_ARGS.get(layer) or []
         else:
             _inc = [_a for _dirs in _LAYER_INCLUDE_ARGS.values() for _a in _dirs]
-        _seen: set = set(CLANG_ARGS)
+        _target = target_args_for_layer(layer)
+        _seen: set = set(CLANG_ARGS) | set(_target)
         _inc = [_a for _a in _inc if not (_a in _seen or _seen.add(_a))]
-        cached = CLANG_ARGS + _inc + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer)
+        cached = (_CLANG_BASE + _target + _CLANG_EXTRA + _inc
+                  + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer))
         _LAYER_ARGS_CACHE[layer] = cached
     return cached
+
+
+def target_args_for_layer(layer) -> list:
+    """The target args of `layer`'s TUs: its own, else the "*" set (a layer the build gave no
+    flags). A file with no layer takes the first layer's, by name: flags cannot be merged."""
+    if not _TARGET_ARGS_BY_LAYER:
+        return []
+    if layer is None:
+        named = sorted(k for k in _TARGET_ARGS_BY_LAYER if k != "*")
+        layer = named[0] if named else "*"
+    return list(_TARGET_ARGS_BY_LAYER.get(layer, _TARGET_ARGS_BY_LAYER.get("*", [])))
+
+
+_PROBE_FILE = "analyzer_target_probe.cpp"
+
+
+def _probe(flags: list):
+    """libclang's parse of an empty file with `flags`: (the TU, or None when it does not load)."""
+    try:
+        return index.parse(_PROBE_FILE, args=["-x", "c++", "-std=c++14", *flags],
+                           unsaved_files=[(_PROBE_FILE, "")],
+                           options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+    except cindex.TranslationUnitLoadError:
+        return None
+
+
+def _probe_ok(flags: list) -> bool:
+    tu = _probe(flags)
+    return tu is not None and not any(d.severity >= 3 for d in tu.diagnostics)
+
+
+def _flags_libclang_takes(flags: list):
+    """(kept, left out): an empty file must parse without an error, or one wrong flag -- a CPU
+    libclang does not know -- makes EVERY TU of the layer fail to load (measured: `-mcpu=` of an
+    unknown CPU, a wrong `--target`). Checked whole first; only when that fails, one by one in
+    order, each with the ones kept before it (`-marm` fails only after a Cortex-M `-mcpu`).
+    A `-include` file is kept as it is: it is no flag, and the probe has none of the include
+    dirs its header may need."""
+    files = [f for f in flags if f.startswith("-include")]
+    checked = [f for f in flags if not f.startswith("-include")]
+    if not checked or _probe_ok(checked):
+        return checked + files, []
+    kept, left_out = [], []
+    for flag in checked:
+        (kept if _probe_ok(kept + [flag]) else left_out).append(flag)
+    return kept + files, left_out
+
+
+def _libclang_macro_names(flags: list) -> set:
+    """The macros libclang defines by itself with `flags`: an empty parse's macro definitions
+    that come from no file."""
+    tu = _probe(flags)
+    if tu is None:
+        return set()
+    return {c.spelling for c in tu.cursor.get_children()
+            if c.kind == cindex.CursorKind.MACRO_DEFINITION and c.location.file is None}
+
+
+def _settle_target_args() -> None:
+    """Before the first parse: each layer's build flags, checked (`_flags_libclang_takes`), then
+    what the compiler that builds the code adds -- its header folders and the macros libclang
+    lacks (`core.toolchain`), asked once per set of target flags when `armCompiler.path` is set.
+    Logged per layer, and written to model/clang_target_args.json for the flowchart engine."""
+    from core import toolchain as _tc
+    from core.compile_commands import target_args as _target_filter
+    _TARGET_ARGS_BY_LAYER.clear()
+    _LAYER_ARGS_CACHE.clear()
+    for _layer in sorted(_BUILD_FLAG_ARGS_BY_LAYER):
+        _kept, _left_out = _flags_libclang_takes(_BUILD_FLAG_ARGS_BY_LAYER[_layer])
+        if _left_out:
+            _log.warning("%s: libclang does not take %s from compile_commands -- left out",
+                         _layer, " ".join(_left_out))
+        if _kept:
+            _TARGET_ARGS_BY_LAYER[_layer] = _kept
+    _path = _tc.configured_path(_config)
+    if _path:
+        _run_layers = _selected_layers or list((_config.get("layers") or {}).keys())
+        _keys = sorted(_TARGET_ARGS_BY_LAYER)
+        if not _run_layers or any(_l not in _TARGET_ARGS_BY_LAYER for _l in _run_layers):
+            _keys.append("*")                       # a layer the build gave no flags
+        _answers: dict = {}
+        for _key in _keys:
+            _flags = _tc.query_flags(_TARGET_ARGS_BY_LAYER.get(_key), _CLANG_EXTRA, _target_filter)
+            _added = _answers.get(tuple(_flags))
+            if _added is None:
+                _answer = _tc.ask(_path, _flags)
+                _added = _answers[tuple(_flags)] = _tc.parse_args(_answer, _libclang_macro_names(_flags))
+                _who = f"[{_key}]" if _key != "*" else "[layers without build flags]"
+                (_log.warning if _answer.error else _log.info)(
+                    "armCompiler %s: %s", _who, _tc.summary(_path, _answer, _added))
+            if _added or _key in _TARGET_ARGS_BY_LAYER:
+                _TARGET_ARGS_BY_LAYER[_key] = _TARGET_ARGS_BY_LAYER.get(_key, []) + _added
+    for _layer in sorted(_TARGET_ARGS_BY_LAYER):
+        _log.info("  target args [%s]: %s", _layer, " ".join(_TARGET_ARGS_BY_LAYER[_layer]))
+    _target_json = os.path.join(MODEL_DIR, "clang_target_args.json")
+    if _TARGET_ARGS_BY_LAYER or os.path.isfile(_target_json):
+        # Written even when empty, as clang_macros.json is: an earlier run's must not survive.
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        with open(_target_json, "w", encoding="utf-8") as _tf:
+            json.dump(_TARGET_ARGS_BY_LAYER, _tf, indent=2)
 
 
 index = cindex.Index.create()
@@ -620,6 +742,11 @@ def _fingerprint_args() -> list:
         args += _LAYER_INCLUDE_ARGS[lname]
     for scope in sorted(_MACRO_ARGS_BY_SCOPE):
         args += _MACRO_ARGS_BY_SCOPE[scope]
+    # The layers' target args (2026-11-25): the build's flags and the compiler's header folders
+    # and macros. None -- a project with no build flags and no armCompiler -- adds nothing, so
+    # such a project's fingerprint is what it was.
+    for lname in sorted(_TARGET_ARGS_BY_LAYER):
+        args += [f"--layer-target={lname}"] + _TARGET_ARGS_BY_LAYER[lname]
     args.append(f"--parse-options=0x{_TU_PARSE_OPTIONS:x}")
     return args
 
@@ -3901,6 +4028,7 @@ def main():
     _log.info("  data dictionary : %s", "; ".join(
         f"{layer or 'project-wide'} <- {path}" for layer, path in _dd_sources) or "(none)")
     _log.info("=" * 60)
+    _settle_target_args()
     _log.debug("CLANG_ARGS (global): %s", " ".join(CLANG_ARGS))
     for _lname in sorted(_LAYER_INCLUDE_ARGS):
         _log.debug("  include dirs [%s]: %d", _lname, len(_LAYER_INCLUDE_ARGS[_lname]))

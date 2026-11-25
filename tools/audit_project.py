@@ -644,6 +644,38 @@ def check_include_map(ctx, rep):
                     "not the build's. The run log also lists any name whose value differs "
                     "between the build's own files.")
 
+    # The target args Phase 1 parsed each layer with (2026-11-25): the build's flags (the CPU,
+    # enum size, ...) and what the compiler that builds the code adds (armCompiler.path).
+    for v in ctx.versions:
+        mdir = _version_model_dir(ctx, v["id"])
+        if mdir is None:
+            continue                                     # F3 said so
+        try:
+            target = _read_json(os.path.join(mdir, "clang_target_args.json"))
+        except (OSError, ValueError) as exc:
+            rep.add(WARN, "F4", "%s: target args unreadable (%s)" % (v["id"], exc),
+                    examined="1 folder")
+            continue
+        if not target:
+            rep.add(INFO, "F4", "%s: no target args from the build or its compiler" % v["id"],
+                    examined="1 folder",
+                    why="No core's compile_commands.json gave a target flag (-mcpu, ...) and no "
+                        "armCompiler.path was set, or the run is older than 2026-11-25: the parse "
+                        "had clang.clangArgs alone, so the CPU's macros may not be the build's.",
+                    ask="the Phase 1 log lines 'armCompiler [...]' and 'target args [...]'.")
+            continue
+
+        def _count(args, prefix):
+            return sum(1 for a in args if str(a).startswith(prefix))
+        rep.add(OK, "F4", "%s: target args per layer: %s" % (v["id"], "; ".join(
+                    "%s %d flag(s), %d compiler folder(s), %d compiler macro(s)" % (
+                        layer, len(args) - _count(args, "-isystem") - _count(args, "-D"),
+                        _count(args, "-isystem"), _count(args, "-D"))
+                    for layer, args in sorted(target.items()))),
+                examined="%d layer(s)" % len(target),
+                why="Folders and macros come only from armCompiler.path's answer; none of them "
+                    "means no compiler was asked, or it could not answer (the log says which).")
+
 
 def _version_model_dir(ctx, vid):
     """The version's model folder on disk, under today's workspaces root or the repository's

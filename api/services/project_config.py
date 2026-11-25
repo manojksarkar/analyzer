@@ -36,8 +36,8 @@ FILLED, CHECK, SKIPPED = "filled", "check", "skipped"
 
 _PROJECT_SECTIONS = ("clang", "views", "docx")      # carried into the project's build config
 # The server's settings, never a project's: its own blocks (config.local.json -- `db`, `auth`,
-# `repositories`, `llmServer`, `llvm`) and what it sets for every project (`llm`, `ui`).
-_SERVER_SECTIONS = ("llm", "ui", "db", "auth", "repositories", "llmServer", "llvm")
+# `repositories`, `llmServer`, `llvm`, `armCompiler`) and what it sets for every project (`llm`, `ui`).
+_SERVER_SECTIONS = ("llm", "ui", "db", "auth", "repositories", "llmServer", "llvm", "armCompiler")
 # Paths on the machine that wrote the file; the server uses its own (`llvm` in its
 # config.local.json; a file from before 2026-10-13 has them in `clang`). `macrosFile` is set by
 # the server from the project's preprocessor definitions.

@@ -444,3 +444,87 @@ def test_the_written_file_loads_as_the_layers_macros(tmp_path):
                     encoding="utf-8")
     defs, _report = load_macro_defs(str(path))
     assert scoped_args(defs) == {"Layer1": ["-D_NAND_DENSITY=512", "-D_CONFIG_ASIC"]}
+
+
+# ---------------------------------------------------------------------------
+# target_args / load_flags - the build's target flags (2026-11-25)
+# ---------------------------------------------------------------------------
+
+def test_target_args_takes_the_target_flags_and_nothing_else():
+    """The fixture's flag soup: warnings, a response file, -x/-std, -O, -c, -D, -I, -o out."""
+    assert cc.target_args(_entry("a.cpp", ["../x"])["arguments"]) == [
+        "--target=arm-arm-none-eabi", "-mcpu=cortex-m7", "-mfpu=none"]
+
+
+def test_target_args_spells_a_separate_target_as_one_argument():
+    assert cc.target_args(["armclang", "-target", "arm-arm-none-eabi", "-mthumb"]) == [
+        "--target=arm-arm-none-eabi", "-mthumb"]
+
+
+def test_target_args_leaves_out_what_does_not_change_how_code_reads():
+    """-fno-rtti / -fno-exceptions reject typeid / try instead of reading them; -O and -fpic are
+    code generation; -std and -x are the parser's own (C++14)."""
+    args = ["-fno-rtti", "-fno-exceptions", "-O2", "-Oz", "-fpic", "-frwpi", "-std=c++17",
+            "-xc++", "-ffunction-sections", "-fshort-enums", "-ffreestanding", "-mfloat-abi=soft",
+            "-funsigned-char", "-fshort-wchar", "-mbig-endian", "-mno-unaligned-access"]
+    assert cc.target_args(args) == ["-fshort-enums", "-ffreestanding", "-mfloat-abi=soft",
+                                    "-funsigned-char", "-fshort-wchar", "-mbig-endian",
+                                    "-mno-unaligned-access"]
+
+
+def test_include_file_args_takes_joined_and_separate_forms():
+    assert cc.include_file_args(["-include", "pre.h", "-includeother.h", "-I", "x", "-include"]) == [
+        "pre.h", "other.h"]
+
+
+def _flag_entry(file_name, *flags):
+    return {"directory": BUILD_DIR, "file": file_name, "arguments": ["armclang", *flags, "-c"]}
+
+
+def test_a_layer_takes_the_flags_most_files_use_and_names_the_others(tmp_path):
+    db = _write_db(tmp_path / "core.json", [
+        _flag_entry("a.cpp", "--target=arm-arm-none-eabi", "-mcpu=cortex-m7"),
+        _flag_entry("boot.cpp", "--target=arm-arm-none-eabi", "-mcpu=cortex-m4"),
+        _flag_entry("c.cpp", "--target=arm-arm-none-eabi", "-mcpu=cortex-m7")])
+    by_layer, lines = cc.load_flags([cc.CoreSource("Core1", db, "Layer1")], str(tmp_path))
+    assert by_layer == {"Layer1": ["--target=arm-arm-none-eabi", "-mcpu=cortex-m7"]}
+    assert "(2 of 3 files)" in lines[0] and "boot.cpp (--target=arm-arm-none-eabi -mcpu=cortex-m4)" in lines[0]
+
+
+def test_a_layer_keeps_its_first_cores_flags_and_says_another_differs(tmp_path):
+    first = _write_db(tmp_path / "a.json", [_flag_entry("a.cpp", "-mcpu=cortex-m7")])
+    second = _write_db(tmp_path / "b.json", [_flag_entry("b.cpp", "-mcpu=cortex-r5")])
+    by_layer, lines = cc.load_flags([cc.CoreSource("A", first, "Layer1"),
+                                     cc.CoreSource("B", second, "Layer1")], str(tmp_path))
+    assert by_layer == {"Layer1": ["-mcpu=cortex-m7"]}
+    assert any("B" in l and "not used: -mcpu=cortex-r5" in l for l in lines)
+
+
+def test_a_database_with_no_target_flags_gives_the_layer_none(tmp_path):
+    db = _write_db(tmp_path / "core.json", [_flag_entry("a.cpp", "-Wall", "-DX=1")])
+    assert cc.load_flags([cc.CoreSource("Core1", db, "Layer1")], str(tmp_path)) == ({}, [])
+
+
+def test_an_include_file_moves_onto_this_machine_like_an_include_dir(tmp_path):
+    _make_tree(tmp_path, "02_HIL/Inc")
+    (tmp_path / "02_HIL" / "Inc" / "pre.h").write_text("#define PRE 1\n", encoding="utf-8")
+    db = _write_db(tmp_path / "core.json", [{
+        "directory": BUILD_DIR, "file": "a.cpp",
+        "arguments": ["armclang", "-mcpu=cortex-m7", "-I../../../Inc",
+                      "-include", "../../../Inc/pre.h", "-include", "D:/Toolchain/gone.h", "-c"]}])
+    by_layer, lines = cc.load_flags([cc.CoreSource("Core1", db, "Layer1")], str(tmp_path))
+    pre = cc.normalize(str(tmp_path / "02_HIL" / "Inc" / "pre.h"))
+    assert by_layer == {"Layer1": ["-mcpu=cortex-m7", "-include" + pre]}
+    assert any("-include not found here, left out: D:/Toolchain/gone.h" in l for l in lines)
+
+
+def test_the_example_databases_give_the_samples_target_flags():
+    """The checked-in examples carry the real build's soup: these six are what each layer gets."""
+    from engine.core.config import app_config
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sources = cc.sources_from_layers(app_config(), repo)
+    by_layer, _ = cc.load_flags(sources, os.path.join(repo, "SampleCppProject"))
+    six = ["--target=arm-arm-none-eabi", "-mcpu=cortex-m7", "-mfpu=none", "-mfloat-abi=soft",
+           "-fshort-enums", "-mno-unaligned-access"]
+    assert by_layer == {"Layer1": six, "Layer2": six}
+    assert cc.compiler_name(sources) == "armclang"
