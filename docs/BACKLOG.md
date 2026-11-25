@@ -40,6 +40,7 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | IN-5 | A Phase 3 resume on another machine has no `knowledge_base.json` | issue | — | — | — | open | `hydrate_model` |
 | IN-6 | An incremental run misses a new function's callers in unchanged files | issue | — | — | — | open | narrowed parse |
 | IN-7 | After an analyzer update, an incremental run keeps the old flowcharts of unchanged functions: reuse is keyed by the code, not by how charts are drawn. A drawing-rules version in the code, compared with the baseline's, would redraw them by itself — then Fresh run (NW-3) is rarely needed | issue | — | S–M | — | open | `views/flowcharts.py` carry-forward, `incremental/fingerprint.py` |
+| IN-8 | After a parser fix, an incremental run keeps the old parse facts (Direction, writes, calls) of the files it does not re-parse: the parse fingerprint holds the clang arguments and macros, no parser version. As IN-7, for the parse: a parser version in the fingerprint would force a full parse by itself | issue | — | S | — | open | `parser._fingerprint_args` |
 
 ## SWE.3
 
@@ -61,22 +62,20 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | S3-18 | Flowcharts: a private function called only by another private function gets none -- print it under its caller's caller too? Kept as is (2026-11-05) | enhance | P3 | S | a review comment on it | parked | SWE3-FD-01 |
 | S3-19 | Fixed values to settle later (2026-11-05): Note; links to requirement IDs (SWE.1 / Polarion); the Introduction wording and the abbreviation list; Code Metrics and the Appendix; whether LLM text is part of the acceptance check | input | P3 | — | the teams | parked | SWE3-FX-01 |
 | S3-20 | Direction editable in the app: a correction (In / Out) that also changes the unit diagram's arrow, in the web page and the Word file; dropped when the function's code changes. For what SWE3-025's rule change misses. Built with WA-1 | enhance | P3 | in WA-1's 5 d | SWE3-025 built first | decide | `engine/review/`, `views/unit_diagrams.py`, web app |
+| S3-21 | Writes the parser does not see, for globals and members alike: an assignment inside a macro (`SET_FLAG(m_x)`), a whole-struct `=` (`m_info = info;`, an `operator=` call). Such a function reads Out (SWE3-UI-05) | issue | — | — | — | open | `parser._is_assign_op`, `visit_global_access` |
+| S3-22 | Calls that write: `memset` / `memcpy` into a variable, a method called on a member object (`m_list.clear()`), a variable or parameter passed to a function that writes it (`fill(m_x)`, `clear(pNode)`). Do they make a function In? | enhance | — | — | the review team | decide | SWE3-UI-05 |
+| S3-23 | A return type that is a typedef of void (`typedef void VOID;`) reads as a value to SWE3-UI-05 rule 2: `Out: returns a value (VOID)`, before any write is read | issue | — | S | how the reviewed code defines `VOID` | open | `model_deriver.derive_directions` |
 
 ## SWE.3 — review round 1 (received 2026-09-23; in develop)
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
-| RV-1 | Writes to a class static member: direction, and the member in unit headers | issue | — | — | the review's check | to verify | `parser.py` |
-| RV-3 | Static design container diagram too big for the page | issue | — | — | the review's check | to verify | `docx_exporter.py` `_fit_picture_width` |
-| RV-4 | An orphan-header enum listed in every unit that uses the header | issue | — | — | the review's check | to verify | `views/unit_headers.py` |
-| RV-5 | An orphan-header function counted as another unit's | issue | — | — | the review's check | to verify | `model_deriver.py` `_unit_of` |
 | RV-6 | Unit diagram: the unit's In/Out globals inside the unit, no edges | issue | — | — | the review's check | to verify | `views/unit_diagrams.py` |
-| RV-7 | Struct / class missing from unit headers | issue | — | — | the review's check | to verify | `views/unit_headers.py` |
 
 ## SWE.3 — review SWE3_V4 (2026-11-11), SWE3_V5 (2026-11-18)
 
-How each issue is fixed, by Issue ID, with effort in days: [review/FIX_PLAN.md](review/FIX_PLAN.md) --
-31 issues, V4's and V5's in one list: 10 fixed, 11 open (2026-11-18), 11–13 d with three people (environment, fixes, investigate and review tool); WA-1 and S3-20 after, lower priority.
+How each issue is fixed and what is left to verify: [review/FIX_PLAN.md](review/FIX_PLAN.md) --
+31 issues, V4's and V5's in one list: 13 verified, 7 to verify, 5 open, 6 nothing to do (2026-11-25); WA-1 and S3-20 after, lower priority.
 
 ## SWE.4 and UT export
 
@@ -86,6 +85,7 @@ How each issue is fixed, by Issue ID, with effort in days: [review/FIX_PLAN.md](
 | S4-2 | §3 Code Metric / Coding Rule / Test Coverage | input | — | — | a metrics / coverage source | open | SWE4_WIKI |
 | S4-3 | Equivalence Class and Boundary Value analysis (today: Analysis of Requirements only) | enhance | — | — | — | deferred | `views/test_specs.py` |
 | S4-4 | `tools/swe4_audit.py` reads `model/*.json`, which no longer exists | debt | — | S | — | open | `tools/swe4_audit.py` |
+| S4-5 | A typedef pointer parameter (`P_Node p`) is an Input, and its update is missing from Expected Results: `_is_out_parameter` reads the type's spelling | issue | — | S | — | open | `views/test_specs.py` `_is_out_parameter` |
 | UE-1 | Precise test cases: one case per path, input values, structural path conditions | enhance | — | — | `feat/ut-export` (partly there) | open | UT_EXPORT_SPEC REQ-UE-04 |
 | UE-2 | Format questions: `CoreType`, the `Macros` split, `format_version`, one file or two, the id scheme, a dynamic spec's steps | input | — | — | the target format's owner | decide | UT_EXPORT_SPEC |
 | UE-3 | Global linkage (`static` vs `extern`) for the UT export | enhance | — | — | — | open | `parser.py` |
@@ -276,11 +276,7 @@ follow our rules. To answer with data:
    counted against given back -- the formula is in the same spec.
 Steps 3–4 are done with the review's sheet, which stays with the team; a triage tool is being built.
 
-**RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
-listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
-has ONE owner unit that lists every used symbol. RV-5: the companion header belongs to its unit. RV-6:
-the unit's published globals as boxes inside the component, no edges (SWE3-SD-04). RV-7: struct, class and
-union listed, nested types inside their parent.
+**RV-6** The unit's published globals as boxes inside the component, no edges (SWE3-SD-04).
 
 **S4-3** Table B's Generation Method today is `Analysis of Requirements` only; Equivalence Class and
 Boundary Value analysis, and input sizing for branch coverage, are the deferred pass.
