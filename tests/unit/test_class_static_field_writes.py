@@ -318,8 +318,9 @@ def _clear_member_state(P):
 
 @pytest.fixture(scope="module")
 def members(parser_mod):
-    """{method: {"members", "globals", "self", "returnType"}} over the real fixture: the own
-    members it writes, the globals it writes, the methods it calls on its own object."""
+    """{method: {"members", "globals", "self", "params", "returnType"}} over the real fixture:
+    the own members it writes, the globals it writes, the methods it calls on its own object,
+    the parameters it writes through."""
     from clang import cindex
 
     P = parser_mod
@@ -344,6 +345,7 @@ def members(parser_mod):
                 "globals": {P.globals_data.get(v, {}).get("qualifiedName", v)
                             for v in P.global_access_writes.get(k, ())},
                 "self": {names.get(c, (c,))[0] for c, _ in P.self_calls.get(k, ())},
+                "params": set(P.param_writes.get(k, ())),
                 "returnType": ret,
             }
     finally:
@@ -366,7 +368,7 @@ class TestOwnMemberWrites:
         ("mwResetAll",    set()),     # only through MwBase::mwBaseReset
         ("mwInsertX",     set()),     # a global, not a member (below)
         ("mwDump",        set()),     # reads only
-        ("mwCopyTo",      set()),     # other.m_used: another object's
+        ("mwCopyTo",      set()),     # other.m_used: another object's (a parameter, below)
         ("mwResetHelper", set()),     # helper.mwHelperReset(): another object's
         ("mwFind",        set()),     # returns &m_rows[id]: an address, no write
         ("mwMarkFound",   set()),     # through a pointer mwFind returns: not followed
@@ -402,11 +404,12 @@ class TestMemberWritesDecideDirection:
             fn: {"qualifiedName": f"MwTable::{fn}", "returnType": m["returnType"],
                  "writesMembers": sorted(m["members"]),
                  "selfCallIds": sorted(m["self"]),
-                 "writesGlobalIds": sorted(m["globals"])}
+                 "writesGlobalIds": sorted(m["globals"]),
+                 "writesParams": sorted(m["params"])}
             for fn, m in members.items()
         }
         for f in functions.values():
-            for k in ("writesMembers", "selfCallIds", "writesGlobalIds"):
+            for k in ("writesMembers", "selfCallIds", "writesGlobalIds", "writesParams"):
                 if not f[k]:
                     del f[k]
         derive_directions(functions, {})
@@ -420,7 +423,7 @@ class TestMemberWritesDecideDirection:
         ("mwInsertX",     "In"),
         ("mwMarkRow",     "In"),
         ("mwDump",        "Out"),
-        ("mwCopyTo",      "Out"),
+        ("mwCopyTo",      "In"),     # other.m_used, through its reference parameter
         ("mwResetHelper", "Out"),
         ("mwMarkFound",   "Out"),
         ("mwFind",        "Out"),    # returns a value
@@ -444,5 +447,136 @@ class TestMemberWritesDecideDirection:
 
         fns = {"f": {"qualifiedName": "C::count", "returnType": "int",
                      "writesMembers": ["C::m_n"]}}
+        derive_directions(fns, {})
+        assert fns["f"]["direction"] == "Out"
+
+
+# ---------------------------------------------------------------------------------------
+# A write through a pointer or reference parameter (SWE3_WIKI SWE3-UI-05 rows 3-4): what
+# `pNode->length = ...` writes is the caller's object, so a void function is In, like one
+# that writes a global. Moving the pointer (`p = p->next`) and writing a parameter passed by
+# value write only its own copy. Fixture: Direction/ParamWrites.{h,cpp}; App/Main.cpp calls
+# every function in it.
+# ---------------------------------------------------------------------------------------
+
+PW = os.path.join(MW_DIR, "ParamWrites.cpp")
+
+
+@pytest.fixture(scope="module")
+def params(parser_mod):
+    """{function: {"params", "own", "globals", "members", "returnType"}} over the real
+    fixture: the parameters the walker saw written through, the function's own parameter
+    names, and anything else it writes."""
+    from clang import cindex
+
+    P = parser_mod
+    tu = cindex.Index.create().parse(PW, args=["-x", "c++", "-std=c++14", f"-I{MW_DIR}"])
+    fatal = [d.spelling for d in tu.diagnostics if d.severity >= 3]
+    assert not fatal, f"fixture does not compile: {fatal}"
+    real = P.is_project_file
+    P.is_project_file = lambda _p: True
+    try:
+        _clear_member_state(P)
+        P.visit_definitions(tu.cursor)
+        P.visit_global_access(tu.cursor)
+        out = {}
+        for c in tu.cursor.walk_preorder():
+            if c.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD) \
+                    and c.is_definition() and c.location.file \
+                    and c.location.file.name.endswith("ParamWrites.cpp"):
+                k = P.get_function_key(c)
+                out[c.spelling] = {
+                    "params": set(P.param_writes.get(k, ())),
+                    "own": {a.spelling for a in c.get_arguments()},
+                    "globals": set(P.global_access_writes.get(k, ())),
+                    "members": set(P.member_writes.get(k, ())),
+                    "returnType": c.result_type.spelling,
+                }
+    finally:
+        P.is_project_file = real
+        _clear_member_state(P)
+    return out
+
+
+class TestParamWrites:
+    """Every function's EXACT set: what writes only its own copy is as much the point as
+    what reaches the caller."""
+
+    @pytest.mark.parametrize("fn, written", [
+        ("pwDeleteNode",   {"pNode"}),   # pNode->length; P_PwNode is a pointer by typedef
+        ("pwClearNode",    {"pNode"}),   # Node* spelled out
+        ("pwResetNode",    {"node"}),    # a reference
+        ("pwFillBuffer",   {"buf"}),     # *(buf + i)
+        ("pwStepFill",     {"buf"}),     # *buf++; n-- steps its own copy
+        ("pwClearViaCopy", {"pNode"}),   # cur = pNode; cur->length
+        ("pwMarkViaRef",   {"pNode"}),   # PwNode& node = *pNode; node.length
+        ("pwWalk",         set()),       # pNode = pNode->next moves the copy
+        ("pwByValue",      set()),       # its own copy
+        ("pwClearNext",    set()),       # next = pNode->next points at another object
+        ("pwPassOn",       set()),       # passed on to pwClearNode: not followed
+    ])
+    def test_the_parameters_written(self, params, fn, written):
+        assert params[fn]["params"] == written, fn
+
+    def test_a_lambdas_parameter_is_not_its_own(self, params):
+        """The walk sees the lambda's `p->length = 0` inside pwLambda; build_metadata keeps
+        only pwLambda's own parameters, and it has none."""
+        assert params["pwLambda"]["params"] == {"p"}
+        assert not params["pwLambda"]["own"]
+
+    def test_nothing_else_is_written(self, params):
+        assert not any(p["globals"] or p["members"] for p in params.values())
+
+
+class TestParamWritesDecideDirection:
+    """Phase 2 (`derive_directions`) over the parser's facts for the fixture."""
+
+    @pytest.fixture(scope="class")
+    def directions(self, params):
+        from model_deriver import derive_directions
+
+        functions = {fn: {"qualifiedName": fn, "returnType": p["returnType"]}
+                     for fn, p in params.items()}
+        for fn, p in params.items():
+            own = p["params"] & p["own"]             # what build_metadata stores
+            if own:
+                functions[fn]["writesParams"] = sorted(own)
+        derive_directions(functions, {})
+        return functions
+
+    @pytest.mark.parametrize("fn, direction", [
+        ("pwDeleteNode",   "In"),
+        ("pwClearNode",    "In"),
+        ("pwResetNode",    "In"),
+        ("pwFillBuffer",   "In"),
+        ("pwStepFill",     "In"),
+        ("pwClearViaCopy", "In"),
+        ("pwMarkViaRef",   "In"),
+        ("pwWalk",         "Out"),
+        ("pwByValue",      "Out"),
+        ("pwClearNext",    "Out"),
+        ("pwPassOn",       "Out"),
+        ("pwLambda",       "Out"),
+    ])
+    def test_direction(self, directions, fn, direction):
+        assert directions[fn]["direction"] == direction, directions[fn]["directionReason"]
+
+    def test_the_reason_names_the_parameter(self, directions):
+        assert directions["pwDeleteNode"]["directionReason"] == \
+            "In: writes through parameter(s) pNode."
+
+    def test_a_member_still_comes_first(self):
+        from model_deriver import derive_directions
+
+        fns = {"f": {"qualifiedName": "C::touch", "returnType": "void",
+                     "writesMembers": ["C::m_n"], "writesParams": ["p"]}}
+        derive_directions(fns, {})
+        assert fns["f"]["directionReason"].startswith("In: writes member variable(s)")
+
+    def test_a_value_returned_still_means_out(self):
+        """Rule 2 is before the write rules: writing through a parameter does not make it In."""
+        from model_deriver import derive_directions
+
+        fns = {"f": {"qualifiedName": "C::take", "returnType": "int", "writesParams": ["p"]}}
         derive_directions(fns, {})
         assert fns["f"]["direction"] == "Out"

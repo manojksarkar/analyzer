@@ -14,6 +14,7 @@
 #include "Poly/Callbacks.h"
 #include "Flow/BuildMacros.h"
 #include "Direction/MemberWrites.h"
+#include "Direction/ParamWrites.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -159,6 +160,27 @@ PUBLIC int runMemberWriteTests() {
     return 0;
 }
 
+// Calls every ParamWrites function from another unit, so each has an interface row
+// and its Direction can be read (a write through a parameter, SWE3-UI-05).
+PUBLIC int runParamWriteTests() {
+    PwNode node = {3, 0};
+    int buf[4] = {0, 0, 0, 0};
+    PwList list;
+    list.pwDeleteNode(&node);
+    pwClearNode(&node);
+    pwResetNode(node);
+    pwFillBuffer(buf, 4);
+    pwStepFill(buf, 4);
+    pwClearViaCopy(&node);
+    pwMarkViaRef(&node);
+    pwWalk(&node);
+    pwByValue(node);
+    pwClearNext(&node);
+    pwPassOn(&node);
+    pwLambda();
+    return node.length + buf[0];
+}
+
 PUBLIC int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
@@ -175,6 +197,7 @@ PUBLIC int main() {
     int result13 = runCallbackTests();
     int result14 = flowBuildConfig(5);
     int result15 = runMemberWriteTests();
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13 + result14 + result15;
+    int result16 = runParamWriteTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12 + result13 + result14 + result15 + result16;
     return g_globalResult;
 }

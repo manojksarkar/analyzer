@@ -2483,16 +2483,10 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
         return
     elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
         ref = cursor.referenced
-        if is_write and ref and ref.kind == cindex.CursorKind.PARM_DECL:
-            # Reached with is_write=True through `*out = x` (the UNARY_OPERATOR
-            # deref falls through to the generic recursion, which preserves the
-            # flag) or through `w->id = x` (the MEMBER_REF_EXPR branch above
-            # recurses into its base with the flag still set).
-            # Only a pointer/reference parameter counts: assigning to a by-value
-            # parameter (`a = a - b`) writes a local copy the caller never sees.
-            ptype = (ref.type.spelling if ref.type else "") or ""
-            if ref.spelling and ("*" in ptype or "&" in ptype):
-                param_writes[current_key].add(ref.spelling)
+        # A parameter written through (`*out = x`, `w->id = x`) is recorded where the write
+        # is, by _note_object_write: it sees the whole left side, so it can tell `p->a = 1`
+        # from `p = p->next`, which moves the local copy only, and it reads the type itself,
+        # not its spelling -- `P_Node p` is a pointer too (SWE3-UI-05).
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
             _record_global_use(ref, current_key, is_write, is_compound)
         return
@@ -2571,6 +2565,14 @@ def _is_pointer_expr(cursor):
         return False
 
 
+def _is_array_expr(cursor):
+    try:
+        return _unwrapped(cursor).type.get_canonical().kind in (cindex.TypeKind.CONSTANTARRAY,
+                                                                cindex.TypeKind.INCOMPLETEARRAY)
+    except Exception:
+        return False
+
+
 def _is_own_object(cursor):
     """The object of a member expression is the method's own: `m_x` (no object written),
     `this->m_x`, `Base::m_x`."""
@@ -2579,9 +2581,10 @@ def _is_own_object(cursor):
 
 
 def _lvalue_root(cursor):
-    """The variable a write lands in, through `.`, `->`, `[]` and `*`: ("member", field) for a
-    member of the method's own object, ("global", var) for a global or a static member,
-    ("local", var, through_pointer) for a local variable; None for anything else."""
+    """The variable a write lands in, through `.`, `->`, `[]`, `*`, `*(p + i)` and `*p++`:
+    ("member", field) for a member of the method's own object, ("global", var) for a global or
+    a static member, ("local", var, through_pointer) for a local variable, ("param", var,
+    through_pointer) for a parameter; None for anything else."""
     through = False
     for _ in range(64):
         cursor = _unwrapped(cursor)
@@ -2605,15 +2608,26 @@ def _lvalue_root(cursor):
             cursor = kids[0]
         elif kind == cindex.CursorKind.UNARY_OPERATOR:
             kids = _expr_kids(cursor)
+            if len(kids) != 1:
+                return None
             try:
                 first = next(iter(cursor.get_tokens())).spelling
             except Exception:
                 first = ""
-            if first != "*" or len(kids) != 1:
+            if first == "*":
+                through = True
+            elif not (through and _is_inc_dec_op(cursor)):
+                return None                 # `*p++ = x` steps p and writes where it points
+            cursor = kids[0]
+        elif kind == cindex.CursorKind.BINARY_OPERATOR and through:
+            # `*(p + i) = x`: the write lands where the pointer (or the array) points.
+            kids = [k for k in _expr_kids(cursor) if _is_pointer_expr(k) or _is_array_expr(k)]
+            if len(kids) != 1:
                 return None
-            through = True
             cursor = kids[0]
         elif kind == cindex.CursorKind.DECL_REF_EXPR:
+            if ref is not None and ref.kind == cindex.CursorKind.PARM_DECL:
+                return ("param", ref, through)
             if ref is None or ref.kind != cindex.CursorKind.VAR_DECL:
                 return None
             par = ref.semantic_parent
@@ -2643,10 +2657,17 @@ def _record_member_write(field, current_key):
     member_writes[current_key].add(f"{par.spelling if par else ''}::{field.spelling}")
 
 
+def _reaches_caller(var, through):
+    """A write to the parameter `var` lands in the caller's object: made through its pointer
+    (`p->a`, `*p`, `p[i]`), or to a reference. `p = p->next` moves the local copy only, and
+    so does any write to a parameter passed by value."""
+    return through or _is_reference(var)
+
+
 def _note_object_write(lhs, current_key):
-    """A write to a member of the method's own object, or one through a local pointer or
-    reference to a global or an own member (SWE3-UI-05). A global written by name is
-    recorded by visit_global_access itself, as before."""
+    """A write to a member of the method's own object, to what a pointer or reference
+    parameter points at, or one through a local pointer or reference to any of these or to a
+    global (SWE3-UI-05). A global written by name is recorded by visit_global_access itself."""
     if not current_key:
         return
     root = _lvalue_root(lhs)
@@ -2654,6 +2675,9 @@ def _note_object_write(lhs, current_key):
         return
     if root[0] == "member":
         _record_member_write(root[1], current_key)
+    elif root[0] == "param":
+        if _reaches_caller(root[1], root[2]):
+            param_writes[current_key].add(root[1].spelling)
     elif root[0] == "local":
         var, through = root[1], root[2]
         # `p = q` moves the pointer; only `*p`, `p->a`, `p[i]` write what it points at. A
@@ -2663,14 +2687,17 @@ def _note_object_write(lhs, current_key):
         for target in _local_aliases.get((current_key, _local_id(var)), ()):
             if target[0] == "member":
                 _record_member_write(target[1], current_key)
+            elif target[0] == "param":
+                param_writes[current_key].add(target[1].spelling)
             else:
                 _record_global_use(target[1], current_key, True, False)
 
 
 def _alias_target(var, init, current_key):
     """What the local `var` points at when set from `init`: the root of `&x`, of an array
-    that decays (`int* q = m_tab;`), of the variable a reference binds to, or what another
-    local pointer points at (`q = p`). A pointer a function returns is not followed."""
+    that decays (`int* q = m_tab;`), of the variable a reference binds to, what another
+    local pointer points at (`q = p`), or what a pointer parameter points at (`q = pNode`).
+    A pointer a function returns is not followed."""
     init = _unwrapped(init)
     kids = _expr_kids(init)
     try:
@@ -2683,6 +2710,9 @@ def _alias_target(var, init, current_key):
         root = _lvalue_root(kids[0])
     else:
         root = _lvalue_root(init)
+        if root and root[0] == "param":
+            # A copy of the pointer itself; `q = pNode->next` points at another object.
+            return {("param", root[1])} if not root[2] and _is_pointer_expr(init) else set()
         try:
             decays = init.type.get_canonical().kind in (cindex.TypeKind.CONSTANTARRAY,
                                                         cindex.TypeKind.INCOMPLETEARRAY)
@@ -2694,6 +2724,10 @@ def _alias_target(var, init, current_key):
             return set()
     if not root:
         return set()
+    if root[0] == "param":
+        # `T* q = &pNode->a;`, `T& r = *pNode;`, `T& r = ref`: the caller's object. `&n` of a
+        # parameter passed by value is the local copy.
+        return {("param", root[1])} if _reaches_caller(root[1], root[2]) else set()
     if root[0] == "local":
         return set(_local_aliases.get((current_key, _local_id(root[1])), ()))
     return {root}
@@ -3346,7 +3380,9 @@ def build_metadata():
                 {"var": v, "structType": t, "field": f}
                 for v, t, f in sorted(fields_read)
             ]
-        written_params = param_writes.get(func_key, set())
+        # Its own parameters only: a lambda's are written in its body too.
+        written_params = param_writes.get(func_key, set()) & {
+            p.get("name") for p in f.get("parameters") or []}
         if written_params:
             functions_dict[fid]["writesParams"] = sorted(written_params)
 

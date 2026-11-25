@@ -3,7 +3,8 @@
 // Direction of a method that returns nothing (review SWE3-025, SWE3_WIKI SWE3-UI-05):
 // writing a member variable of its OWN object makes it In, like writing a global --
 // directly, through a method it calls on that object, or through a local pointer it points
-// there. Another object's member, and a pointer a function returns, do not count.
+// there. Another object's member does not count, unless the object is a parameter
+// (ParamWrites.h); nor does a pointer a function returns.
 // App/Main.cpp calls every public method here, so each one has an interface row.
 
 struct MwEntry { int a; };
@@ -33,7 +34,7 @@ public:
     void mwInsertX(int nodeid);            // In: s_block, a global, through a local pointer
     void mwMarkRow(int id);                // In: m_rows, through a local pointer
     void mwDump() const;                   // Out: reads only
-    void mwCopyTo(MwTable& other) const;   // Out: another object's member
+    void mwCopyTo(MwTable& other) const;   // In: other.m_used, through its parameter
     void mwResetHelper();                  // Out: another object's method
     void mwMarkFound(int id);              // Out: a pointer a function returns
 private:

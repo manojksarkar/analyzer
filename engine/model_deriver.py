@@ -1538,6 +1538,7 @@ def derive_directions(functions_data: dict, global_variables_data: dict) -> None
     #   2. else a non-void return value -> Out.
     #   3. else the global-access rule (3.4): writes a global (directly OR transitively) -> In,
     #      else writes a member variable of its own object (review SWE3-025) -> In,
+    #      else writes what a pointer or reference parameter points at (`pNode->n = 0`) -> In,
     #      else reads one -> Out, else Out. This is also the default when nothing above matches.
     # Runs after _propagate_global_access, so writesGlobalIdsTransitive is populated — a function
     # that writes a global only via a callee (e.g. indirectWrite, directionAdd) is correctly In,
@@ -1637,6 +1638,10 @@ def derive_directions(functions_data: dict, global_variables_data: dict) -> None
                         parts.append(f"{_member(m)} (via {', '.join(via) or 'a method'})")
                     fentry["directionReason"] = (
                         f"In: writes member variable(s) through its own methods: {'; '.join(parts)}.")
+            elif fentry.get("writesParams"):
+                fentry["direction"] = "In"
+                fentry["directionReason"] = (
+                    f"In: writes through parameter(s) {', '.join(sorted(fentry['writesParams']))}.")
             else:
                 fentry["direction"] = "Out"
                 if reads:
