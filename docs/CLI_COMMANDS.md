@@ -33,7 +33,7 @@ a full commit id. Each group links to its commands' sections below, the first ti
 **Once, on a new server** — [`setup`](#setup) · [`doctor`, `check-llm`](#doctor-check-llm-check-datadict)
 ```
 python analyzer.py setup        # create the database; after every pull, run it again: it upgrades
-python analyzer.py doctor       # clang, node, graphviz, browser installed?
+python analyzer.py doctor       # libclang, Node, the diagram tools, Chrome installed?
 python analyzer.py check-llm    # does the LLM answer?
 ```
 
@@ -1004,7 +1004,8 @@ python analyzer.py check-llm --raw --only description --max-tokens 256
 python analyzer.py check-datadict dd_layer1.csv --layer Layer1 --quiet
 ```
 
-`doctor` checks clang, node, graphviz and the browser before a long run stops on a missing one.
+`doctor` checks libclang, Node, the diagram tools (viz-js, puppeteer, mmdc), Chrome and the Arm
+compiler (when set) before a long run stops on a missing one.
 `check-llm` asks the model directly — the gateway or Ollama, whichever `llmServer.provider` names — so
 "no descriptions in the document" can be attributed to the model rather than the pipeline.
 `--only` takes `tiny`, `description` or `large` (or 1-3). With `speedups.llms` the tiny prompt
@@ -1134,9 +1135,15 @@ where a typo would silently match nothing:
 the API materialises `workspaces/<pid>/macros.json` from the project's
 `preprocessor_definitions`.
 
-**Include directories are discovered**, not listed. Every directory under a layer's `path` is
-walked into `model/clang_include_paths.json` automatically — you only need to declare ones that
-live *outside* your tree, like a third-party SDK.
+**Include directories and the build's flags come from each core's `compile_commands.json`**
+(`cores.<Core>.compileCommands`, the build of the commit you document): its `-I` folders, its `-D`
+macros (a macros file wins on a name) and its target flags — `--target`, `-mcpu`, `-mfpu`,
+`-fshort-enums` and the like, checked with libclang first (`clang.clangArgs` wins). Walking every
+folder under a layer's `path` instead is off unless `clang.includePathsFromProjectWalk` turns it on.
+
+**The compiler's own headers and macros** (`stdio.h`, `<cstring>`, `__ARMCC_VERSION`) are in no
+build file: when `armCompiler.path` in `config.local.json` names the compiler on this machine, each
+run asks it for them ([SETUP](SETUP.md) §3). Phase 1's log says what was added.
 
 ---
 

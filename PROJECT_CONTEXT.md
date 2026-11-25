@@ -84,10 +84,9 @@ newer entry and the code win.
   meet WCAG 2.2 AA in light and dark -- contrast, one focus ring, 11px minimum text, names, keyboard
   reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`.
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Accessibility".
-- **Live logs for superusers** (backend; 2026-10-06, branch `feat/live-logs`): one stream of API and
-  engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
-  is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),
-  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
+- **Live logs for superusers** (backend; 2026-10-06, branch `feat/live-logs`): one stream of API and engine log lines,
+  tail + SSE, read from per-process files under `logs/live/`. Built; the web page is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md),
+  [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md), [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
 - **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, on `refactor/config-separation`): LLM
   lanes, parse ahead, picture batches, each in ONE config.local.json block, `speedups` — empty = develop
   (2026-10-14d); a Claude API provider (2026-10-14f). [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md).
@@ -100,6 +99,7 @@ newer entry and the code win.
   [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md); decisions BACKLOG S3-10, S3-14…19; with the extension fix (S3-13);
   review triage: three verdicts, Defect / Gap / As per rule ([REVIEW_TRIAGE_SPEC](docs/spec/REVIEW_TRIAGE_SPEC.md)).
 - **Review SWE3_V4, V5**: [fix plan](docs/review/FIX_PLAN.md) -- of 31, 13 verified, 7 to verify (026, 027 in develop; 008, 012, 017, 025, 028 on `fix/review-rules`), 5 open, 6 nothing to do.
+- **The build's target flags and the Arm compiler** (2026-11-25b, `feat/armclang-toolchain`, not committed): `-mcpu` & co. from `compile_commands.json`, checked with libclang; `armCompiler.path` (config.local.json) adds the compiler's header folders and macros. [PARSE_AND_DERIVE](project-context/PARSE_AND_DERIVE.md) §10 "Target args"; [SETUP](docs/SETUP.md) §3.
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -154,9 +154,9 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   when it loads its config; `config.defaults.json` is how documents are made (`clang`, `views`,
   `llm`, `docx`), which a project's own settings win over. No written config (workspace, version,
   `versions.resolved_config`) holds a server setting. Before: three sources (2026-08-09).
-- **Per-layer inputs.** Macros as JSON, per layer (2026-08-07); the data dictionary per layer
-  (2026-08-18); include paths from each core's `compile_commands.json` (2026-09-02), the project-folder
-  walk only on request (2026-09-10); `clang.clangArgs` for cross-target parsing (2026-08-13).
+- **Per-layer inputs.** Macros as JSON, per layer (2026-08-07); the data dictionary per layer (2026-08-18); include paths
+  from each core's `compile_commands.json` (2026-09-02), the project-folder walk only on request (2026-09-10);
+  `clang.clangArgs` for cross-target parsing (2026-08-13); the build's target flags and the compiler's own headers and macros (2026-11-25b).
 - **Identity.** Group and component ids are layer-qualified (2026-09-06); one run may span layers
   (2026-09-07); a CLI version id is `<project>.<name>` (2026-09-24f).
 - **Flowcharts** render with Graphviz DOT, not Mermaid, with word-wrapped labels (2026-07-27,

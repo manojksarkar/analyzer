@@ -29,7 +29,10 @@
     (written by `run.py` before Phase 1) and appends `-I<dir>` for every
     directory across all layers. No manual listing in `clang.clangArgs` needed
     for directories already declared in `layers` config.
-  - Any extras from `config.clang.clangArgs`.
+  - **The layer's target args** (2026-11-25, "Target args" below) -- between the fixed args
+    (`_CLANG_BASE`: `-x c++ -std=c++14 -I…` and the visibility `-D`s) and the next item, so a
+    project's own flags win.
+  - Any extras from `config.clang.clangArgs` (`_CLANG_EXTRA`).
   - **User macros** (`--macros <path>` global, `--macros-layer <layer> <path>` per
     layer, or `clang.macrosFile` / `clang.macrosByLayer` in config) — read by
     `core/macro_input.py` from CSV or any accepted JSON shape, then written to
@@ -74,6 +77,39 @@ come from the same AST. It is always on, with no config switch.
   unchanged source hashes carried descriptions, behaviour names and unit diagrams forward. On an
   ordinary run it adds nothing, because a call set that moved with its source is seeded already.
   Tests: `tests/unit/test_parse_keep_going.py`.
+
+### Target args — the build's flags and the compiler's own (2026-11-25)
+
+How code reads depends on more than `-I` and `-D`. The build's CPU sets `__ARM_ARCH` (measured:
+`--target=arm-none-eabi` alone is an ARMv4T, `__ARM_ARCH` 4; the build's `-mcpu=cortex-m7 -mfpu=none
+-mfloat-abi=soft` make it 7 and change 63 lines of the predefined macros), and the compiler that builds the code (armclang) brings the C/C++ library
+headers (`stdio.h`, `<cstring>`; LLVM's `includePath` has only `stddef.h`, `stdint.h` …) and macros
+of its own (`__ARMCC_VERSION`). `_settle_target_args`, first thing in `main()`:
+1. **The build's flags** (`model/clang_build_flags.json`, run.py step 1c) are checked with libclang
+   (`_flags_libclang_takes`): an empty file must parse without an error -- measured, an unknown
+   `-mcpu=` or `--target` makes EVERY TU fail to load -- whole first, then one by one with the ones
+   kept before it (`-marm` fails only after a Cortex-M `-mcpu`). A flag left out is logged.
+2. **The compiler** (`armCompiler.path`, config.local.json; `core/toolchain.py`) is asked once per
+   set of target flags -- the layer's, then `clang.clangArgs`' (`query_flags`) --
+   `<path> <flags> -x c++ -std=c++14 -E -dM -v -` with empty input, no shell (Windows and Linux).
+   Its `#include <...>` search list becomes `-isystem<dir>` (those on this machine), and its
+   `#define`s that libclang does not define with the same flags (`_libclang_macro_names`: an empty
+   parse's macro definitions from no file) become `-D` -- one both define keeps libclang's value.
+   A compiler that is not there, fails (a license), times out (60 s) or prints no search list
+   (armcc) adds nothing; the log says why. A layer the build gave no flags takes the `"*"` answer.
+   The compiler named in `compile_commands.json` is never started: that file comes with a project
+   (a web upload, a repository), so it could name any program on the server; only the server's
+   own setting names one. run.py logs the name, to say what to set.
+3. `_TARGET_ARGS_BY_LAYER` (`{layer|"*": [arg]}`) goes into every TU's args (`target_args_for_layer`;
+   a file with no layer takes the first layer's by name), into `_fingerprint_args` (as
+   `--layer-target=<layer>` + its args: none, no change, so a project without build flags keeps
+   its fingerprint), and to `model/clang_target_args.json`, which the flowchart view puts before
+   `clang.clangArgs` (`views/flowcharts._target_args_for_layers`). Every arg is one argument
+   (`-isystem<dir>`, `-include<file>`), so no reader that dedupes args can split a pair.
+
+Tests: `tests/unit/test_toolchain.py`, `test_compile_commands.py` (flags), `test_flowcharts_macro_scope.py`.
+Fixture `SampleCppProject/Layer1/Diag/ArmTarget.cpp`: `ArmV7Barrier` exists only for a v7 CPU,
+`ArmCompilerOnly` only with armclang asked (else `ArmOtherCompiler`).
 
 ### Visibility detection (`_detect_visibility`, `_function_visibility`, `_global_visibility`)
 

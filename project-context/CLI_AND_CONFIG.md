@@ -86,6 +86,17 @@ After parsing flags, run.py:
    removed when no core gives one. `parser.py` reads it as its FIRST macro source, so every macros
    file (`--macros`, `--macros-layer`, `clang.macrosFile`, `layers.<L>.macros`) wins on a name. It
    needs the `compile_commands.json` of the build for the commit the run reads.
+1c. **Layer target flags from the build** (2026-11-25) — each core's `--target`, `-mcpu`, `-march`,
+   `-mfpu`, `-mfloat-abi`, thumb/arm, endianness, unaligned access, `-mcmse`, enum / wchar size,
+   char sign, `-ffreestanding`, `-fms-extensions`, `-fdeclspec` (`core/compile_commands.target_args`;
+   measured one by one: each changes libclang's predefined macros or what it accepts) and
+   `-include <file>` (moved onto the checkout like an `-I` dir; one not here is named) -- the set
+   most files use, per layer (`load_flags`; files with another set are named) -- written to
+   `model/clang_build_flags.json` as `{layer: [arg]}`, or removed. Not read: `-O`, position
+   independence, `-fno-rtti` / `-fno-exceptions` (they reject `typeid` / `try`; code built with them
+   has none, the sample does), `-std` / `-x` (the parser's own C++14). With no `armCompiler.path`
+   and a database naming its compiler (`compiler_name`), the log says to set it. Phase 1 checks the
+   flags and adds the compiler's own: PARSE_AND_DERIVE §10 "Target args".
 2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
    `format_llm_config_banner` to the log so the operator sees exactly which
    provider, baseUrl, model, `numCtx`, resolved `maxContextTokens`, retries,
@@ -145,17 +156,18 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 
 | Source | Holds | Tracked |
 |---|---|---|
-| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`), `paths` (`workspaces`: where the per-project workspaces are; 2026-10-31c) | **gitignored** |
+| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `armCompiler` (`path`: the compiler that builds the code, on this machine; optional, 2026-11-25), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`), `paths` (`workspaces`: where the per-project workspaces are; 2026-10-31c) | **gitignored** |
 | `engine/config/config.defaults.json` | **HOW DOCUMENTS ARE MADE.** `clang` (`clangArgs`, `includePathsFromProjectWalk`), `views`, `llm` (`descriptions`, `behaviourNames`, `summarize`, `enrichment`, `cacheVersion`, the prompt inputs), `docx`, the sample's `cores` / `layers`, `logs`, `ui` | yes |
 | a project — `projects.build_config`, or a CLI project's `workspaces/<pid>/config.json` | its own `clang`, `llm`, `views`, `docx`, `layers`, `cores`: they win over the defaults, and over what config.local.json says of the same | DB / workspace |
 | a version — `versions.resolved_config`, `versions/<vid>/config.json` | the config its run started with, so a resume runs as it began | DB / workspace |
 
 **No block name is in both files, and no server setting is in a project's or a version's
-config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the seven, `paths` since 2026-10-31c),
-`RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `speedups` — the three a run reads through its config),
+config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the eight, `paths` since 2026-10-31c,
+`armCompiler` since 2026-11-25), `RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `armCompiler`, `speedups` — the four a
+run reads through its config),
 `LLM_SERVER_KEYS`, `LLVM_KEYS_BEFORE`. Guard: `tests/unit/test_core_config.py`
 `TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds
-the five blocks and nothing else).
+the server blocks and nothing else).
 
 Why (review, 2026-10-13: "there are config files in the workspace, the project, the version —
 which one do I update?"): until then `llm` held both kinds, the defaults carried a server
@@ -166,8 +178,8 @@ Resolution:
 - **`load_config(engine_dir)`** deep-merges `config.defaults.json` then `config.local.json`
   (`core.config._deep_merge` — nested dicts merge per key, scalars/lists replace; a machine may
   still override a default there, e.g. `views.flowcharts`), then **`with_server_settings`**:
-  `llmServer`, `llvm` and `parse` are config.local.json's as they are now, and whatever else
-  held those names is dropped (so a block put in the defaults is not read).
+  the `RUN_SERVER_BLOCKS` are config.local.json's as they are now, and whatever else held those
+  names is dropped (so a block put in the defaults is not read).
 - **`ANALYZER_CONFIG=<file>`** (set by `run.py --config`) loads that file's analysis settings as
   they are — no merge of config.local.json over them — and then the same `with_server_settings`.
   This is how a per-project/per-version config reaches the analyzer and every phase subprocess
@@ -249,6 +261,7 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db`, `llmS
     "libPath":     "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
+  "armCompiler": { "path": null },       // the compiler that builds the code, here; null: none asked
   "speedups": {                          // the speed study's; each key not set = develop's way
     "llms":           [],                 // more tickets or keys side by side; [] = llmServer's one ticket
     "pacing":         "after",            // "after" | "start": the gap counted from a call's end or start

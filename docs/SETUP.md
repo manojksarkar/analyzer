@@ -10,13 +10,15 @@ says otherwise.
 |---|---|---|
 | Python | 3.12 or newer | engine, API, tests |
 | Node.js + npm | 20.19 / 22.12 or newer | web app; diagram rendering (Mermaid, Graphviz via WASM) |
-| LLVM (libclang) | 17 | C++ parsing — default path `C:\Program Files\LLVM\bin\libclang.dll` |
-| Google Chrome | any recent | draws the Mermaid diagrams (through puppeteer) |
-| Git | any recent | the API clones project repositories |
+| LLVM (libclang) | 17 or newer (21.1.8 on 2026-11-25) | C++ parsing — default path `C:\Program Files\LLVM\bin\libclang.dll` |
+| Google Chrome | any recent | draws the flowchart pictures and the Mermaid diagrams (through puppeteer) |
+| Git | any recent | clones project repositories; incremental runs |
 | PostgreSQL | 16 | the database — or Docker, or SQLite for a local try-out (§4) |
 | Ollama + `llama3.2` | optional | the LLM that writes descriptions; any gateway works instead (§3) |
+| Arm Compiler 6 (`armclang`) | optional, the build's version | the compiler that builds the code: its header folders and macros join the parse (§3) |
 
-Graphviz does not need installing: flowcharts are drawn by `@viz-js/viz` (npm).
+Graphviz does not need installing: flowcharts are drawn by `@viz-js/viz` (npm). Neither does
+Microsoft Word: the documents are written by `python-docx`.
 
 ## 2. Install
 
@@ -31,16 +33,32 @@ cd ..
 `requirements.txt` is the complete Python set (engine, API, tests). The root `npm install` brings
 the diagram tools (`@mermaid-js/mermaid-cli`, `puppeteer`, `@viz-js/viz`); the second one the web app.
 
+### Without internet
+
+Nothing above downloads at run time except what is listed here; bring it from a machine that has
+network, with the same operating system and Python version:
+
+| What | Where there is network | On this machine |
+|---|---|---|
+| Python packages | `pip download -r requirements.txt -d wheels` | `pip install --no-index --find-links wheels -r requirements.txt` |
+| npm packages | `npm install` in the repo root and in `web-app/`, then copy both `node_modules` folders | put them in the same places; or `npm install` with `PUPPETEER_SKIP_DOWNLOAD=1`, so puppeteer does not fetch its own Chromium |
+| Chrome, LLVM, Git, PostgreSQL | their offline installers | install; Chrome's path goes in `engine/config/puppeteer-config.json` (§3) |
+| Mermaid in docker (optional) | `docker save minlag/mermaid-cli` | `docker load -i` (§3) |
+
+Leave `tiktoken` out (`pip uninstall tiktoken`): it is optional, and fetches its tables from the
+internet on first use; without it token counts are estimated from the text's length. The web app
+needs no internet either: its fonts and icons come with the npm packages.
+
 ## 3. Configure
 
 There are two config files, one per kind of setting:
 
 | File | Holds |
 |---|---|
-| `engine/config/config.local.json` (gitignored) | **this server**: its database (`db`), sign-in (`auth`), repository folders (`repositories`), LLM server (`llmServer`), LLVM install (`llvm`) and how many files it parses at once (`parse`) |
+| `engine/config/config.local.json` (gitignored) | **this server**: its database (`db`), sign-in (`auth`), repository folders (`repositories`), LLM server (`llmServer`), LLVM install (`llvm`), the compiler that builds the code (`armCompiler`), its speed-ups (`speedups`) and where the workspaces are (`paths`) |
 | `engine/config/config.defaults.json` (tracked) | **how documents are made**: parse flags, views, what the LLM writes, document texts |
 
-The server's six blocks are read from `config.local.json` only, by every run, when it starts: a
+The server's blocks are read from `config.local.json` only, by every run, when it starts: a
 change there applies to the next run of every project. Start from the template:
 
 ```
@@ -56,6 +74,14 @@ copy engine\config\config.local.json.example engine\config\config.local.json
   descriptions stay empty), and any other run stops at its start and says so.
 - **`llvm`** — where LLVM is: `libPath` (the libclang library) and `includePath` (Clang's own
   headers, in the folder of the installed version, e.g. `...\lib\clang\17\include`).
+- **`armCompiler`** (optional) — `path`: the compiler that builds the code, on this machine, e.g.
+  `C:\<Arm Compiler 6 folder>\bin\armclang.exe` (on Linux its Linux build). libclang reads the
+  code, but the C and C++ library headers (`stdio.h`, `string.h`, `<cstring>`) and the macros the
+  compiler defines itself (`__ARMCC_VERSION`) come with that compiler; each run asks it for both
+  and adds them to the parse. Without it the parse log can say `'stdio.h' file not found`, and
+  code under an `#if` on such a macro is read as the build does not. The build's own flags
+  (CPU, `-D`, include folders) come from each core's `compile_commands.json`, not from here. A
+  clang- or gcc-style compiler only: not `armcc` (Arm Compiler 5).
 
 `python analyzer.py doctor` says which of these this machine has set.
 
@@ -101,7 +127,8 @@ python analyzer.py doctor
 python analyzer.py check-llm
 ```
 
-`doctor` checks Python packages, Node, the npm tools, Chrome and libclang, and names what is missing.
+`doctor` checks Python packages, Node, the npm tools, Chrome, libclang and the Arm compiler (when
+set), and names what is missing.
 `check-llm` sends three prompts to the configured LLM. On this machine a local Ollama answered in
 3–105 s per prompt — which is why a first run with the LLM on takes long (§6).
 
@@ -144,8 +171,8 @@ finds the API at `http://localhost:8000/api/v1`; for another address, set `VITE_
 `web-app/.env` (see `web-app/.env.example`).
 
 The project list shows only projects you are a member of. A project created in the web app makes you
-its admin; a project onboarded with `analyzer.py onboard` has no members, so it does not appear, and
-develop has no command to add one yet (`review_update_v2` adds `analyzer.py grant`).
+its admin; a project onboarded with `analyzer.py onboard` has no members until
+`analyzer.py grant` adds one (a superuser sees every project).
 
 Then: **New Project** (the wizard) → **Run Analysis** on the Overview page → the documents appear under
 **Documents** when the run completes. A run with the LLM on takes as long as the LLM needs — the
@@ -184,6 +211,8 @@ only the app's start-up reaches the configured one (it adds `admin@aspice.dev` i
 | `setup` cannot reach or create the database | is PostgreSQL running; can the `db` user `CREATE DATABASE`; is `DATABASE_URL` set to something else |
 | A run fails straight away | the red banner on the Overview page shows the error; `python analyzer.py doctor` |
 | A run sits in Phase 2 for a long time | the LLM (§3, §5) — the progress bar shows how far it is |
+| The Phase 1 log says `header(s) not found -- …: stdio.h, string.h …` | the compiler's own headers: set `armCompiler.path` (§3) |
+| The Phase 1 log says `libclang does not take … from compile_commands -- left out` | a build flag this libclang does not know (a CPU name, say); the parse goes on without it. A newer LLVM may know it |
 | The web app says "Failed to fetch" | is the API running, and on the address the web app expects (§6) |
 | Port 8000 or 5173 is in use | `start-app --api-port <n> --web-port <n>`; by hand, `--port <n>` for the API and `npm run dev -- --port <n>` for the web app, with `VITE_API_URL` to match |
 | The browser shows the old UI, or the old API answers, after a `git pull` | `start-app --status` names what runs on the ports: its folder, commit and database, and the API the web app calls. `start-app` restarts both cleanly. A folder copied over an older one keeps files the new code deleted, and `start-app` moves those aside |

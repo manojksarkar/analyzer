@@ -336,7 +336,9 @@ section.
 Wraps the **real flowchart engine** under `engine/flowchart/`. Steps:
 
 1. Resolves `out_dir = output_dir/flowcharts/`.
-2. Builds clang args in three layers (in order):
+2. Builds clang args in four layers (in order):
+   - The layer's target args, `model/clang_target_args.json`: Phase 1's (build flags, the
+     compiler's folders and macros; 2026-11-25).
    - Manual `clang.clangArgs` from config (if set).
    - `-I<basePath>` from `metadata.json` (always added).
    - **Layer-scoped paths** from `model/clang_include_paths.json` via
@@ -571,8 +573,8 @@ old code path), so no existing graph moves. SWE.4's Test Steps come from the sam
 Still lost, by nature: a `#if` / `#ifdef` branch on a macro of the missing header. Defining a
 host macro (`_WIN32`) in `clang.clangArgs` does not make a header reachable; it switches the
 code's own `#ifdef _WIN32` branches on and its target branches off. The fix for a missing header
-is its include directory (`-isystem <toolchain>/include` in `clang.clangArgs`, or the core's
-`compileCommands`). Phase 1's summary names every header not found, with how many TUs asked for
+is its include directory: `armCompiler.path` (the compiler's own, 2026-11-25), `-isystem <dir>`
+in `clang.clangArgs`, or the core's `compileCommands`. Phase 1's summary names every header not found, with how many TUs asked for
 it (`parser._diag_missing_headers`, 2026-10-14k): `N header(s) not found -- add their folders ...:
 stdio.h (12 files), ...`. Tests: `tests/unit/test_cfg_missing_header.py`; fixture
 `SampleCppProject/Layer1/Diag/MissingHeaderSwitch*.cpp`.
