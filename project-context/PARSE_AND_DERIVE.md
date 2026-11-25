@@ -268,7 +268,8 @@ that applies — the parser's `build_metadata` value above is only the rule-3 fa
 2. **Non-void return** (`returnType` present and ≠ `"void"`; `void *` counts as a value)
    → **Out** (data flows out through the return value).
 3. **Global-access fallback (the 3.4 rule).** Writes a global directly or transitively
-   → **In**; else writes a member variable of its own object (below) → **In**; else reads
+   → **In**; else writes a member variable of its own object (below) → **In**; else writes
+   through a pointer or reference parameter (below) → **In**; else reads
    a global → **Out**; else **Out** (pure). Reuses
    `writesGlobalIdsTransitive`/`readsGlobalIdsTransitive`.
 
@@ -294,9 +295,29 @@ member (`p = m_ptr`) are not followed. A global written this way goes into
 `writesGlobalIds`, so it also reaches Input/Output Name and the LLM's prompts; publication
 does not move, because taking the address already counted as a read.
 
+**Parameters (2026-11-25).** `writesParams` — the parameters a function writes THROUGH:
+`p->a = …`, `*p = …`, `p[i] = …`, `*(p + i) = …`, `*p++ = …`, `r = …` / `r.a = …` for a
+reference, and through a local copy (`T* q = p; q->a = 0;`, `T& r = *p;`). Recorded by
+`_note_object_write` from `_lvalue_root`'s `("param", var, through)` root, so the type is
+read, not its spelling (`P_Node p` is a pointer), and `p = p->next` (moves the copy) or a
+write to a by-value parameter is not one. Before, the DECL_REF walk recorded any write
+reaching a `*`/`&`-SPELLED parameter: it missed typedef pointers and counted pointer moves.
+`build_metadata` keeps the function's own parameters only (a lambda's are walked in its
+body). Rule 3 reads it after globals and members: `In: writes through parameter(s) …`.
+Not followed: a parameter passed on to a function that writes it (`clear(p)`), and a copy
+of a pointer read from the object (`T* q = p->next;`). SWE.4's Expected Results reads the
+same field (`test_specs._out_parameter_entries`), but `_is_out_parameter` still reads the
+spelling, so a typedef-pointer parameter stays an Input there. Fixture
+`Direction/ParamWrites.{h,cpp}`; `MwTable::mwCopyTo(MwTable& other)` is now In.
+
 Limits: a constructor is not walked (as for globals); `memset(&m_x, …)` and a class-typed
-`operator=` are calls, not writes. A version made before 2026-11-24 has neither field: an
-incremental run keeps those methods Out until a Fresh run.
+`operator=` are calls, not writes; an assignment inside a macro (`SET(m_x)`) is not seen,
+for globals too (measured 2026-11-25; why is to check -- `_is_assign_op` and
+`_is_inc_dec_op` read tokens); a return type spelled by a typedef (`typedef void VOID;`) is
+not `void` to rule 2, so such a function is `Out: returns a value (VOID).` before any
+write is read. A version made before 2026-11-24 has neither member field, and one made
+before 2026-11-25 the old `writesParams`: an incremental run keeps them for the files it
+does not re-parse (the parse fingerprint holds no parser version) until a Fresh run.
 
 **`directionReason` (audit trail).** Alongside `direction`, the same loop writes a
 human-readable `directionReason` on every function and global so the decision is
@@ -312,6 +333,8 @@ field). Forms:
 - `In: writes member variable(s) <names> directly.` — rule 3, own members.
 - `In: writes member variable(s) through its own methods: <m> (via <method(s)>); …` — rule 3,
   own members written only by methods it calls on its own object.
+- `In: writes through parameter(s) <names>.` — rule 3, through a pointer or reference
+  parameter.
 - `Out: reads global(s) <names> but writes none.` — rule 3.
 - `Out: accesses no globals (reads none, writes none).` — rule 3, pure function.
 - Globals: `In/Out: global variables are bidirectional interfaces.`

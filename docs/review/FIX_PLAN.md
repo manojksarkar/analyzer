@@ -66,6 +66,6 @@ branch `fix/review-rules`, not in develop yet.
 | SWE3-022 | Orphan header's enum in the wrong unit | Listed once, in the first unit that uses it (SWE3-UH-04) | — |
 | SWE3-023 | Enum in one component only | Same rule (SWE3-UH-04) | — |
 | SWE3-024 | Input name missing or incomplete | First parameter, else a global, else `<Function> input` (SWE3-FD-03) | — |
-| SWE3-025 | Direction Out without a global write | Rule changed (SWE3-UI-05 rows 3–4, to agree): a method that writes a member variable of its own object -- itself, through its own methods, or through a local pointer or reference -- is In; a global written through a local pointer too. SWE.4's half (member variables in Precondition, Input, Expected Results) not done | to verify |
+| SWE3-025 | Direction Out without a global write | Rule changed (SWE3-UI-05 rows 3–4, to agree): a method that writes a member variable of its own object -- itself, through its own methods, or through a local pointer or reference -- is In; a global written through a local pointer too. 2026-11-25: also a write through a pointer or reference parameter (`pNode->length = …`, the review's DeleteSomething), a typedef pointer included. SWE.4's half (member variables in Precondition, Input, Expected Results) not done | to verify |
 | SWE3-029 | Interface lists only callers from the same component | Any other unit, of any component, gives a row (SWE3-UI-01) | — |
 | SWE3-031 | Protected global has no unit header row | Listed whatever its access (SWE3-UH-01.2). Need the example | to check |

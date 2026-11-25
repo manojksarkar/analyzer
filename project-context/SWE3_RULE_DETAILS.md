@@ -76,6 +76,11 @@
   reference binding or another such local; not one a function returns, nor a copy of a pointer member. A
   constructor, `memset(&m_x, …)` and a class-typed `=` (an `operator=` call) do not count. Fixture:
   `Direction/MemberWrites.{h,cpp}`.
+- Direction, parameters (2026-11-25): a write THROUGH a pointer or reference parameter counts --
+  `pNode->a`, `*p`, `p[i]`, `*(p + i)`, `*p++`, `r.a` / `r = …` for a reference, and through a local copy
+  (`T* q = pNode;`, `T& r = *pNode;`); a typedef pointer (`P_Node pNode`) is a pointer. Moving the pointer
+  (`p = p->next`), writing a by-value parameter, passing it on (`clear(p)`) and a copy of a pointer read
+  from it (`T* q = p->next;`) do not. Fixture: `Direction/ParamWrites.{h,cpp}`.
 - Source/Destination is separated by `, `; units of the same component count, the function's own unit is
   left out. Callers only, because each relationship between two units is written once, on the side that
   provides the function.
