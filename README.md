@@ -6,11 +6,15 @@ Test Specification** (DOCX).
 
 ## Quick start
 
-Installation, dependencies, configuration and every command: **[docs/SETUP.md](docs/SETUP.md)**. In short:
+Installation, dependencies (what to install: [SETUP §1](docs/SETUP.md#1-what-you-need)), configuration
+and every command: **[docs/SETUP.md](docs/SETUP.md)**. In short:
 
 ```
 pip install -r requirements.txt
 npm install
+cd web-app
+npm install
+cd ..
 python analyzer.py setup
 python analyzer.py doctor
 ```
