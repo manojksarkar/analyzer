@@ -10,7 +10,8 @@ Rules to agree: [RULE_DECISIONS](RULE_DECISIONS.md).
 | Verified at the review site | 13 | 001–007, 009–011, 013, 014, 030 |
 | To verify | 7 | 008, 012, 017, 025, 026, 027, 028 |
 | Open | 5 | 015, 016, 019, 021, 031 |
-| Nothing to do (as per rule) | 6 | 018, 020, 022, 023, 024, 029 |
+| Nothing to do (expected) | 6 | 018, 020, 022, 023, 024, 029 |
+| Nothing to do (incorrect observation) | 0 | — |
 | **Total** | **31** | |
 
 ## To verify
@@ -49,17 +50,17 @@ One run checks all seven: branch `fix/review-rules` (develop is in it), generate
 | SWE3-015 | Defect | Flowchart: wording should change | Reviewers correct it in the app | open: the reviewers |
 | SWE3-016 | Gap | A file with only types or macros gets no unit | Agree the rule, then build (on hold) | open: decide |
 | SWE3-017 | Gap | Code under an `#if` that is off is missing | Each layer's macros start from the build's `-D` flags; a macros file wins on a name | to verify |
-| SWE3-018 | As per rule | Need a proper data dictionary | Data Range comes from the project's data dictionary (SWE3-UI-04) | — |
-| SWE3-019 | As per rule | Public inline functions shown | Public = another unit calls it (SWE3-UI-01). Planned: Hide per function (BACKLOG WA-1) | open: later |
-| SWE3-020 | As per rule | Globals in both unit header and interface | Unit header lists all; interface the used ones | — |
-| SWE3-021 | As per rule | A function no other unit calls is not shown | Not public (SWE3-UI-01). Planned: Show per function (BACKLOG WA-1) | open: later |
-| SWE3-022 | As per rule | Orphan header's enum in the wrong unit | Listed once, in the first unit that uses it (SWE3-UH-04) | — |
-| SWE3-023 | As per rule | Enum in one component only | Same rule (SWE3-UH-04) | — |
-| SWE3-024 | As per rule | Input name missing or incomplete | First parameter, else a global, else `<Function> input` (SWE3-FD-03) | — |
-| SWE3-025 | As per rule | Direction Out without a global write | Rule changed, to agree (SWE3-UI-05): writing its own member, or through a pointer or reference parameter, makes it In. SWE.4's half not done | to verify |
+| SWE3-018 | Expected | Need a proper data dictionary | Data Range comes from the project's data dictionary (SWE3-UI-04) | — |
+| SWE3-019 | Expected | Public inline functions shown | Public = another unit calls it (SWE3-UI-01). Planned: Hide per function (BACKLOG WA-1) | open: later |
+| SWE3-020 | Expected | Globals in both unit header and interface | Unit header lists all; interface the used ones | — |
+| SWE3-021 | Expected | A function no other unit calls is not shown | Not public (SWE3-UI-01). Planned: Show per function (BACKLOG WA-1) | open: later |
+| SWE3-022 | Expected | Orphan header's enum in the wrong unit | Listed once, in the first unit that uses it (SWE3-UH-04) | — |
+| SWE3-023 | Expected | Enum in one component only | Same rule (SWE3-UH-04) | — |
+| SWE3-024 | Expected | Input name missing or incomplete | First parameter, else a global, else `<Function> input` (SWE3-FD-03) | — |
+| SWE3-025 | Expected | Direction Out without a global write | Rule changed, to agree (SWE3-UI-05): writing its own member, or through a pointer or reference parameter, makes it In. SWE.4's half not done | to verify |
 | SWE3-026 | Defect | Dynamic behaviour missing: calls through `->` | Pointer-field calls linked; every call not linked is logged | to verify |
 | SWE3-027 | Defect | Indirect dispatch call not found | A call through a function pointer reaches what is stored in it (rule SWE3-UI-01.6, to agree) | to verify |
 | SWE3-028 | To check | A function in the interface table of the unit that calls it; overrides | A virtual call reaches the method it names and the overrides below it | to verify |
-| SWE3-029 | As per rule | Interface lists only callers from the same component | Any other unit, of any component, gives a row (SWE3-UI-01) | — |
+| SWE3-029 | Expected | Interface lists only callers from the same component | Any other unit, of any component, gives a row (SWE3-UI-01) | — |
 | SWE3-030 | Defect | Dynamic behaviour: descriptions not by the LLM | Tried again, a second round, logged | verified |
-| SWE3-031 | As per rule | Protected global has no unit header row | Listed whatever its access (SWE3-UH-01.2) | open: need the example |
+| SWE3-031 | Expected | Protected global has no unit header row | Listed whatever its access (SWE3-UH-01.2) | open: need the example |

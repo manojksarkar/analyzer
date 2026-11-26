@@ -97,9 +97,9 @@ newer entry and the code win.
   speed-ups as the default, SG-8 the rest of Pause (once NW-2, NW-8, NW-1).
 - **SWE3_WIKI rewritten** (2026-11-05i…k, `docs/swe3-rule-tables`, in develop 2026-11-06): 28 rules for three teams; details in
   [SWE3_RULE_DETAILS.md](project-context/SWE3_RULE_DETAILS.md); decisions BACKLOG S3-10, S3-14…19; with the extension fix (S3-13);
-  review triage: three verdicts, Defect / Gap / As per rule ([REVIEW_TRIAGE_SPEC](docs/spec/REVIEW_TRIAGE_SPEC.md)).
+  review triage: four verdicts, Defect / Gap / Expected / Incorrect observation (2026-11-26) ([REVIEW_TRIAGE_SPEC](docs/spec/REVIEW_TRIAGE_SPEC.md)).
 - **Review SWE3_V4, V5**: [fix plan](docs/review/FIX_PLAN.md) -- of 31, 13 verified, 7 to verify (026, 027 in develop; 008, 012, 017, 025, 028 on `fix/review-rules`), 5 open, 6 nothing to do.
-- **The build's target flags and the Arm compiler** (2026-11-25b, `feat/armclang-toolchain`, not committed): `-mcpu` & co. from `compile_commands.json`, checked with libclang; `armCompiler.path` (config.local.json) adds the compiler's header folders and macros. [PARSE_AND_DERIVE](project-context/PARSE_AND_DERIVE.md) §10 "Target args"; [SETUP](docs/SETUP.md) §3.
+- **The build's target flags and the Arm compiler** (2026-11-25b, `feat/armclang-toolchain`, pushed): `-mcpu` & co. from `compile_commands.json`, checked with libclang; `armCompiler.path` (config.local.json) adds the compiler's header folders and macros. [PARSE_AND_DERIVE](project-context/PARSE_AND_DERIVE.md) §10 "Target args"; [SETUP](docs/SETUP.md) §3.
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

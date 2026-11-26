@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-26 | Review triage: a fourth verdict, Incorrect observation; As per rule is now Expected | [16](16-2026-10-30.md) |
 | 2026-11-25b | The build's target flags and the compiler's own headers and macros reach the parse | [16](16-2026-10-30.md) |
 | 2026-11-25 | Direction: a function that writes through a pointer or reference parameter is In | [16](16-2026-10-30.md) |
 | 2026-11-24d | Tools follow the review fixes | [16](16-2026-10-30.md) |

@@ -273,7 +273,7 @@ follow our rules. To answer with data:
    UI, FD, DB, FX; 135 rules merged to 28, the drift fixed on the way.
 2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; TEST_INVENTORY lists the tests by the new rule ids.
 3. Each comment gets a section and one Issue ID (`SWE3-011`); the issue list gives each issue its
-   verdict (Defect, Gap, As per rule) and rule, and Defect and Gap count against -- [REVIEW_TRIAGE_SPEC](spec/REVIEW_TRIAGE_SPEC.md) (2026-11-09).
+   verdict (Defect, Gap, Expected, Incorrect observation) and rule, and Defect and Gap count against -- [REVIEW_TRIAGE_SPEC](spec/REVIEW_TRIAGE_SPEC.md) (2026-11-09).
 4. Per section: the review's score, the count per verdict, and the score with the comments that are not
    counted against given back -- the formula is in the same spec.
 Steps 3–4 are done with the review's sheet, which stays with the team; a triage tool is being built.

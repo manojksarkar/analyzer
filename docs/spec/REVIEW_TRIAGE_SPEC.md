@@ -31,7 +31,7 @@ The output: [five tables](#output). A [full example](#example) is at the end.
 
 - A review row with several points has one part per point (`P1`, `P2`); each part is one comment.
 - An Issue ID is a running number (`SWE3-NNN`), in the order the issues were raised; the review
-  that raised it is its `Raised in`. It is never reused or renumbered.
+  that raised it is its `Raised in`, by its version (`V4`): the list is SWE.3's. It is never reused or renumbered.
 - A Review ID starts with its review (`SWE3_V4_`), then the reviewers' row and part. Once the IDs
   are given, the sheet's rows do not move: a new comment goes at the end.
 
@@ -43,11 +43,14 @@ The output: [five tables](#output). A [full example](#example) is at the end.
 |---|---|---|
 | **Defect** | the document is wrong, its LLM wording included | the tool is fixed, or the text is corrected in the app |
 | **Gap** | no rule covers the case | a rule is written, then the tool follows it |
-| **As per rule** | the document is right; the reader expected something else | the answer names the rule |
+| **Expected** | the document is right: it does what a rule says; the reader wanted something else | the answer names the rule |
+| **Incorrect observation** | the document is not as the comment says: what it calls missing or wrong is there and right | the answer points to where it is |
 
 - A Defect breaks a rule, so it always has a Rule ID. A case no rule decides is a Gap.
-- A misread or a question the rules answer is **As per rule**; a question they do not answer is a **Gap**.
-- A request for another design, where the document follows its rule, is **As per rule** too: the rule is
+- Check the document first. What the comment describes is not in it: **Incorrect observation**. It is
+  there: Defect, Gap or Expected, by the rules.
+- A question the rules answer is **Expected**; a question they do not answer is a **Gap**.
+- A request for another design, where the document follows its rule, is **Expected** too: the rule is
   talked about again with the reviewers (the agenda, under [Output](#output)).
 - A verdict is never changed afterwards: it was right under the rules of its review.
 
@@ -55,20 +58,21 @@ The output: [five tables](#output). A [full example](#example) is at the end.
 
 ## The issue list
 
-Every issue any review raised, one row each, As per rule included, in a CSV file:
+Every issue any review raised, one row each, Expected and Incorrect observation included, in a CSV file:
 [issue_list.csv](../review/issue_list.csv).
 
 | Issue ID | Raised in | Rule ID | Issue | Verdict |
 |---|---|---|---|---|
-| SWE3-007 | SWE3_V4 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect |
-| SWE3-026 | SWE3_V5 | | A function defined by a macro has no entry | Gap |
-| SWE3-021 | SWE3_V4 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule |
+| SWE3-007 | V4 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect |
+| SWE3-026 | V5 | | A function defined by a macro has no entry | Gap |
+| SWE3-021 | V4 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | Expected |
 
 | Verdict | Rule ID |
 |---|---|
 | Defect | the rule it breaks |
 | Gap | empty, until its rule is written |
-| As per rule | the rules that answer it |
+| Expected | the rules that answer it |
+| Incorrect observation | the rule of what the comment is about, or empty |
 
 - No status: whether an issue is fixed is the tool's [output](#output).
 - Before 2026-11-24 an ID named its review: `SWE3-V4-NN` is now `SWE3-0NN`, `SWE3-V5-NN` is
@@ -131,12 +135,12 @@ Five tables per review. Each repeats the texts it refers to, so it reads without
 **Comments**: `Review ID | Document | Section | Comment | Issue ID | Issue | Verdict | Status`
 - Review ID to Issue ID: from the review input file; Issue and Verdict: from the issue list.
 - Status: **Fixed** when the newest documents no longer show what the comment points at, else **Open**;
-  `—` for As per rule.
+  `—` for Expected and Incorrect observation.
 
 **Issues**: `Issue ID | Rule ID | Issue | Verdict | Comments | Fixed | Open | Status | Open comments`,
 every issue the review raised.
 - Status: **Fixed** when all its comments are Fixed, **Partly fixed** when some are, **Open** when none
-  is; `—` for As per rule.
+  is; `—` for Expected and Incorrect observation.
 - Open comments: the Review IDs of the comments still open.
 - A Partly fixed issue's open comments are looked at again. The fix missed a case: they keep the ID.
   It is another problem: it becomes a new issue, with the next ID, and they move
@@ -153,21 +157,22 @@ every issue the review raised.
 **Totals**: `Verdict | Issues | Comments | Fixed | Open`, one row per verdict and a Total row; under
 it, one line: how many issues are Fixed, Partly fixed and Open.
 
-**Scores**: `Document | Section | Review % | Comments | Defect | Gap | As per rule | Our %`
+**Scores**: `Document | Section | Review % | Comments | Defect | Gap | Expected | Incorrect observation | Our %`
 
 ```
 share = (100 − review %) ÷ comments
-our % = review % + share × as per rule
+our % = review % + share × (expected + incorrect observation)
 ```
 
-Each comment took the same share of the section's lost score; the As per rule ones get theirs back. If
+Each comment took the same share of the section's lost score; the Expected and Incorrect observation
+ones get theirs back. If
 the reviewers weighted their comments (major, minor, points), use each comment's weight instead of an
 equal share. Under the table, one line: comments → issues, and how many issues are new in this review.
 Scores are per section only: the reviewers give no total per document.
 
-**Agenda**: `Rule ID | Rule | As per rule comments`, most first; Rule is the rule's name in SWE3_WIKI.
-An issue with two rules counts its comments under each. For the next talk with the reviewers: a rule that collects many As per rule comments is one they may
-want changed.
+**Agenda**: `Rule ID | Rule | Expected comments`, most first; Rule is the rule's name in SWE3_WIKI.
+An issue with two rules counts its comments under each. For the next talk with the reviewers: a rule that collects many Expected comments is one they may
+want changed. Incorrect observations are not on it: no rule is in question.
 
 ---
 
@@ -180,7 +185,7 @@ line in [Changes](SWE3_WIKI.md#changes). Rule IDs never change.
 | Change | The issue list | The next review |
 |---|---|---|
 | A Gap gets a rule | same row, still Gap; its Rule ID is filled in | the document follows the rule: no comment, and the Gap shows Fixed; it breaks the rule: a Defect, with a new ID |
-| An As per rule item's rule changes | same row, unchanged | until it is built: still As per rule, the same ID; once built, the document breaks the new rule: a Defect, with a new ID |
+| An Expected item's rule changes | same row, unchanged | until it is built: still Expected, the same ID; once built, the document breaks the new rule: a Defect, with a new ID |
 
 Each review is judged by SWE3_WIKI as it was for the documents it read, and no verdict changes
 afterwards, so a review's Our % never changes.
@@ -196,13 +201,13 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 
 | Issue ID | Raised in | Rule ID | Issue | Verdict |
 |---|---|---|---|---|
-| SWE3-007 | SWE3_V4 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect |
-| SWE3-011 | SWE3_V4 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect |
-| SWE3-020 | SWE3_V4 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | As per rule |
-| SWE3-021 | SWE3_V4 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule |
-| SWE3-026 | SWE3_V5 | | A function defined by a macro has no entry | Gap |
-| SWE3-027 | SWE3_V5 | SWE3-UH-04 | A shared header's enum is listed in one unit only | As per rule |
-| SWE3-028 | SWE3_V5 | SWE3-FD-03 | Input Name shows only the first parameter | As per rule |
+| SWE3-007 | V4 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect |
+| SWE3-011 | V4 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect |
+| SWE3-020 | V4 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | Expected |
+| SWE3-021 | V4 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | Expected |
+| SWE3-026 | V5 | | A function defined by a macro has no entry | Gap |
+| SWE3-027 | V5 | SWE3-UH-04 | A shared header's enum is listed in one unit only | Expected |
+| SWE3-028 | V5 | SWE3-FD-03 | Input Name shows only the first parameter | Expected |
 
 **The review input file**, `Comments`:
 
@@ -232,13 +237,13 @@ Review `SWE3_V5` of the document Flash Core: two sections, ten comments. Four is
 |---|---|---|---|---|---|---|---|
 | SWE3_V5_R1_01_P1 | Flash Core | UH | Struct `Page` is not in the table | SWE3-007 | Class: structs and classes are missing from the unit header | Defect | Fixed |
 | SWE3_V5_R1_01_P2 | Flash Core | UH | Class `BlockMap` is not in the table | SWE3-007 | Class: structs and classes are missing from the unit header | Defect | Fixed |
-| SWE3_V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-020 | A global is in both the unit header and the interface table | As per rule | — |
-| SWE3_V5_R1_03_P1 | Flash Core | UH | Enum `Mode` is listed in one unit only | SWE3-027 | A shared header's enum is listed in one unit only | As per rule | — |
-| SWE3_V5_R1_04_P1 | Flash Core | UH | Same as SWE3_V5_R1_03_P1 | SWE3-027 | A shared header's enum is listed in one unit only | As per rule | — |
+| SWE3_V5_R1_02_P1 | Flash Core | UH | Global `g_count` is also in the interface table | SWE3-020 | A global is in both the unit header and the interface table | Expected | — |
+| SWE3_V5_R1_03_P1 | Flash Core | UH | Enum `Mode` is listed in one unit only | SWE3-027 | A shared header's enum is listed in one unit only | Expected | — |
+| SWE3_V5_R1_04_P1 | Flash Core | UH | Same as SWE3_V5_R1_03_P1 | SWE3-027 | A shared header's enum is listed in one unit only | Expected | — |
 | SWE3_V5_R2_01_P1 | Flash Core | FD | `Read()`: Return has no arrow to End | SWE3-011 | Flowchart: a Return box has no arrow to End | Defect | Fixed |
 | SWE3_V5_R2_02_P1 | Flash Core | FD | `DEFINE_HANDLER(Erase)`: no entry for `Erase()` | SWE3-026 | A function defined by a macro has no entry | Gap | Open |
-| SWE3_V5_R2_03_P1 | Flash Core | FD | Private function `Check()` is missing | SWE3-021 | A function no other unit calls has no interface row and no entry of its own | As per rule | — |
-| SWE3_V5_R2_03_P2 | Flash Core | FD | `Write()`: Input Name shows only the first parameter | SWE3-028 | Input Name shows only the first parameter | As per rule | — |
+| SWE3_V5_R2_03_P1 | Flash Core | FD | Private function `Check()` is missing | SWE3-021 | A function no other unit calls has no interface row and no entry of its own | Expected | — |
+| SWE3_V5_R2_03_P2 | Flash Core | FD | `Write()`: Input Name shows only the first parameter | SWE3-028 | Input Name shows only the first parameter | Expected | — |
 | SWE3_V5_R2_04_P1 | Flash Core | FD | `Write()`: Return has no arrow to End | SWE3-011 | Flowchart: a Return box has no arrow to End | Defect | Open |
 
 Issues:
@@ -248,10 +253,10 @@ Issues:
 | SWE3-007 | SWE3-UH-01 | Class: structs and classes are missing from the unit header | Defect | 2 | 2 | 0 | Fixed | |
 | SWE3-011 | SWE3-FD-02 | Flowchart: a Return box has no arrow to End | Defect | 2 | 1 | 1 | Partly fixed | SWE3_V5_R2_04_P1 |
 | SWE3-026 | | A function defined by a macro has no entry | Gap | 1 | 0 | 1 | Open | SWE3_V5_R2_02_P1 |
-| SWE3-027 | SWE3-UH-04 | A shared header's enum is listed in one unit only | As per rule | 2 | — | — | — | |
-| SWE3-020 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | As per rule | 1 | — | — | — | |
-| SWE3-021 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | As per rule | 1 | — | — | — | |
-| SWE3-028 | SWE3-FD-03 | Input Name shows only the first parameter | As per rule | 1 | — | — | — | |
+| SWE3-027 | SWE3-UH-04 | A shared header's enum is listed in one unit only | Expected | 2 | — | — | — | |
+| SWE3-020 | SWE3-UH-01, SWE3-UI-01 | A global is in both the unit header and the interface table | Expected | 1 | — | — | — | |
+| SWE3-021 | SWE3-UI-01, SWE3-FD-01 | A function no other unit calls has no interface row and no entry of its own | Expected | 1 | — | — | — | |
+| SWE3-028 | SWE3-FD-03 | Input Name shows only the first parameter | Expected | 1 | — | — | — | |
 
 Totals:
 
@@ -259,28 +264,29 @@ Totals:
 |---|---|---|---|---|
 | Defect | 2 | 4 | 3 | 1 |
 | Gap | 1 | 1 | 0 | 1 |
-| As per rule | 4 | 5 | — | — |
+| Expected | 4 | 5 | — | — |
+| Incorrect observation | 0 | 0 | — | — |
 | **Total** | **7** | **10** | **3** | **2** |
 
 Issues: 1 Fixed, 1 Partly fixed, 1 Open.
 
 Scores:
 
-| Document | Section | Review % | Comments | Defect | Gap | As per rule | Our % |
-|---|---|---|---|---|---|---|---|
-| Flash Core | UH | 60 | 5 | 2 | 0 | 3 | 84 |
-| Flash Core | FD | 70 | 5 | 2 | 1 | 2 | 82 |
+| Document | Section | Review % | Comments | Defect | Gap | Expected | Incorrect observation | Our % |
+|---|---|---|---|---|---|---|---|---|
+| Flash Core | UH | 60 | 5 | 2 | 0 | 3 | 0 | 84 |
+| Flash Core | FD | 70 | 5 | 2 | 1 | 2 | 0 | 82 |
 
 ```
-UH:  share = (100 − 60) ÷ 5 = 8    our % = 60 + 8 × 3 = 84
-FD:  share = (100 − 70) ÷ 5 = 6    our % = 70 + 6 × 2 = 82
+UH:  share = (100 − 60) ÷ 5 = 8    our % = 60 + 8 × (3 + 0) = 84
+FD:  share = (100 − 70) ÷ 5 = 6    our % = 70 + 6 × (2 + 0) = 82
 ```
 
 10 comments → 7 issues, 3 of them new in this review.
 
 Agenda:
 
-| Rule ID | Rule | As per rule comments |
+| Rule ID | Rule | Expected comments |
 |---|---|---|
 | SWE3-UH-04 | Shared headers | 2 |
 | SWE3-UI-01 | Which rows | 2 |
