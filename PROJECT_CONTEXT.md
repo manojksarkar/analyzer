@@ -82,8 +82,7 @@ newer entry and the code win.
   side by side, 2026-10-07g). [FAST_WORD_FILE_UPDATES.md](docs/design/FAST_WORD_FILE_UPDATES.md); HANDOVER §4.35–4.40.
 - **Accessibility** (2026-10-13, branch `feat/ui-accessibility`, not pushed): the mockups and the web app
   meet WCAG 2.2 AA in light and dark -- contrast, one focus ring, 11px minimum text, names, keyboard
-  reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`.
-  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Accessibility".
+  reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`. [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Accessibility".
 - **Live logs for superusers** (backend; 2026-10-06, branch `feat/live-logs`): one stream of API and engine log lines,
   tail + SSE, read from per-process files under `logs/live/`. Built; the web page is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md),
   [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md), [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
@@ -240,7 +239,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [16-2026-10-30.md](project-context/history/16-2026-10-30.md) | from 2026-10-30 — **the newest: new entries go at the top** |
+| [17-2026-11-26b.md](project-context/history/17-2026-11-26b.md) | from 2026-11-26b — **the newest: new entries go at the top** |
+| [16-2026-10-30.md](project-context/history/16-2026-10-30.md) | 2026-10-30 … 2026-11-26 |
 | [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | 2026-10-07h … 2026-10-29b |
 | [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | 2026-10-05r … 2026-10-07g |
 | [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |

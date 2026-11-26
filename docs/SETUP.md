@@ -211,7 +211,7 @@ only the app's start-up reaches the configured one (it adds `admin@aspice.dev` i
 | `setup` cannot reach or create the database | is PostgreSQL running; can the `db` user `CREATE DATABASE`; is `DATABASE_URL` set to something else |
 | A run fails straight away | the red banner on the Overview page shows the error; `python analyzer.py doctor` |
 | A run sits in Phase 2 for a long time | the LLM (§3, §5) — the progress bar shows how far it is |
-| The Phase 1 log says `header(s) not found -- …: stdio.h, string.h …` | the compiler's own headers: set `armCompiler.path` (§3) |
+| The Phase 1 log says `header(s) not found -- …: stdio.h, string.h …` | the compiler's own headers: set `armCompiler.path` (§3). Until then, a call that names something from them reaches no function -- `Log(strlen(s))`, a project call, too: no arrow and no caller in the documents, and the log lists it as `call not linked` |
 | The Phase 1 log says `libclang does not take … from compile_commands -- left out` | a build flag this libclang does not know (a CPU name, say); the parse goes on without it. A newer LLVM may know it |
 | The web app says "Failed to fetch" | is the API running, and on the address the web app expects (§6) |
 | Port 8000 or 5173 is in use | `start-app --api-port <n> --web-port <n>`; by hand, `--port <n>` for the API and `npm run dev -- --port <n>` for the web app, with `VITE_API_URL` to match |

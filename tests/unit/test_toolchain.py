@@ -9,7 +9,11 @@ No Arm compiler is installed here, so the compiler is a stand-in: a canned answe
 reading rules, and a Python script for the one test that starts a real process (through `ask`'s
 `run` hook, so it runs the same on Windows and Linux). The parser tests need libclang and skip
 without it.
+
+Also here (2026-11-26): what a missing compiler header costs, on the sample's own fixture
+(Layer1/Diag/ArmCompilerHeaders.cpp), parsed without the compiler's folder and with stand-ins.
 """
+import copy
 import json
 import os
 import subprocess
@@ -318,6 +322,110 @@ class TestTheArgsATranslationUnitGets:
         P._TARGET_ARGS_BY_LAYER.update({"Layer1": M7})
         after = P._fingerprint_args()
         assert "--layer-target=Layer1" in after and after != before
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: headers that only the compiler has (SampleCppProject/Layer1/Diag/ArmCompilerHeaders.cpp)
+# ---------------------------------------------------------------------------
+
+DIAG = os.path.join(ROOT, "SampleCppProject", "Layer1", "Diag")
+COMPILER_HEADERS_UNITS = ("ArmLog.cpp", "ArmCompilerHeaders.cpp", "ArmCompilerHeadersUser.cpp")
+
+# Stand-ins for two headers of Arm Compiler 6's include folder: what the fixture uses, no more.
+STAND_IN_HEADERS = {
+    "arm_compat.h": "static inline void __disable_irq(void) { __asm__ volatile(\"cpsid i\"); }\n"
+                    "static inline void __enable_irq(void) { __asm__ volatile(\"cpsie i\"); }\n"
+                    "static inline void __nop(void) { __asm__ volatile(\"nop\"); }\n",
+    "string.h": "extern \"C\" unsigned int strlen(const char *s);\n",
+}
+
+
+def _parse_diag(P, extra_args):
+    """Phase 1's two passes over the fixture's three units, with `extra_args` after the parser's
+    own args; what they recorded, by plain name. The parser's module state is put back after."""
+    saved = {n: (v, copy.copy(v)) for n, v in vars(P).items()
+             if isinstance(v, (dict, set, list)) and not n.startswith("__")}
+    real = (P.is_project_file, P.index)
+
+    class _WithArgs:
+        def parse(self, path, args=None, options=0, **kw):
+            return real[1].parse(path, args=list(args or []) + extra_args, options=options, **kw)
+
+    try:
+        for name in ("functions", "call_graph", "reverse_call_graph", "_visited_function_keys",
+                     "_visited_call_keys", "_visited_global_access_keys", "_visited_usage_keys",
+                     "_diag_unresolved_calls", "_diag_missing_headers"):
+            getattr(P, name).clear()
+        diag = os.path.normcase(DIAG)
+        P.is_project_file = lambda p: os.path.normcase(os.path.abspath(p)).startswith(diag)
+        P.index = _WithArgs()
+        paths = [os.path.join(DIAG, f) for f in COMPILER_HEADERS_UNITS]
+        for path in paths:
+            P.parse_file(path)
+        for path in paths:
+            P.parse_calls_and_globals(path)
+        name = {k: f["functionName"] for k, f in P.functions.items()}
+        return {
+            "functions": set(name.values()),
+            "calls": {name[k]: [name.get(c, c) for c in cs] for k, cs in P.call_graph.items()},
+            "unresolved": [(os.path.basename(f), line, text, why)
+                           for f, line, text, why in P._diag_unresolved_calls],
+            "missing": set(P._diag_missing_headers),
+        }
+    finally:
+        P.is_project_file, P.index = real
+        for _n, (obj, before) in saved.items():
+            obj.clear()
+            obj.extend(before) if isinstance(obj, list) else obj.update(before)
+
+
+def _line_of(code, file="ArmCompilerHeaders.cpp"):
+    """The line a statement starts on -- not the comment that quotes it."""
+    with open(os.path.join(DIAG, file), encoding="utf-8") as fh:
+        return next(i for i, line in enumerate(fh, 1) if line.strip().startswith(code))
+
+
+@pytest.fixture(scope="module")
+def compiler_folder(tmp_path_factory):
+    d = tmp_path_factory.mktemp("armclang_include")
+    for name, text in STAND_IN_HEADERS.items():
+        (d / name).write_text(text, encoding="utf-8")
+    return str(d)
+
+
+class TestAHeaderOnlyTheCompilerHas:
+    """Measured 2026-11-26: without the compiler's folder, a call loses its callee when it, or
+    one of its arguments, names something from the missing header -- a project call included."""
+
+    @pytest.fixture(scope="class")
+    def without(self, parser_mod):
+        return _parse_diag(parser_mod, [])
+
+    @pytest.fixture(scope="class")
+    def with_folder(self, parser_mod, compiler_folder):
+        return _parse_diag(parser_mod, ["-isystem" + compiler_folder])
+
+    def test_without_it_the_header_is_missing_and_the_functions_are_still_there(self, without):
+        assert "arm_compat.h" in without["missing"]
+        assert {"ArmCriticalReport", "ArmAsmBarrier", "ArmFastAdd", "ArmResetEntry",
+                "DiagLogText", "DiagLogLength", "ArmStartup"} <= without["functions"]
+
+    def test_without_it_a_project_call_with_strlen_in_its_argument_is_lost(self, without):
+        assert without["calls"]["ArmCriticalReport"] == ["DiagLogText"]
+        assert ("ArmCompilerHeaders.cpp", _line_of("DiagLogLength(strlen"), "DiagLogLength",
+                "a callee the parse cannot see") in without["unresolved"]
+
+    def test_with_it_every_project_call_is_linked(self, with_folder):
+        assert not with_folder["missing"]
+        assert with_folder["calls"]["ArmCriticalReport"] == ["DiagLogText", "DiagLogLength"]
+        assert not [u for u in with_folder["unresolved"] if u[0] == "ArmCompilerHeaders.cpp"]
+
+    def test_the_compilers_own_functions_are_not_the_projects(self, with_folder):
+        assert not {"__disable_irq", "__enable_irq", "__nop", "strlen"} & with_folder["functions"]
+
+    def test_calls_that_name_nothing_from_it_are_linked_either_way(self, without, with_folder):
+        for parsed in (without, with_folder):
+            assert parsed["calls"]["ArmStartup"] == ["ArmCriticalReport", "ArmAsmBarrier"]
 
 
 # ---------------------------------------------------------------------------

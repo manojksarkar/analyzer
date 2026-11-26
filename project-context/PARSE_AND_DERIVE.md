@@ -111,6 +111,17 @@ Tests: `tests/unit/test_toolchain.py`, `test_compile_commands.py` (flags), `test
 Fixture `SampleCppProject/Layer1/Diag/ArmTarget.cpp`: `ArmV7Barrier` exists only for a v7 CPU,
 `ArmCompilerOnly` only with armclang asked (else `ArmOtherCompiler`).
 
+**What a missing compiler header costs** (measured 2026-11-26, Phase 1's own passes, KeepGoing on).
+`#include <arm_compat.h>` not found: one error, and every call that names something from the
+header loses its callee -- `__disable_irq()`, and a PROJECT call whose argument does,
+`DiagLogLength(strlen(s))` (`string.h`): recorded as unresolved, "a callee the parse cannot see",
+so no edge, no arrow, no caller, and the callee is not published unless another call reaches it.
+Calls that name nothing from it are linked, and a project header included after the missing one
+is still read. Functions are recorded either way; inline assembly and armclang's attributes
+(`section`, `used`, `naked`, armclang-only `zero_init`: a warning) parse. Fixture
+`Layer1/Diag/ArmCompilerHeaders.cpp` (+ `ArmLog`, `ArmCompilerHeadersUser`); test
+`test_toolchain.TestAHeaderOnlyTheCompilerHas`, both ways, with stand-in headers.
+
 ### Visibility detection (`_detect_visibility`, `_function_visibility`, `_global_visibility`)
 
 Two sources, annotation first. **Phase 1 is the only place visibility is recorded**, and so the

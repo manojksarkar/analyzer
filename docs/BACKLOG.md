@@ -33,6 +33,7 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | SH-8 | A flowchart over PIL's 179M px is left unsliced, silently | issue | — | — | — | open | `views/flowcharts.py` `_maybe_slice_tall_png` |
 | SH-9 | An `-I` folder of `compile_commands.json` outside the firmware tree (a third-party SDK, `D:/ThirdParty/CMSIS/...`) is left out even when it is on this machine: the log counts it `unmapped`, and no setting says where it is here | issue | — | S | — | open | `core/compile_commands.apply_root_prefix` |
 | SH-10 | A file the build compiles twice with other settings (bootloader and main image) is parsed once, with the `-D` values and target flags most files of its layer use; which build the documents describe is not decided | decide | — | — | the firmware team | decide | `core/compile_commands.load_flags`, `entry_defines` |
+| SH-11 | A `__attribute__((weak))` default and the strong function that replaces it (same name, another unit): the model keeps the definition parsed FIRST, by file order -- measured 2026-11-26, weak first: its empty body, its unit, no writes; the strong body the linker keeps is lost. Fix: a strong definition replaces a weak one | issue | — | S | — | open | `parser.visit_definitions` |
 
 ## Incremental reuse
 

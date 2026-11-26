@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-26b | The sample covers a header only the compiler has; a weak function measured | [17](17-2026-11-26b.md) |
 | 2026-11-26 | Review triage: a fourth verdict, Incorrect observation; As per rule is now Expected | [16](16-2026-10-30.md) |
 | 2026-11-25b | The build's target flags and the compiler's own headers and macros reach the parse | [16](16-2026-10-30.md) |
 | 2026-11-25 | Direction: a function that writes through a pointer or reference parameter is In | [16](16-2026-10-30.md) |
