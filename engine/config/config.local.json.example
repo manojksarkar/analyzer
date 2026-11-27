@@ -112,8 +112,14 @@
   // Linux build, "/<Arm Compiler 6 folder>/bin/armclang".
   // null: none is asked; when compile_commands.json names a compiler, the run's log says so.
   // The run's log says what it added (Phase 1: "armCompiler [<layer>]: ...").
+  // A copy that cannot run here (copied from another computer, no license): set "path" to the
+  // copy anyway -- its install's header folders (<install>\include\libcxx, <install>\include)
+  // are read from the folder -- and give its own macros in "defines". The value is what
+  // armclang prints where it runs: armclang -E -dM -x c - < nul | findstr ARMCC
+  // `analyzer.py doctor` asks what a run asks and says which of the two it got.
   "armCompiler": {
-    "path": null
+    "path": null,
+    "defines": {}
   },
 
   // Where this server keeps each project's workspace: its checkouts, every version's documents

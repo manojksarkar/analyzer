@@ -633,6 +633,10 @@ def _settle_target_args() -> None:
     from core.compile_commands import target_args as _target_filter
     _TARGET_ARGS_BY_LAYER.clear()
     _LAYER_ARGS_CACHE.clear()
+    for _dir in _tc.arg_folders(_CLANG_EXTRA):
+        if not os.path.isdir(_dir):
+            _log.warning("clang.clangArgs names a folder that is not on this machine: %s -- "
+                         "its headers are not found", _dir)
     for _layer in sorted(_BUILD_FLAG_ARGS_BY_LAYER):
         _kept, _left_out = _flags_libclang_takes(_BUILD_FLAG_ARGS_BY_LAYER[_layer])
         if _left_out:
@@ -641,6 +645,7 @@ def _settle_target_args() -> None:
         if _kept:
             _TARGET_ARGS_BY_LAYER[_layer] = _kept
     _path = _tc.configured_path(_config)
+    _defines = _tc.configured_defines(_config)
     if _path:
         _run_layers = _selected_layers or list((_config.get("layers") or {}).keys())
         _keys = sorted(_TARGET_ARGS_BY_LAYER)
@@ -651,10 +656,10 @@ def _settle_target_args() -> None:
             _flags = _tc.query_flags(_TARGET_ARGS_BY_LAYER.get(_key), _CLANG_EXTRA, _target_filter)
             _added = _answers.get(tuple(_flags))
             if _added is None:
-                _answer = _tc.ask(_path, _flags)
+                _answer = _tc.ask_or_read_install(_path, _flags, _defines)
                 _added = _answers[tuple(_flags)] = _tc.parse_args(_answer, _libclang_macro_names(_flags))
                 _who = f"[{_key}]" if _key != "*" else "[layers without build flags]"
-                (_log.warning if _answer.error else _log.info)(
+                (_log.warning if _answer.error or _answer.not_run else _log.info)(
                     "armCompiler %s: %s", _who, _tc.summary(_path, _answer, _added))
             if _added or _key in _TARGET_ARGS_BY_LAYER:
                 _TARGET_ARGS_BY_LAYER[_key] = _TARGET_ARGS_BY_LAYER.get(_key, []) + _added

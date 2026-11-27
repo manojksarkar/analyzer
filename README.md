@@ -10,7 +10,7 @@ Installation, dependencies (what to install: [SETUP §1](docs/SETUP.md#1-what-yo
 and every command: **[docs/SETUP.md](docs/SETUP.md)**. In short:
 
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 npm install
 cd web-app
 npm install

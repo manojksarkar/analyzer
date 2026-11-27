@@ -8,6 +8,8 @@ env/
 venv/
 ENV/
 .venv
+# the packages for an install without internet (docs/SETUP.md §2)
+/wheels/
 
 # IDE
 .vscode/

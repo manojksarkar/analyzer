@@ -334,22 +334,73 @@ def check_arm_compiler():
         return Check("arm compiler", OK, "not set (optional: its header folders and macros are "
                      f"added to the parse when armCompiler.path in {_LOCAL} names it)",
                      required=False)
-    if not os.path.isfile(path):
-        return Check("arm compiler", WARN, f"not found: {path}",
-                     f"Correct armCompiler.path in {_LOCAL}: the compiler on THIS machine",
-                     required=False)
     try:
-        done = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=30)
-        text_out = ((done.stdout or "") + "\n" + (done.stderr or "")).strip()
-        rc = done.returncode
-    except (OSError, subprocess.SubprocessError) as exc:
-        text_out, rc = str(exc), 127
-    first = next((l.strip() for l in text_out.splitlines() if l.strip()), "")
-    if rc != 0:
-        return Check("arm compiler", WARN, f"{path}: --version failed ({first or rc})",
-                     "Run it by hand; a license or a missing part of the install is the usual cause",
+        tc, target_args = _toolchain()
+    except Exception as exc:                            # noqa: BLE001 - a check never raises
+        return Check("arm compiler", WARN, f"not checked ({type(exc).__name__}: {exc})",
                      required=False)
-    return Check("arm compiler", OK, f"{path} ({first})", required=False)
+    # Asked what a run asks (layers without build flags: clang.clangArgs' target), so OK here
+    # means a run gets the folders and macros.
+    settings = _server_settings()
+    answer = tc.ask_or_read_install(path, tc.query_flags(None, _default_clang_args(), target_args),
+                                    tc.configured_defines(settings))
+    if answer.error:
+        return Check("arm compiler", WARN, f"{path}: {answer.error}",
+                     f"armCompiler.path in {_LOCAL} is the compiler file on THIS machine, "
+                     "e.g. \"C:/ArmCompiler6.16/bin/armclang.exe\" (in JSON / or \\\\, never one \\)",
+                     required=False)
+    got = f"{len(answer.include_dirs)} header folder(s), {len(answer.macros)} macro(s)"
+    if not answer.not_run:
+        return Check("arm compiler", OK, f"{path} ({answer.version}): {got}", required=False)
+    if "__ARMCC_VERSION" not in answer.macros:
+        return Check("arm compiler", WARN,
+                     f"{path} could not run ({answer.not_run}); its install's {got} are used",
+                     f"Add \"defines\": {{\"__ARMCC_VERSION\": \"<value>\"}} to armCompiler in {_LOCAL} "
+                     "(the value: armclang -E -dM -x c - < nul | findstr ARMCC, where it runs), "
+                     "or code under #if __ARMCC_VERSION reads as the build does not",
+                     required=False)
+    return Check("arm compiler", OK,
+                 f"{path} could not run ({answer.not_run}); its install's {got} "
+                 "(armCompiler.defines) are used", required=False)
+
+
+def _toolchain():
+    engine = os.path.join(ROOT, "engine")
+    if engine not in sys.path:
+        sys.path.insert(0, engine)
+    from core import toolchain
+    from core.compile_commands import target_args
+    return toolchain, target_args
+
+
+def _default_clang_args() -> list:
+    """`clang.clangArgs` of config.defaults.json (a project's own are checked by its run)."""
+    try:
+        with open(os.path.join(ROOT, "engine", "config", "config.defaults.json"),
+                  encoding="utf-8") as fh:
+            extra = (json.load(fh).get("clang") or {}).get("clangArgs") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    return list(extra) if isinstance(extra, list) else [extra]
+
+
+def check_clang_arg_folders():
+    """Each include folder `clang.clangArgs` names is on this machine -- a missing one is not
+    an error to clang: its headers are just not found."""
+    try:
+        tc, _ = _toolchain()
+    except Exception as exc:                            # noqa: BLE001 - a check never raises
+        return Check("clangArgs folders", WARN, f"not checked ({type(exc).__name__}: {exc})",
+                     required=False)
+    folders = tc.arg_folders(_default_clang_args())
+    missing = [f for f in folders if not os.path.isdir(f)]
+    if missing:
+        return Check("clangArgs folders", WARN, "not on this machine: " + ", ".join(missing),
+                     "Correct clang.clangArgs in config.defaults.json, or copy the folders here",
+                     required=False)
+    return Check("clangArgs folders", OK,
+                 f"{len(folders)} found" if folders else "none in config.defaults.json",
+                 required=False)
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +465,7 @@ def collect_checks():
     checks.append(check_mmdc())
     checks.append(check_libclang())
     checks.append(check_arm_compiler())
+    checks.append(check_clang_arg_folders())
     checks.append(check_llm_server())
     return checks
 

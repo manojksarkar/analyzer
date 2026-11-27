@@ -799,9 +799,18 @@ def run_settings_snapshot(config: Dict[str, Any]) -> Dict[str, Any]:
                      "parseWorkers": parse_workers_note(config) or "1",
                      "pictureBatches": s["pictureBatches"], "fastNullCheck": s["fastNullCheck"]},
         "llvm": {"libPath": lib, "includePath": inc},
-        "armCompiler": {"path": str((config.get("armCompiler") or {}).get("path") or "")
-                        if isinstance(config.get("armCompiler"), dict) else ""},
+        "armCompiler": _arm_compiler_record(config),
     }
+
+
+def _arm_compiler_record(config: Dict[str, Any]) -> Dict[str, Any]:
+    """`armCompiler` as a run records it: the path, and `defines` when any are set."""
+    from core.toolchain import configured_defines, configured_path
+    record: Dict[str, Any] = {"path": configured_path(config)}
+    defines = configured_defines(config)
+    if defines:
+        record["defines"] = defines
+    return record
 
 
 def run_settings_line(entry: Dict[str, Any]) -> str:

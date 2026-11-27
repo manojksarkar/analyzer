@@ -95,8 +95,10 @@ of its own (`__ARMCC_VERSION`). `_settle_target_args`, first thing in `main()`:
    Its `#include <...>` search list becomes `-isystem<dir>` (those on this machine), and its
    `#define`s that libclang does not define with the same flags (`_libclang_macro_names`: an empty
    parse's macro definitions from no file) become `-D` -- one both define keeps libclang's value.
-   A compiler that is not there, fails (a license), times out (60 s) or prints no search list
-   (armcc) adds nothing; the log says why. A layer the build gave no flags takes the `"*"` answer.
+   A compiler that is not there, times out (60 s) or prints no search list (armcc) adds nothing;
+   the log says why. One that is there but fails (a copy without its license, 2026-11-27) gives
+   its install's `include/libcxx` and `include` (`ask_or_read_install`); `armCompiler.defines`
+   joins either answer, the compiler's own value winning. A layer the build gave no flags takes the `"*"` answer.
    The compiler named in `compile_commands.json` is never started: that file comes with a project
    (a web upload, a repository), so it could name any program on the server; only the server's
    own setting names one. run.py logs the name, to say what to set.

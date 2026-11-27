@@ -52,6 +52,18 @@
     // The PUBLIC/PRIVATE/PROTECTED/__OVLYINIT shims are NOT listed here - they
     // are injected unconditionally by core.config.default_clang_macro_defs().
     "clangArgs": ["--target=arm-none-eabi"],
+    // Header folders and macros by hand, e.g. an Arm Compiler 6's -- simpler:
+    // armCompiler.path + armCompiler.defines in config.local.json, which work
+    // for a copy that cannot run too. This list replaces the one above, so keep
+    // the --target. The folders are this machine's (`analyzer.py doctor` checks
+    // them); the macro's value is what armclang prints where it runs:
+    // armclang -E -dM -x c - < nul | findstr ARMCC
+    //   "clangArgs": [
+    //     "--target=arm-none-eabi",
+    //     "-isystemC:/ArmCompiler6.16/include",
+    //     "-isystemC:/ArmCompiler6.16/include/libcxx",
+    //     "-D__ARMCC_VERSION=6160001"
+    //   ],
     // Walk every directory under each layer's path into that layer's -I set?
     // OFF: a core's compile_commands.json records the include set the compiler
     // was actually given, and the walk can only guess at it - it both misses

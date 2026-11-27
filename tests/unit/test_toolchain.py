@@ -174,6 +174,74 @@ class TestAsking:
         assert tc.configured_path({"armCompiler": {"path": None}}) == ""
         assert tc.configured_path({}) == ""
 
+    def test_a_path_without_exe_finds_the_exe(self, tmp_path):
+        (tmp_path / "armclang.exe").write_text("")
+        answer = tc.ask(str(tmp_path / "armclang"), [], run=lambda cmd, **k: _Done(
+            0, err=ARMCLANG_STDERR.format(libcxx="a", include="b"), out=cmd[0]))
+        assert not answer.error
+
+
+# ---------------------------------------------------------------------------
+# A copy that cannot run here (2026-11-27): copied from another computer, no license
+# ---------------------------------------------------------------------------
+
+def _install(tmp_path):
+    """An Arm Compiler 6 install's layout: bin/armclang.exe, include/libcxx, include."""
+    (tmp_path / "bin").mkdir()
+    exe = tmp_path / "bin" / "armclang.exe"
+    exe.write_text("")
+    libcxx, include = _dirs(tmp_path)
+    return str(exe), libcxx, include
+
+
+NO_LICENSE = lambda *a, **k: _Done(1, err="armclang: error: Failed to check out a license.\n")  # noqa: E731
+
+
+class TestACopyThatCannotRun:
+    def test_its_header_folders_are_read_from_the_install(self, tmp_path):
+        exe, libcxx, include = _install(tmp_path)
+        for path in (exe, os.path.dirname(exe), str(tmp_path), exe[:-len(".exe")]):
+            assert tc.install_include_dirs(path) == [libcxx, include], path
+
+    def test_a_path_that_is_not_there_reads_no_folder_near_it(self, tmp_path):
+        _install(tmp_path)
+        assert tc.install_include_dirs(str(tmp_path / "bin" / "nothing.exe")) == []
+
+    def test_the_defines_are_this_machines_setting_a_dict_or_a_list(self):
+        assert tc.configured_defines({"armCompiler": {"defines": {"__ARMCC_VERSION": 6160001,
+                                                                  " X ": None}}}) == \
+            {"__ARMCC_VERSION": "6160001", "X": ""}
+        assert tc.configured_defines({"armCompiler": {"defines": ["A=1", "B", " "]}}) == \
+            {"A": "1", "B": "1"}
+        assert tc.configured_defines({"armCompiler": {"path": "x"}}) == {}
+        assert tc.configured_defines({}) == {}
+
+    def test_it_gives_its_install_folders_and_the_defines(self, tmp_path):
+        exe, libcxx, include = _install(tmp_path)
+        answer = tc.ask_or_read_install(exe, [], {"__ARMCC_VERSION": "6160001"}, run=NO_LICENSE)
+        assert not answer.error
+        assert answer.not_run == "exit 1: armclang: error: Failed to check out a license."
+        assert tc.parse_args(answer, {"__ARM_ARCH"}) == [
+            f"-isystem{libcxx}", f"-isystem{include}", "-D__ARMCC_VERSION=6160001"]
+        assert "could not run" in tc.summary(exe, answer, tc.parse_args(answer, set()))
+
+    def test_a_compiler_that_answers_keeps_its_own_values(self, tmp_path):
+        exe, libcxx, include = _install(tmp_path)
+        answer = tc.ask_or_read_install(exe, [], {"__ARMCC_VERSION": "1", "MINE": "2"},
+                                        run=lambda *a, **k: _Done(0, ARMCLANG_STDOUT, ARMCLANG_STDERR.format(
+                                            libcxx=libcxx, include=include)))
+        assert not answer.not_run
+        assert answer.macros["__ARMCC_VERSION"] == "6160001" and answer.macros["MINE"] == "2"
+
+    def test_a_compiler_that_is_not_there_is_still_not_found(self, tmp_path):
+        answer = tc.ask_or_read_install(str(tmp_path / "armclang.exe"), [], {"A": "1"})
+        assert answer.error.startswith("not found:")
+
+    def test_the_include_folders_args_name(self):
+        assert tc.arg_folders(["--target=arm-none-eabi", "-isystemC:/a", "-isystem", "C:/b",
+                               "-IC:/c", "-idirafter", "C:/d", "-include", "x.h", "-DX=1"]) == \
+            ["C:/a", "C:/b", "C:/c", "C:/d"]
+
 
 # ---------------------------------------------------------------------------
 # Phase 1: the layer target args
@@ -294,6 +362,32 @@ class TestSettlingTheTargetArgs:
         monkeypatch.setattr(P, "_selected_layers", [])
         P._settle_target_args()
         assert P._TARGET_ARGS_BY_LAYER == {"Layer1": M7}
+
+    def test_a_copy_that_cannot_run_gives_its_install_folders_and_the_defines(
+            self, layer_state, tmp_path, monkeypatch):
+        P = layer_state
+        P._BUILD_FLAG_ARGS_BY_LAYER.clear()
+        P._BUILD_FLAG_ARGS_BY_LAYER.update({"Layer1": M7})
+        exe, libcxx, include = _install(tmp_path)
+        monkeypatch.setattr(tc, "ask", lambda *a, **k: tc.CompilerAnswer(error="exit 1: no license"))
+        monkeypatch.setattr(P, "_config", {**P._config, "layers": {"Layer1": {}}, "armCompiler": {
+            "path": exe, "defines": {"__ARMCC_VERSION": "6160001"}}})
+        monkeypatch.setattr(P, "_selected_layers", [])
+        P._settle_target_args()
+        assert P._TARGET_ARGS_BY_LAYER == {"Layer1": M7 + [
+            f"-isystem{libcxx}", f"-isystem{include}", "-D__ARMCC_VERSION=6160001"]}
+
+    def test_a_clang_args_folder_not_on_this_machine_is_said(self, layer_state, tmp_path, monkeypatch):
+        P = layer_state
+        P._BUILD_FLAG_ARGS_BY_LAYER.clear()
+        warned = []
+        monkeypatch.setattr(P, "_CLANG_EXTRA", ["-isystem" + str(tmp_path / "gone"), f"-I{tmp_path}"])
+        monkeypatch.setattr(P._log, "warning", lambda msg, *a: warned.append(msg % a))
+        monkeypatch.setattr(P, "_config", {k: v for k, v in P._config.items() if k != "armCompiler"})
+        P._settle_target_args()
+        assert [w for w in warned if "not on this machine" in w] == [
+            "clang.clangArgs names a folder that is not on this machine: "
+            f"{tmp_path / 'gone'} -- its headers are not found"]
 
 
 class TestTheArgsATranslationUnitGets:
@@ -455,6 +549,34 @@ class TestDoctorSaysWhatIsSet:
         c = self._check(doctor, monkeypatch, {"path": str(tmp_path / "armclang.exe")})
         assert (c.status, c.required) == (doctor.WARN, False) and "not found" in c.detail
 
-    def test_a_compiler_that_answers_shows_its_version(self, doctor, monkeypatch):
-        c = self._check(doctor, monkeypatch, {"path": sys.executable})   # `python --version`
-        assert c.status == doctor.OK and "Python" in c.detail
+    def test_a_compiler_that_answers_shows_its_version(self, doctor, monkeypatch, tmp_path):
+        exe, libcxx, include = _install(tmp_path)
+        asked = []
+        monkeypatch.setattr(tc, "ask", lambda path, flags, **k: asked.append(flags) or tc.read_answer(
+            ARMCLANG_STDOUT, ARMCLANG_STDERR.format(libcxx=libcxx, include=include)))
+        c = self._check(doctor, monkeypatch, {"path": exe})
+        assert c.status == doctor.OK and "Arm Compiler for Embedded 6.16" in c.detail
+        assert "2 header folder(s)" in c.detail
+        assert asked == [tc.query_flags(None, doctor._default_clang_args(), target_args)]  # a run's
+
+    def test_a_copy_that_cannot_run_without_the_version_macro_is_a_warning(self, doctor, monkeypatch,
+                                                                          tmp_path):
+        exe, _, _ = _install(tmp_path)
+        monkeypatch.setattr(tc, "ask", lambda *a, **k: tc.CompilerAnswer(error="exit 1: no license"))
+        c = self._check(doctor, monkeypatch, {"path": exe})
+        assert (c.status, c.required) == (doctor.WARN, False)
+        assert "could not run" in c.detail and "__ARMCC_VERSION" in c.fix
+
+    def test_a_copy_that_cannot_run_with_the_version_macro_is_fine(self, doctor, monkeypatch, tmp_path):
+        exe, _, _ = _install(tmp_path)
+        monkeypatch.setattr(tc, "ask", lambda *a, **k: tc.CompilerAnswer(error="exit 1: no license"))
+        c = self._check(doctor, monkeypatch, {"path": exe, "defines": {"__ARMCC_VERSION": "6160001"}})
+        assert c.status == doctor.OK and "2 header folder(s), 1 macro(s)" in c.detail
+
+    def test_a_clang_args_folder_not_on_this_machine_is_a_warning(self, doctor, monkeypatch, tmp_path):
+        monkeypatch.setattr(doctor, "_default_clang_args",
+                            lambda: ["--target=arm-none-eabi", f"-isystem{tmp_path}", "-isystemC:/gone"])
+        c = doctor.check_clang_arg_folders()
+        assert (c.status, c.required) == (doctor.WARN, False) and c.detail.endswith("C:/gone")
+        monkeypatch.setattr(doctor, "_default_clang_args", lambda: ["--target=arm-none-eabi"])
+        assert doctor.check_clang_arg_folders().status == doctor.OK

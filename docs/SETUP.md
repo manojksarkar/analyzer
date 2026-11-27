@@ -23,7 +23,7 @@ Microsoft Word: the documents are written by `python-docx`.
 ## 2. Install
 
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 npm install
 cd web-app
 npm install
@@ -40,12 +40,12 @@ network, with the same operating system and Python version:
 
 | What | Where there is network | On this machine |
 |---|---|---|
-| Python packages | `pip download -r requirements.txt -d wheels` | `pip install --no-index --find-links wheels -r requirements.txt` |
+| Python packages | in the repo root, `python -m pip download -r requirements.txt -d wheels`: the packages land in a new folder `wheels` there; copy that folder | put `wheels` in the repo root, then `python -m pip install --no-index --find-links wheels -r requirements.txt` |
 | npm packages | `npm install` in the repo root and in `web-app/`, then copy both `node_modules` folders | put them in the same places; or `npm install` with `PUPPETEER_SKIP_DOWNLOAD=1`, so puppeteer does not fetch its own Chromium |
 | Chrome, LLVM, Git, PostgreSQL | their offline installers | install; Chrome's path goes in `engine/config/puppeteer-config.json` (§3) |
 | Mermaid in docker (optional) | `docker save minlag/mermaid-cli` | `docker load -i` (§3) |
 
-Leave `tiktoken` out (`pip uninstall tiktoken`): it is optional, and fetches its tables from the
+Leave `tiktoken` out (`python -m pip uninstall tiktoken`): it is optional, and fetches its tables from the
 internet on first use; without it token counts are estimated from the text's length. The web app
 needs no internet either: its fonts and icons come with the npm packages.
 
@@ -74,14 +74,20 @@ copy engine\config\config.local.json.example engine\config\config.local.json
   descriptions stay empty), and any other run stops at its start and says so.
 - **`llvm`** — where LLVM is: `libPath` (the libclang library) and `includePath` (Clang's own
   headers, in the folder of the installed version, e.g. `...\lib\clang\17\include`).
-- **`armCompiler`** (optional) — `path`: the compiler that builds the code, on this machine, e.g.
-  `C:\<Arm Compiler 6 folder>\bin\armclang.exe` (on Linux its Linux build). libclang reads the
+- **`armCompiler`** (optional) — `path`: the compiler that builds the code, on this machine, the
+  file itself, e.g. `"C:/<Arm Compiler 6 folder>/bin/armclang.exe"` (in JSON, `/` or `\\`: a
+  single `\` breaks the path; on Linux its Linux build). libclang reads the
   code, but the C and C++ library headers (`stdio.h`, `string.h`, `<cstring>`) and the macros the
   compiler defines itself (`__ARMCC_VERSION`) come with that compiler; each run asks it for both
   and adds them to the parse. Without it the parse log can say `'stdio.h' file not found`, and
   code under an `#if` on such a macro is read as the build does not. The build's own flags
   (CPU, `-D`, include folders) come from each core's `compile_commands.json`, not from here. A
   clang- or gcc-style compiler only: not `armcc` (Arm Compiler 5).
+  A copy that cannot run here (copied from another computer, no license) works too: set `path`
+  to the copy -- its `include` folders are read from it -- and its macros in `defines`:
+  `"armCompiler": {"path": "C:/ArmCompiler6.16/bin/armclang.exe", "defines": {"__ARMCC_VERSION":
+  "6160001"}}` (the value: `armclang -E -dM -x c - < nul | findstr ARMCC` where it runs).
+  `analyzer.py doctor` asks what a run asks, and says which of the two it got.
 
 `python analyzer.py doctor` says which of these this machine has set.
 

@@ -230,7 +230,7 @@ class TestWhichFileASettingIsIn:
         assert set(example) == set(SERVER_BLOCKS)
         assert set(example["llmServer"]) <= set(LLM_SERVER_KEYS)
         assert set(example["llvm"]) == set(LLVM_KEYS_BEFORE.values())
-        assert example["armCompiler"] == {"path": None}            # optional: none asked
+        assert example["armCompiler"] == {"path": None, "defines": {}}   # optional: none asked
         assert not set(example) & set(self._shipped("config.defaults.json")), "a block in both files"
         load_llm_config({"llmServer": example["llmServer"]})      # the example is a valid server
 
